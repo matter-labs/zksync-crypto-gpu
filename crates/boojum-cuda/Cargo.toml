@@ -1,0 +1,59 @@
+[package]
+name = "boojum-cuda"
+version = "0.2.0"
+edition = "2021"
+build = "build/main.rs"
+authors = ["The Matter Labs Team <hello@matterlabs.dev>"]
+homepage = "https://zksync.io/"
+repository = "https://github.com/matter-labs/era-boojum-cuda"
+license = "MIT OR Apache-2.0"
+keywords = ["blockchain", "zksync"]
+categories = ["cryptography"]
+description = "Boojum-CUDA is a library implementing GPU-accelerated cryptographic functionality for the zkSync prover"
+
+[build-dependencies]
+boojum = "=0.2.2"
+era_cudart_sys = { version = "=0.2.0", path = "../cudart-sys" }
+cmake = "0.1"
+itertools = "0.13"
+
+[dependencies]
+boojum = "=0.2.2"
+era_cudart = { version = "=0.2.0", path = "../cudart" }
+era_cudart_sys = { version = "=0.2.0", path = "../cudart-sys" }
+itertools = "0.13"
+lazy_static = "1.4"
+
+[dev-dependencies]
+blake2 = "0.10"
+criterion = "0.5"
+era_criterion_cuda = { version = "=0.2.0", path = "../criterion-cuda" }
+criterion-macro = "0.4"
+itertools = "0.13"
+rand = "0.8"
+rayon = "1.10"
+serial_test = "3.1"
+
+[[bench]]
+name = "blake2s"
+harness = false
+
+[[bench]]
+name = "gates"
+harness = false
+
+[[bench]]
+name = "goldilocks"
+harness = false
+
+[[bench]]
+name = "ntt"
+harness = false
+
+[[bench]]
+name = "ops_complex"
+harness = false
+
+[[bench]]
+name = "poseidon"
+harness = false

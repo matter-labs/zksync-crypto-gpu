@@ -14,6 +14,8 @@ jobs:
         cuda: [ "12.0.0-devel-ubuntu20.04", "12.5.0-devel-ubuntu20.04" ]
     container:
       image: nvidia/cuda:${{ matrix.cuda }}
+    env:
+      BELLMAN_CUDA_DIR: ${{ github.workspace }}/bellman-cuda
     steps:
       - name: Prepare environment
         env:
@@ -37,6 +39,17 @@ jobs:
           curl -LO https://github.com/Kitware/CMake/releases/download/v3.24.3/cmake-3.24.3-linux-x86_64.sh && \
             chmod +x cmake-3.24.3-linux-x86_64.sh && \
             ./cmake-3.24.3-linux-x86_64.sh --skip-license --prefix=/usr/local
+
+      - name: Prepare bellman-cuda directory
+        shell: bash
+        # Curl ugliness is required because gh can't work with authentication: https://github.com/cli/cli/issues/2680.
+        run: |
+          release=($(curl --silent https://api.github.com/repos/matter-labs/era-bellman-cuda/releases | jq -r '.[0] | .name, .tarball_url, .assets[0].browser_download_url'))
+          curl --silent -L "${release[1]}" --output bellman-cuda-source.tar.gz
+          curl --silent -L "${release[2]}" --output bellman-cuda.tar.gz
+          mkdir -p bellman-cuda
+          tar xvfz bellman-cuda.tar.gz -C ./bellman-cuda
+          tar xvfz bellman-cuda-source.tar.gz -C ./bellman-cuda --strip-components=1 --wildcards \*/src/
 
       - name: Check CMake version
         run: |
@@ -73,6 +86,8 @@ jobs:
   zksync-crypto-gpu-test:
     runs-on: [ matterlabs-ci-gpu-runner ]
     needs: zksync-crypto-gpu-build
+    env:
+      BELLMAN_CUDA_DIR: ${{ github.workspace }}/bellman-cuda
     steps:
       - name: Prepare environment
         run: |
@@ -81,6 +96,17 @@ jobs:
       - name: Check Nvidia driver version
         run: |
           nvidia-smi
+
+      - name: Prepare bellman-cuda directory
+        shell: bash
+        # Curl ugliness is required because gh can't work with authentication: https://github.com/cli/cli/issues/2680.
+        run: |
+          release=($(curl --silent https://api.github.com/repos/matter-labs/era-bellman-cuda/releases | jq -r '.[0] | .name, .tarball_url, .assets[0].browser_download_url'))
+          curl --silent -L "${release[1]}" --output bellman-cuda-source.tar.gz
+          curl --silent -L "${release[2]}" --output bellman-cuda.tar.gz
+          mkdir -p bellman-cuda
+          tar xvfz bellman-cuda.tar.gz -C ./bellman-cuda
+          tar xvfz bellman-cuda-source.tar.gz -C ./bellman-cuda --strip-components=1 --wildcards \*/src/
 
       - name: Download test binaries built with CUDA 12.0
         uses: actions/download-artifact@v3

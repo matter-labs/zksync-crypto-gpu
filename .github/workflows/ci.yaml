@@ -13,6 +13,7 @@ jobs:
       image: nvidia/cuda:${{ matrix.cuda }}
     env:
       BELLMAN_CUDA_DIR: ${{ github.workspace }}/bellman-cuda
+      CUDAARCHS: 89
     steps:
       - name: Prepare environment
         env:

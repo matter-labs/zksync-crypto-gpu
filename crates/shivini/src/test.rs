@@ -800,7 +800,7 @@ mod zksync {
 
     pub type ZksyncProof = Proof<F, DefaultTreeHasher, GoldilocksExt2>;
 
-    const TEST_DATA_ROOT_DIR: &str = "./test_data";
+    const TEST_DATA_ROOT_DIR: &str = "./crates/shivini/test_data";
     const DEFAULT_CIRCUIT_INPUT: &str = "default.circuit";
 
     use crate::synthesis_utils::{
@@ -928,7 +928,7 @@ mod zksync {
         let _ctx = ProverContext::create().expect("gpu prover context");
 
         for main_dir in ["base", "leaf", "node", "tip"] {
-            let data_dir = format!("./test_data/{}", main_dir);
+            let data_dir = format!("./crates/shivini/test_data/{}", main_dir);
             dbg!(&data_dir);
             let circuits = scan_directory_for_circuits(&data_dir);
             let reference_proofs = scan_directory_for_proofs(&data_dir);
@@ -1019,7 +1019,7 @@ mod zksync {
         let worker = &Worker::new();
 
         for main_dir in ["base", "leaf", "node", "tip"] {
-            let data_dir = format!("./test_data/{}", main_dir);
+            let data_dir = format!("./crates/shivini/test_data/{}", main_dir);
             dbg!(&data_dir);
             let circuits = scan_directory_for_circuits(&data_dir);
 
@@ -1458,7 +1458,7 @@ mod zksync {
         let _worker = Worker::new();
 
         for main_dir in ["base", "leaf", "node", "tip"] {
-            let data_dir = format!("./test_data/{}", main_dir);
+            let data_dir = format!("./crates/shivini/test_data/{}", main_dir);
             let circuits = scan_directory_for_circuits(&data_dir);
 
             let worker = &Worker::new();
@@ -1557,7 +1557,10 @@ mod zksync {
                 })
                 .collect::<Vec<String>>()
                 .pop()
-                .unwrap_or(format!("./test_data/{}", DEFAULT_CIRCUIT_INPUT))
+                .unwrap_or(format!(
+                    "./crates/shivini/test_data/{}",
+                    DEFAULT_CIRCUIT_INPUT
+                ))
         };
 
         let data = std::fs::read(circuit_file_path).expect("circuit file");

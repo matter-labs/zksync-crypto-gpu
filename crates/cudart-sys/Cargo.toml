@@ -1,6 +1,6 @@
 [package]
 name = "era_cudart_sys"
-version = "0.2.0"
+version.workspace = true
 edition = "2021"
 authors = ["The Matter Labs Team <hello@matterlabs.dev>"]
 homepage = "https://zksync.io/"

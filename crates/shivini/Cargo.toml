@@ -1,6 +1,6 @@
 [package]
 name = "shivini"
-version = "0.150.3"
+version.workspace = true
 edition = "2021"
 authors = ["The Matter Labs Team <hello@matterlabs.dev>"]
 homepage = "https://zksync.io/"
@@ -15,10 +15,10 @@ exclude = ["/test_data"]
 
 [dependencies]
 boojum = "=0.2.2"
-boojum-cuda = { version = "=0.2.0", path = "../boojum-cuda" }
-era_cudart = { version = "=0.2.0", path = "../cudart" }
-era_cudart_sys = { version = "=0.2.0", path = "../cudart-sys" }
-circuit_definitions = { version = "=0.150.2", package = "circuit_definitions", optional = true }
+boojum-cuda.workspace = true
+era_cudart.workspace = true
+era_cudart_sys.workspace = true
+circuit_definitions = { workspace = true, optional = true }
 
 rand = "0.8"
 smallvec = { version = "1.13", features = [

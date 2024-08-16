@@ -1,6 +1,6 @@
 [package]
 name = "era_criterion_cuda"
-version = "0.2.0"
+version.workspace = true
 edition = "2021"
 authors = ["The Matter Labs Team <hello@matterlabs.dev>"]
 homepage = "https://zksync.io/"
@@ -9,7 +9,8 @@ license = "MIT OR Apache-2.0"
 keywords = ["blockchain", "zksync"]
 categories = ["cryptography"]
 description = "Criterion benchmarks support for CUDA event-based timings for ZKsync"
+publish = false
 
 [dependencies]
 criterion = "0.5"
-era_cudart = { version = "=0.2.0", path = "../cudart" }
+era_cudart.workspace = true

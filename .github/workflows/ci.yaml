@@ -1,0 +1,80 @@
+name: "Rust CI"
+on:
+  pull_request:
+
+jobs:
+  build:
+    name: cargo build
+    runs-on: [ubuntu-22.04-github-hosted-32core]
+    strategy:
+      matrix:
+        cuda: [ "12.0.0-devel-ubuntu20.04", "12.5.0-devel-ubuntu20.04" ]
+    container:
+      image: nvidia/cuda:${{ matrix.cuda }}
+    env:
+      BELLMAN_CUDA_DIR: ${{ github.workspace }}/bellman-cuda
+      CUDAARCHS: 89
+    steps:
+      - name: Prepare environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt update && apt install -y \
+            pkg-config libclang-dev build-essential lldb lld \
+            clang openssl libssl-dev gcc g++ wget curl jq
+          echo "/usr/local/nvidia/bin:/usr/local/cuda/bin" >> $GITHUB_PATH
+
+      - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8 # v3
+
+      - name: Setup rustup
+        run: |
+          wget -q -O - https://sh.rustup.rs | bash -s -- -y
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+          echo "export PATH=\"$HOME/.cargo/bin:\$PATH\"" >> "${HOME}/.bash_profile"
+
+      - name: Setup CMake
+        run: |
+          curl -LO https://github.com/Kitware/CMake/releases/download/v3.24.3/cmake-3.24.3-linux-x86_64.sh && \
+            chmod +x cmake-3.24.3-linux-x86_64.sh && \
+            ./cmake-3.24.3-linux-x86_64.sh --skip-license --prefix=/usr/local
+
+      - name: Check CMake version
+        run: |
+          cmake --version
+
+      - name: Check CUDA version
+        run: |
+          nvcc --version
+
+      - name: Setup rust
+        run: |
+          rustup set profile minimal
+          rustup toolchain install nightly-2024-08-01
+          rustup default nightly-2024-08-01
+
+      - name: Prepare bellman-cuda directory
+        shell: bash
+        # Curl ugliness is required because gh can't work with authentication: https://github.com/cli/cli/issues/2680.
+        run: |
+          release=($(curl --silent https://api.github.com/repos/matter-labs/era-bellman-cuda/releases | jq -r '.[0] | .name, .tarball_url, .assets[0].browser_download_url'))
+          curl --silent -L "${release[1]}" --output bellman-cuda-source.tar.gz
+          curl --silent -L "${release[2]}" --output bellman-cuda.tar.gz
+          mkdir -p bellman-cuda
+          tar xvfz bellman-cuda.tar.gz -C ./bellman-cuda
+          tar xvfz bellman-cuda-source.tar.gz -C ./bellman-cuda --strip-components=1 --wildcards \*/src/
+
+      # TODO: Right now we run tests in a separate workflow on the GPU runners,
+      # and only for some packages, since presumably `gpu-ffi` or `gpu-prover` crates
+      # are causing link-time errors when compiled with `--tests`.
+      - run: cargo build --verbose
+
+  formatting:
+    name: cargo fmt
+    runs-on: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt
+      - name: Rustfmt Check
+        uses: actions-rust-lang/rustfmt@v1

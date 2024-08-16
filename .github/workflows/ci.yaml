@@ -5,7 +5,7 @@ on:
 jobs:
   build:
     name: cargo build
-    runs-on: [ubuntu-latest]
+    runs-on: [ubuntu-22.04-github-hosted-32core]
     strategy:
       matrix:
         cuda: [ "12.0.0-devel-ubuntu20.04", "12.5.0-devel-ubuntu20.04" ]

@@ -1,11 +1,10 @@
-#include "goldilocks.cuh"
-#include "memory.cuh"
-#include "poseidon_constants.cuh"
-#include "poseidon_utils.cuh"
+#include "../../memory.cuh"
+#include "poseidon2_gl.cuh"
 
-namespace poseidon2 {
+namespace poseidon2::goldilocks {
 
-using namespace goldilocks;
+using namespace ::goldilocks;
+using namespace memory;
 
 typedef limb block_states[STATE_WIDTH][3][32];
 
@@ -93,8 +92,7 @@ static DEVICE_FORCEINLINE void permutation(field<3> *state, const unsigned wid, 
   apply_M_eps_matrix(state, wid, shared_states);
 #pragma unroll
   for (unsigned round = 0; round < TOTAL_NUM_ROUNDS; round++) {
-    const bool is_full_round = round < HALF_NUM_FULL_ROUNDS || round >= HALF_NUM_FULL_ROUNDS + NUM_PARTIAL_ROUNDS;
-    if (is_full_round) {
+    if (round < HALF_NUM_FULL_ROUNDS || round >= HALF_NUM_FULL_ROUNDS + NUM_PARTIAL_ROUNDS) {
       apply_round_constants<true>(state, round, wid);
       apply_non_linearity<true>(state, wid);
       apply_M_eps_matrix(state, wid, shared_states);
@@ -106,21 +104,21 @@ static DEVICE_FORCEINLINE void permutation(field<3> *state, const unsigned wid, 
   }
 }
 
-EXTERN __global__ void poseidon2_cooperative_leaves_kernel(const base_field *values, base_field *results, const unsigned rows_count, const unsigned cols_count,
-                                                           const unsigned count, bool load_intermediate, bool store_intermediate) {
+EXTERN __global__ void poseidon2_gl_mt_leaves_kernel(const base_field *values, base_field *results, const unsigned rows_count, const unsigned cols_count,
+                                                     const unsigned count, const bool load_intermediate, const bool store_intermediate) {
   static_assert(RATE == 8);
   static_assert(CAPACITY == 4);
   __shared__ block_states shared_states;
   const unsigned gid = threadIdx.x + blockIdx.x * blockDim.x;
   if (gid >= count)
     return;
-  unsigned wid = threadIdx.y;
+  const unsigned wid = threadIdx.y;
   field<3> state[TILE] = {0};
   if (load_intermediate && wid == 2) {
     auto intermediate_results = results + gid;
 #pragma unroll
     for (unsigned i = 0; i < TILE; i++, intermediate_results += count)
-      state[i] = base_field::into<3>(memory::load_cs(intermediate_results));
+      state[i] = base_field::into<3>(load_cs(intermediate_results));
   }
   values += gid * rows_count;
   for (unsigned offset = 0; offset < rows_count * cols_count;) {
@@ -130,7 +128,7 @@ EXTERN __global__ void poseidon2_cooperative_leaves_kernel(const base_field *val
       for (unsigned i = 0; i < TILE; i++, offset++) {
         const unsigned row = offset % rows_count;
         const unsigned col = offset / rows_count;
-        state[i] = col < cols_count ? base_field::into<3>(memory::load_cs(values + row + col * rows_count * count)) : field<3>{};
+        state[i] = col < cols_count ? base_field::into<3>(load_cs(values + row + col * rows_count * count)) : field<3>{};
       }
       offset += TILE * (1 - wid);
     } else
@@ -144,7 +142,7 @@ EXTERN __global__ void poseidon2_cooperative_leaves_kernel(const base_field *val
   //    if (wid < 2) {
   // #pragma unroll
   //      for (unsigned i = 0; i < TILE; i++, values += count)
-  //        state[i] = base_field::into<3>(memory::load_cs(values));
+  //        state[i] = base_field::into<3>(load_cs(values));
   //      values += TILE * count;
   //    }
   //    permutation(state, wid, shared_states);
@@ -154,31 +152,31 @@ EXTERN __global__ void poseidon2_cooperative_leaves_kernel(const base_field *val
   if (wid == (store_intermediate ? 2 : 0)) {
 #pragma unroll
     for (unsigned i = 0; i < TILE; i++, results += count)
-      memory::store_cs(results, base_field::field3_to_field2(state[i]));
+      store_cs(results, base_field::field3_to_field2(state[i]));
   }
 }
 
 static DEVICE_FORCEINLINE void load_nodes_to_shared(const field<4> *values, block_states &shared_states, const unsigned wid) {
   field<3> state_transposed[TILES_PER_STATE] = {0};
-  const auto value = memory::load_cs(values);
-  auto v2 = reinterpret_cast<const base_field *>(&value);
+  const auto value = load_cs(values);
+  const auto v2 = reinterpret_cast<const base_field *>(&value);
 #pragma unroll
   for (unsigned i = 0; i < 2; i++)
     state_transposed[i] = base_field::into<3>(v2[i]);
-    // un-transpose input
+  // un-transpose input
 #pragma unroll
   for (unsigned i = 0; i < TILES_PER_STATE; i++)
     store_shared(state_transposed[i], shared_states, wid + TILE * i);
 }
 
-EXTERN __global__ void poseidon2_cooperative_nodes_kernel(const field<4> *values, base_field *results, const unsigned count) {
+EXTERN __global__ void poseidon2_gl_mt_nodes_kernel(const field<4> *values, base_field *results, const unsigned count) {
   static_assert(RATE == 8);
   static_assert(CAPACITY == 4);
   __shared__ block_states shared_states;
   const unsigned gid = threadIdx.x + blockIdx.x * blockDim.x;
   if (gid >= count)
     return;
-  unsigned wid = threadIdx.y;
+  const unsigned wid = threadIdx.y;
   load_nodes_to_shared(values + count * wid + gid, shared_states, wid);
   // 3 warps in the block, so warp 0 reads the fourth column
   if (wid == 0)
@@ -196,8 +194,8 @@ EXTERN __global__ void poseidon2_cooperative_nodes_kernel(const field<4> *values
     results += gid;
 #pragma unroll
     for (unsigned i = 0; i < TILE; i++, results += count)
-      memory::store_cs(results, base_field::field3_to_field2(state[i]));
+      store_cs(results, base_field::field3_to_field2(state[i]));
   }
 }
 
-} // namespace poseidon2
+} // namespace poseidon2::goldilocks

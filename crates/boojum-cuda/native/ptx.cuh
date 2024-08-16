@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common.cuh"
-#include <tuple>
+#include <cuda/std/tuple>
 
 namespace ptx {
 
@@ -243,11 +243,11 @@ DEVICE_FORCEINLINE uint64_t madc_hi_cc(const uint64_t x, const uint64_t y, const
   return result;
 }
 
-DEVICE_FORCEINLINE std::tuple<uint32_t, uint32_t> unpack(const uint64_t x) {
+DEVICE_FORCEINLINE cuda::std::tuple<uint32_t, uint32_t> unpack(const uint64_t x) {
   uint32_t lo;
   uint32_t hi;
   asm("mov.b64 {%0,%1}, %2;" : "=r"(lo), "=r"(hi) : "l"(x));
-  return std::make_tuple(lo, hi);
+  return cuda::std::make_tuple(lo, hi);
 }
 
 } // namespace u64

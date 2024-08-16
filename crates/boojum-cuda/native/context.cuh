@@ -6,7 +6,7 @@ using namespace goldilocks;
 
 namespace goldilocks {
 
-static constexpr unsigned OMEGA_LOG_ORDER = 24;
+static constexpr unsigned OMEGA_LOG_ORDER = 30;
 
 struct powers_layer_data {
   const base_field *values;

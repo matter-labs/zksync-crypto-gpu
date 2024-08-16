@@ -1,12 +1,13 @@
-use boojum::cs::{implementations::setup::TreeNode, LookupParameters};
-
 use super::*;
+use boojum::cs::{implementations::setup::TreeNode, LookupParameters};
+use era_cudart::slice::CudaSlice;
 
 // The incoming quotient is assumed to be empty (not zeroed).
-pub fn compute_quotient_by_coset(
-    trace_cache: &mut TraceCache,
-    setup_cache: &mut SetupCache,
-    arguments_cache: &mut ArgumentsCache,
+#[allow(clippy::too_many_arguments)]
+pub fn compute_quotient_by_coset<H: GpuTreeHasher>(
+    trace_cache: &mut TraceCache<H>,
+    setup_cache: &mut SetupCache<H>,
+    arguments_cache: &mut ArgumentsCache<H>,
     lookup_params: LookupParameters,
     table_ids_column_idxes: &[usize],
     selector_placement: &TreeNode,
@@ -14,7 +15,7 @@ pub fn compute_quotient_by_coset(
     general_purpose_gates: &[GateEvaluationParams],
     coset_idx: usize,
     domain_size: usize,
-    used_lde_degree: usize,
+    max_lde_degree: usize,
     num_cols_per_product: usize,
     copy_permutation_challenge_z_at_one_equals_one: &EF,
     copy_permutation_challenges_partial_product_terms: &SVec<EF>,
@@ -51,14 +52,14 @@ pub fn compute_quotient_by_coset(
     } = arguments_storage.as_polynomials();
     let z_poly = &z_polys[0];
 
-    let l0 = compute_l0_over_coset(coset_idx, domain_size, used_lde_degree)?;
+    let l0 = compute_l0_over_coset(coset_idx, domain_size, max_lde_degree)?;
     assert_eq!(l0.storage.len(), domain_size);
     mem::d2d(z_poly.as_single_slice(), quotient.as_single_slice_mut())?;
     quotient.sub_constant(&DExt::one()?)?;
     quotient.mul_assign_real(&l0)?;
     quotient.scale(&copy_permutation_challenge_z_at_one_equals_one.into())?;
 
-    if specialized_gates.len() > 0 {
+    if !specialized_gates.is_empty() {
         generic_evaluate_constraints_by_coset(
             &variable_cols,
             &witness_cols,
@@ -66,47 +67,50 @@ pub fn compute_quotient_by_coset(
             specialized_gates,
             selector_placement.clone(),
             domain_size,
-            alpha.clone(),
+            *alpha,
             specialized_cols_challenge_power_offset,
             quotient,
             true,
         )?;
     }
 
-    assert!(general_purpose_gates.len() > 0);
-    if general_purpose_gates.len() > 1 {
-        generic_evaluate_constraints_by_coset(
-            &variable_cols,
-            &witness_cols,
-            &constant_cols,
-            general_purpose_gates,
-            selector_placement.clone(),
-            domain_size,
-            alpha.clone(),
-            general_purpose_cols_challenge_power_offset,
-            quotient,
-            false,
-        )?;
-    }
+    assert!(!general_purpose_gates.is_empty());
+    generic_evaluate_constraints_by_coset(
+        &variable_cols,
+        &witness_cols,
+        &constant_cols,
+        general_purpose_gates,
+        selector_placement.clone(),
+        domain_size,
+        *alpha,
+        general_purpose_cols_challenge_power_offset,
+        quotient,
+        false,
+    )?;
 
     assert_eq!(
         copy_permutation_challenges_partial_product_terms.len(),
-        arguments_cache.layout.num_partial_products / 2 + 1
+        arguments_cache
+            .polynomials_cache
+            .layout
+            .num_partial_products
+            / 2
+            + 1
     );
 
-    let coset_omegas = compute_omega_values_for_coset(coset_idx, domain_size, used_lde_degree)?;
+    let coset_omegas = compute_omega_values_for_coset(coset_idx, domain_size, max_lde_degree)?;
 
     compute_quotient_for_partial_products(
         &variable_cols,
         &permutation_cols,
-        &z_poly,
+        z_poly,
         &partial_products,
         &coset_omegas,
         num_cols_per_product,
-        &beta,
-        &gamma,
-        &non_residues_by_beta,
-        &copy_permutation_challenges_partial_product_terms,
+        beta,
+        gamma,
+        non_residues_by_beta,
+        copy_permutation_challenges_partial_product_terms,
         quotient,
     )?;
 
@@ -124,8 +128,8 @@ pub fn compute_quotient_by_coset(
             &lookup_b_polys,
             lookup_params,
             lookup_beta.unwrap(),
-            &powers_of_gamma_for_lookup,
-            &lookup_challenges,
+            powers_of_gamma_for_lookup,
+            lookup_challenges,
             variables_offset,
             columns_per_subargument,
             table_ids_column_idxes,
@@ -135,8 +139,8 @@ pub fn compute_quotient_by_coset(
         assert!(powers_of_gamma_for_lookup.is_none());
     }
 
-    divide_by_vanishing_poly_over_coset(&mut quotient.c0, coset_idx, domain_size, used_lde_degree)?;
-    divide_by_vanishing_poly_over_coset(&mut quotient.c1, coset_idx, domain_size, used_lde_degree)?;
+    divide_by_vanishing_poly_over_coset(&mut quotient.c0, coset_idx, domain_size, max_lde_degree)?;
+    divide_by_vanishing_poly_over_coset(&mut quotient.c1, coset_idx, domain_size, max_lde_degree)?;
 
     Ok(())
 }

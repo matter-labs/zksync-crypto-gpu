@@ -9,7 +9,7 @@ impl PoWRunner for DeviceBlake2sPOW {
     fn run_from_bytes(h_seed: Vec<u8>, pow_bits: u32, _worker: &boojum::worker::Worker) -> u64 {
         use era_cudart::slice::DeviceSlice;
         let _seed_len = h_seed.len();
-        let unit_len = std::mem::size_of::<F>();
+        let unit_len = size_of::<F>();
         assert_eq!(h_seed.len() % unit_len, 0);
         let num_elems = h_seed.len() / unit_len;
         let mut seed = svec!(num_elems);
@@ -48,7 +48,7 @@ impl PoWRunner for DeviceBlake2sPOW {
 
         let mut new_transcript = Blake2s256::new();
         new_transcript.update(&seed);
-        new_transcript.update(&challenge.to_le_bytes());
+        new_transcript.update(challenge.to_le_bytes());
         let mut le_bytes = [0u8; 8];
         le_bytes.copy_from_slice(&new_transcript.finalize().as_slice()[..8]);
 

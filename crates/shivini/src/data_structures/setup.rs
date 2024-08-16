@@ -1,16 +1,14 @@
-use boojum::cs::{implementations::polynomial_storage::SetupBaseStorage, oracle::TreeHasher};
-use boojum::worker::Worker;
-use std::ops::Range;
-
+use super::*;
 use crate::cs::{
     materialize_permutation_cols_from_indexes_into, GpuSetup, PACKED_PLACEHOLDER_BITMASK,
 };
-use crate::data_structures::cache::{StorageCache, StorageCacheStrategy};
+use crate::data_structures::cache::{PolynomialsCacheStrategy, StorageCache};
 use crate::primitives::helpers::set_by_value;
+use boojum::cs::implementations::polynomial_storage::SetupBaseStorage;
+use boojum::worker::Worker;
+use std::ops::Range;
+use std::rc::Rc;
 
-use super::*;
-
-#[allow(dead_code)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum SetupPolyType {
     Permutation,
@@ -26,7 +24,7 @@ pub struct SetupLayout {
 }
 
 impl SetupLayout {
-    pub fn from_setup<A: GoodAllocator>(setup: &GpuSetup<A>) -> Self {
+    pub fn from_setup<H: GpuTreeHasher, A: GoodAllocator>(setup: &GpuSetup<H, A>) -> Self {
         assert!(!setup.variables_hint.is_empty());
         assert!(!setup.constant_columns.is_empty());
         Self {
@@ -55,7 +53,7 @@ impl SetupLayout {
     }
 }
 
-impl GenericStorageLayout for SetupLayout {
+impl GenericPolynomialStorageLayout for SetupLayout {
     type PolyType = SetupPolyType;
 
     fn num_polys(&self) -> usize {
@@ -90,6 +88,12 @@ impl GenericStorageLayout for SetupLayout {
         };
         (range, layout)
     }
+}
+
+pub struct SetupPolynomials<'a, P: PolyForm> {
+    pub permutation_cols: Vec<Poly<'a, P>>,
+    pub constant_cols: Vec<Poly<'a, P>>,
+    pub table_cols: Vec<Poly<'a, P>>,
 }
 
 pub type GenericSetupStorage<P> = GenericStorage<P, SetupLayout>;
@@ -129,63 +133,27 @@ impl<P: PolyForm> GenericSetupStorage<P> {
     }
 }
 
-impl<'a> LeafSourceQuery for SetupPolynomials<'a, CosetEvaluations> {
-    fn get_leaf_sources(
-        &self,
-        _coset_idx: usize,
-        _domain_size: usize,
-        _lde_degree: usize,
-        row_idx: usize,
-        _: usize,
-    ) -> CudaResult<Vec<F>> {
-        let mut leaf_sources = vec![];
-
-        for col in self.permutation_cols.iter() {
-            let el = col.storage.clone_el_to_host(row_idx)?;
-            leaf_sources.push(el);
-        }
-
-        for col in self.constant_cols.iter() {
-            let el = col.storage.clone_el_to_host(row_idx)?;
-            leaf_sources.push(el);
-        }
-
-        for col in self.table_cols.iter() {
-            let el = col.storage.clone_el_to_host(row_idx)?;
-            leaf_sources.push(el);
-        }
-
-        Ok(leaf_sources)
-    }
-}
-
-pub struct SetupPolynomials<'a, P: PolyForm> {
-    pub permutation_cols: Vec<Poly<'a, P>>,
-    pub constant_cols: Vec<Poly<'a, P>>,
-    pub table_cols: Vec<Poly<'a, P>>,
-}
-
-impl GenericSetupStorage<LagrangeBasis> {
-    pub fn fill_from_gpu_setup<A: GoodAllocator>(
-        setup: &GpuSetup<A>,
+impl GenericSetupStorage<Undefined> {
+    pub fn initialize_from_gpu_setup<H: GpuTreeHasher, A: GoodAllocator>(
+        mut self,
+        setup: &GpuSetup<H, A>,
         variable_indexes: &DVec<u32>,
         worker: &Worker,
-        mut storage: GenericSetupStorage<Undefined>,
-    ) -> CudaResult<Self> {
+    ) -> CudaResult<GenericSetupStorage<LagrangeBasis>> {
         let GpuSetup {
             constant_columns,
             lookup_tables_columns,
             variables_hint,
             ..
         } = setup;
-        let domain_size = storage.domain_size();
+        let domain_size = self.domain_size();
         assert!(domain_size.is_power_of_two());
         for col in constant_columns.iter().chain(lookup_tables_columns.iter()) {
             assert_eq!(col.len(), domain_size);
         }
         let num_copy_permutation_polys = variables_hint.len();
         let size_of_all_copy_perm_polys = num_copy_permutation_polys * domain_size;
-        let (copy_permutation_storage, remaining_polys) = storage
+        let (copy_permutation_storage, remaining_polys) = self
             .as_single_slice_mut()
             .split_at_mut(size_of_all_copy_perm_polys);
         assert_eq!(
@@ -207,30 +175,35 @@ impl GenericSetupStorage<LagrangeBasis> {
         }
         get_h2d_stream().synchronize()?;
         drop(pending_callbacks);
-        let result = unsafe { storage.transmute() };
+        let result = unsafe { self.transmute() };
         Ok(result)
     }
+}
 
-    pub fn create_from_gpu_setup<A: GoodAllocator>(
-        setup: &GpuSetup<A>,
+impl GenericSetupStorage<LagrangeBasis> {
+    pub fn create_from_gpu_setup<H: GpuTreeHasher, A: GoodAllocator>(
+        setup: &GpuSetup<H, A>,
         variable_indexes: &DVec<u32>,
         worker: &Worker,
     ) -> CudaResult<Self> {
-        let layout = setup.layout.clone();
+        let layout = setup.layout;
         let domain_size = setup.constant_columns[0].len();
         let storage = GenericSetupStorage::allocate(layout, domain_size);
-        Self::fill_from_gpu_setup(setup, variable_indexes, worker, storage)
+        storage.initialize_from_gpu_setup(setup, variable_indexes, worker)
     }
 
     #[cfg(test)]
-    pub fn from_gpu_setup(setup: &GpuSetup<Global>, worker: &Worker) -> CudaResult<Self> {
-        let layout = setup.layout.clone();
+    pub fn from_gpu_setup<H: GpuTreeHasher>(
+        setup: &GpuSetup<H, Global>,
+        worker: &Worker,
+    ) -> CudaResult<Self> {
+        let layout = setup.layout;
         let domain_size = setup.constant_columns[0].len();
         assert!(domain_size.is_power_of_two());
         let variable_indexes =
             construct_indexes_from_hint(&setup.variables_hint, domain_size, worker)?;
         let storage = GenericSetupStorage::allocate(layout, domain_size);
-        Self::fill_from_gpu_setup(setup, &variable_indexes, worker, storage)
+        storage.initialize_from_gpu_setup(setup, &variable_indexes, worker)
     }
 
     #[cfg(test)]
@@ -290,13 +263,12 @@ impl GenericSetupStorage<CosetEvaluations> {
 }
 
 pub struct SetupCacheAux {
-    tree_cap: Vec<<DefaultTreeHasher as TreeHasher<F>>::Output>,
     pub variable_indexes: DVec<u32>,
     pub witness_indexes: DVec<u32>,
 }
 
 pub fn construct_indexes_from_hint<A: GoodAllocator>(
-    hint: &Vec<Vec<u32, A>>,
+    hint: &[Vec<u32, A>],
     domain_size: usize,
     worker: &Worker,
 ) -> CudaResult<DVec<u32>> {
@@ -316,57 +288,62 @@ pub fn construct_indexes_from_hint<A: GoodAllocator>(
     Ok(indexes)
 }
 
-pub type SetupCache = StorageCache<SetupLayout, SetupCacheAux>;
+pub type SetupCache<H> = StorageCache<SetupLayout, H, SetupCacheAux>;
 
-impl SetupCache {
+impl<H: GpuTreeHasher> SetupCache<H> {
     pub fn new_from_gpu_setup<A: GoodAllocator>(
-        strategy: StorageCacheStrategy,
-        setup: &GpuSetup<A>,
+        polynomials_strategy: PolynomialsCacheStrategy,
+        commitments_strategy: CommitmentCacheStrategy,
+        setup: &GpuSetup<H, A>,
         fri_lde_degree: usize,
-        used_lde_degree: usize,
+        max_lde_degree: usize,
         worker: &Worker,
     ) -> CudaResult<&'static mut Self> {
-        let setup_tree_cap = setup.setup_tree.get_cap();
+        let setup_cap = setup.tree.last().unwrap();
         if let Some(cache) = _setup_cache_get() {
-            if cache.aux.tree_cap.eq(&setup_tree_cap) {
+            if cache.commitment_cache.tree.last().unwrap().eq(setup_cap) {
                 assert_eq!(cache.fri_lde_degree, fri_lde_degree);
-                assert_eq!(cache.used_lde_degree, used_lde_degree);
-                assert_eq!(cache.layout, setup.layout);
+                assert_eq!(cache.max_lde_degree, max_lde_degree);
+                assert_eq!(cache.polynomials_cache.layout, setup.layout);
                 println!("reusing setup cache");
                 return Ok(cache);
             }
-            _setup_cache_reset();
         }
+        _setup_cache_reset();
         let layout = setup.layout;
         let domain_size = setup.constant_columns[0].len();
         assert!(domain_size.is_power_of_two());
-        let cap_size = setup.setup_tree.cap_size;
+        let cap_size = setup_cap.len();
         let variable_indexes =
             construct_indexes_from_hint(&setup.variables_hint, domain_size, worker)?;
         let witness_indexes =
             construct_indexes_from_hint(&setup.witnesses_hint, domain_size, worker)?;
-        let evaluations =
-            GenericSetupStorage::create_from_gpu_setup(setup, &variable_indexes, worker)?;
         let aux = SetupCacheAux {
-            tree_cap: setup_tree_cap,
             variable_indexes,
             witness_indexes,
         };
-        let mut cache = StorageCache::new_and_initialize(
-            strategy,
+        let mut cache = SetupCache::allocate(
+            polynomials_strategy,
+            commitments_strategy,
             layout,
             domain_size,
             fri_lde_degree,
-            used_lde_degree,
+            max_lde_degree,
             cap_size,
+            1,
             aux,
-            evaluations,
-        )?;
-        let (_, computed_cap) = cache.get_commitment::<DefaultTreeHasher>(cap_size)?;
-        if !is_dry_run()? {
-            assert_eq!(cache.aux.tree_cap, computed_cap);
+        );
+        let mut tree = Vec::with_capacity(setup.tree.len());
+        for src_layer in setup.tree.iter() {
+            tree.push(src_layer.to_vec());
         }
-        _setup_cache_set(cache);
+        cache.commitment_cache.tree = tree;
+        let evaluations = cache
+            .polynomials_cache
+            .borrow_storage()
+            .initialize_from_gpu_setup(setup, &cache.aux.variable_indexes, worker)?;
+        cache.initialize_from_evaluations(Rc::new(evaluations))?;
+        _setup_cache_set::<H>(cache);
         Ok(_setup_cache_get().unwrap())
     }
 }

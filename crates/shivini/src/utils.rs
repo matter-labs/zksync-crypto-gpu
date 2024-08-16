@@ -11,7 +11,7 @@ pub fn bitreverse_index(n: usize, l: usize) -> usize {
     let mut r = n.reverse_bits();
     // now we need to only use the bits that originally were "last" l, so shift
 
-    r >>= (std::mem::size_of::<usize>() * 8) - l;
+    r >>= usize::BITS as usize - l;
 
     r
 }
@@ -48,8 +48,8 @@ pub fn divide_by_vanishing_poly_in_bitreversed(
     Ok(())
 }
 
-pub fn divide_by_vanishing_poly_over_coset<'a>(
-    poly: &mut Poly<'a, CosetEvaluations>,
+pub fn divide_by_vanishing_poly_over_coset(
+    poly: &mut Poly<CosetEvaluations>,
     coset_idx: usize,
     domain_size: usize,
     lde_degree: usize,
@@ -134,7 +134,7 @@ pub fn compute_coset_powers_bitreversed(domain_size: usize, lde_degree: usize) -
         base.mul_assign(&acc);
         acc.mul_assign(&lde_gen);
     }
-    crate::utils::bitreverse(&mut coset_shifts);
+    bitreverse(&mut coset_shifts);
 
     coset_shifts
 }
@@ -151,12 +151,12 @@ pub fn compute_omega_values_lde(
 
     let lde_generator = domain_generator_for_size::<F>((domain_size * lde_degree) as u64);
     let mut lde_generators = materialize_powers_serial::<F, Global>(lde_generator, lde_degree);
-    crate::utils::bitreverse(&mut lde_generators);
+    bitreverse(&mut lde_generators);
     let shift = F::multiplicative_generator();
     let mut d_lde_generators = vec![];
     for gen in lde_generators.iter_mut() {
         gen.mul_assign(&shift);
-        d_lde_generators.push(gen.clone().into());
+        d_lde_generators.push((*gen).into());
     }
 
     let mut omega_values_lde = dvec!(domain_size * lde_degree);
@@ -183,12 +183,12 @@ pub fn compute_omega_values_for_coset(
 
     let lde_generator = domain_generator_for_size::<F>((domain_size * lde_degree) as u64);
     let mut lde_generators = materialize_powers_serial::<F, Global>(lde_generator, lde_degree);
-    crate::utils::bitreverse(&mut lde_generators);
+    bitreverse(&mut lde_generators);
     let shift = F::multiplicative_generator();
     let mut d_lde_generators = vec![];
     for gen in lde_generators.iter_mut() {
         gen.mul_assign(&shift);
-        d_lde_generators.push(gen.clone().into());
+        d_lde_generators.push((*gen).into());
     }
 
     let lde_gen_for_coset = &d_lde_generators[coset_idx];

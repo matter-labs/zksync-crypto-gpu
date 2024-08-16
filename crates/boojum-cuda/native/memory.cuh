@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common.cuh"
 #include <sm_32_intrinsics.h>
 #include <type_traits>
 

@@ -1,6 +1,5 @@
 #include "goldilocks.cuh"
 #include "ops_complex.cuh"
-#include <cstdint>
 
 namespace goldilocks {
 
@@ -226,8 +225,8 @@ EXTERN __global__ void pack_variable_indexes_kernel(const uint64_t *src, uint32_
   const auto u64 = memory::load_cs(src + gid);
   const auto tuple = ptx::u64::unpack(u64);
   const uint32_t MASK = 1U << 31;
-  const auto lo = std::get<0>(tuple) & ~MASK;
-  const auto hi = std::get<1>(tuple) & MASK;
+  const auto lo = cuda::std::get<0>(tuple) & ~MASK;
+  const auto hi = cuda::std::get<1>(tuple) & MASK;
   auto u32 = lo | hi;
   memory::store_cs(dst + gid, u32);
 }
@@ -284,8 +283,8 @@ EXTERN __global__ void set_values_from_packed_bits_kernel(const uint32_t *packed
   }
 }
 
-EXTERN __global__ void fold_kernel(const base_field coset_inverse, const extension_field *challenge, const ef_double_vector_getter<ld_modifier::cs> src,
-                                   ef_double_vector_setter<st_modifier::cs> dst, const unsigned log_count) {
+EXTERN __global__ void fold_kernel(const base_field coset_inverse, const extension_field *challenge, const unsigned root_offset,
+                                   const ef_double_vector_getter<ld_modifier::cs> src, ef_double_vector_setter<st_modifier::cs> dst, const unsigned log_count) {
   const unsigned gid = blockIdx.x * blockDim.x + threadIdx.x;
   if (gid >= 1 << log_count)
     return;
@@ -294,7 +293,7 @@ EXTERN __global__ void fold_kernel(const base_field coset_inverse, const extensi
   const extension_field odd = src.get(2 * gid + 1);
   const extension_field sum = extension_field::add(even, odd);
   extension_field diff = extension_field::sub(even, odd);
-  const unsigned root_index = __brev(gid) >> (32 - OMEGA_LOG_ORDER + 1);
+  const unsigned root_index = __brev(gid + root_offset) >> (32 - OMEGA_LOG_ORDER + 1);
   const base_field root = get_power_of_w(root_index, true);
   diff = extension_field::mul(diff, base_field::mul(root, coset_inverse));
   diff = extension_field::mul(diff, *challenge);

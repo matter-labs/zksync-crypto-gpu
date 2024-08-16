@@ -1,6 +1,8 @@
 use super::*;
 
-use boojum_cuda::device_structures::{DeviceMatrix, DeviceMatrixMut, Vectorized};
+use boojum_cuda::device_structures::{
+    DeviceMatrix, DeviceMatrixMut, DeviceVectorChunkMut, Vectorized,
+};
 use boojum_cuda::extension_field::VectorizedExtensionField;
 // arithmetic operations
 use boojum_cuda::ops_cub::device_scan::*;
@@ -43,6 +45,7 @@ pub fn mul_assign(this: &mut [F], other: &[F]) -> CudaResult<()> {
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
 pub fn mul_assign_complex(
     c0_this: &mut [F],
     c1_this: &mut [F],
@@ -60,8 +63,8 @@ pub fn mul_assign_complex(
         assert_eq!(c0_this_ptr.add(domain_size), c1_this.as_ptr());
     }
     let this_ptr = c0_this_ptr as *mut VEF;
-    let mut this_slice: &mut [VEF] = unsafe { slice::from_raw_parts_mut(this_ptr, domain_size) };
-    let this_vector = unsafe { DeviceSlice::from_mut_slice(&mut this_slice) };
+    let this_slice: &mut [VEF] = unsafe { slice::from_raw_parts_mut(this_ptr, domain_size) };
+    let this_vector = unsafe { DeviceSlice::from_mut_slice(this_slice) };
 
     let c0_other_ptr = c0_other.as_ptr();
     unsafe {
@@ -69,7 +72,7 @@ pub fn mul_assign_complex(
     }
     let other_ptr = c0_other_ptr as *const VEF;
     let other_slice: &[VEF] = unsafe { slice::from_raw_parts(other_ptr, domain_size) };
-    let other_vector = unsafe { DeviceSlice::from_slice(&other_slice) };
+    let other_vector = unsafe { DeviceSlice::from_slice(other_slice) };
     if_not_dry_run! {
         mul_into_x(this_vector, other_vector, get_stream())
     }
@@ -118,6 +121,7 @@ pub fn inverse(values: &mut [F]) -> CudaResult<()> {
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
 pub fn inverse_ef(c0: &mut [F], c1: &mut [F]) -> CudaResult<()> {
     use std::slice;
     type VEF = VectorizedExtensionField;
@@ -128,9 +132,8 @@ pub fn inverse_ef(c0: &mut [F], c1: &mut [F]) -> CudaResult<()> {
         assert_eq!(c0_ptr.add(domain_size), c1.as_ptr());
     }
     let values_ptr = c0_ptr as *mut VEF;
-    let mut values_slice: &mut [VEF] =
-        unsafe { slice::from_raw_parts_mut(values_ptr, domain_size) };
-    let values_vector = unsafe { DeviceSlice::from_mut_slice(&mut values_slice) };
+    let values_slice: &mut [VEF] = unsafe { slice::from_raw_parts_mut(values_ptr, domain_size) };
+    let values_vector = unsafe { DeviceSlice::from_mut_slice(values_slice) };
     if_not_dry_run! {
         boojum_cuda::ops_complex::batch_inv_in_place(values_vector, get_stream())
     }
@@ -171,8 +174,8 @@ pub fn complex_shifted_grand_product(c0: &mut [F], c1: &mut [F], tmp: &mut [F]) 
     assert_eq!(c0.len(), c1.len());
 
     let mut values_vectorized = dvec!(2 * domain_size);
-    mem::d2d(&c0, &mut values_vectorized[..domain_size])?;
-    mem::d2d(&c1, &mut values_vectorized[domain_size..])?;
+    mem::d2d(c0, &mut values_vectorized[..domain_size])?;
+    mem::d2d(c1, &mut values_vectorized[domain_size..])?;
 
     let mut values_tuple: DVec<F> = dvec!(2 * domain_size);
 
@@ -241,7 +244,7 @@ pub fn grand_sum(values: &[F], tmp: &mut [F]) -> CudaResult<DF> {
 }
 
 pub fn evaluate_base_at_ext(values: &[F], point: &DExt) -> CudaResult<DExt> {
-    assert!(values.is_empty() == false);
+    assert!(!values.is_empty());
     let domain_size = values.len();
     assert!(domain_size.is_power_of_two());
 
@@ -253,10 +256,10 @@ pub fn evaluate_base_at_ext(values: &[F], point: &DExt) -> CudaResult<DExt> {
     let tmp_size = helpers::calculate_tmp_buffer_size_for_grand_product(2 * domain_size)?;
     let mut tmp = dvec!(tmp_size);
 
-    arith::complex_shifted_grand_product(&mut c0_values, &mut c1_values, &mut tmp)?;
+    complex_shifted_grand_product(&mut c0_values, &mut c1_values, &mut tmp)?;
 
-    arith::mul_assign(&mut c0_values, values)?;
-    arith::mul_assign(&mut c1_values, values)?;
+    mul_assign(&mut c0_values, values)?;
+    mul_assign(&mut c1_values, values)?;
 
     let tmp_size2 = helpers::calculate_tmp_buffer_size_for_grand_sum(domain_size)?;
     let mut tmp = if tmp_size2 > tmp_size {
@@ -265,8 +268,8 @@ pub fn evaluate_base_at_ext(values: &[F], point: &DExt) -> CudaResult<DExt> {
         tmp
     };
 
-    let c0 = arith::grand_sum(&c0_values, &mut tmp)?;
-    let c1 = arith::grand_sum(&c1_values, &mut tmp)?;
+    let c0 = grand_sum(&c0_values, &mut tmp)?;
+    let c1 = grand_sum(&c1_values, &mut tmp)?;
 
     let result = DExt::new(c0, c1);
 
@@ -274,7 +277,7 @@ pub fn evaluate_base_at_ext(values: &[F], point: &DExt) -> CudaResult<DExt> {
 }
 
 pub fn evaluate_ext_at_ext(values_c0: &[F], values_c1: &[F], point: &DExt) -> CudaResult<DExt> {
-    assert!(values_c0.is_empty() == false);
+    assert!(!values_c0.is_empty());
     assert_eq!(values_c0.len(), values_c1.len());
 
     let domain_size = values_c0.len();
@@ -288,19 +291,19 @@ pub fn evaluate_ext_at_ext(values_c0: &[F], values_c1: &[F], point: &DExt) -> Cu
     let tmp_size = helpers::calculate_tmp_buffer_size_for_grand_product(2 * domain_size)?;
     let mut tmp = dvec!(tmp_size);
 
-    arith::complex_shifted_grand_product(&mut tmp_c0_values, &mut tmp_c1_values, &mut tmp)?;
+    complex_shifted_grand_product(&mut tmp_c0_values, &mut tmp_c1_values, &mut tmp)?;
 
     let non_residue = DF::non_residue()?;
 
     let mut t0 = dvec!(domain_size);
-    mem::d2d(&values_c0, &mut t0)?;
+    mem::d2d(values_c0, &mut t0)?;
     let mut t1 = dvec!(domain_size);
-    mem::d2d(&values_c1, &mut t1)?;
+    mem::d2d(values_c1, &mut t1)?;
 
-    arith::mul_assign(&mut t0, &tmp_c0_values)?;
-    arith::mul_assign(&mut t1, &tmp_c1_values)?;
-    arith::scale(&mut t1, &non_residue)?;
-    arith::add_assign(&mut t0, &t1)?;
+    mul_assign(&mut t0, &tmp_c0_values)?;
+    mul_assign(&mut t1, &tmp_c1_values)?;
+    scale(&mut t1, &non_residue)?;
+    add_assign(&mut t0, &t1)?;
 
     let tmp_size2 = helpers::calculate_tmp_buffer_size_for_grand_sum(domain_size)?;
     let mut tmp = if tmp_size2 > tmp_size {
@@ -309,115 +312,33 @@ pub fn evaluate_ext_at_ext(values_c0: &[F], values_c1: &[F], point: &DExt) -> Cu
         tmp
     };
 
-    let c0 = arith::grand_sum(&t0, &mut tmp)?;
+    let c0 = grand_sum(&t0, &mut tmp)?;
 
-    mem::d2d(&values_c0, &mut t0)?;
-    mem::d2d(&values_c1, &mut t1)?;
+    mem::d2d(values_c0, &mut t0)?;
+    mem::d2d(values_c1, &mut t1)?;
 
-    arith::mul_assign(&mut t0, &tmp_c1_values)?;
-    arith::mul_assign(&mut t1, &tmp_c0_values)?;
-    arith::add_assign(&mut t0, &mut t1)?;
-    let c1 = arith::grand_sum(&t0, &mut tmp)?;
+    mul_assign(&mut t0, &tmp_c1_values)?;
+    mul_assign(&mut t1, &tmp_c0_values)?;
+    add_assign(&mut t0, &t1)?;
+    let c1 = grand_sum(&t0, &mut tmp)?;
 
     let result = DExt::new(c0, c1);
 
     Ok(result)
 }
 
-#[allow(dead_code)]
-pub fn fold(
-    c0: &[F],
-    c1: &[F],
-    dst_c0: &mut [F],
-    dst_c1: &mut [F],
-    coset_inv: DF,
-    challenge: DExt,
+pub fn fold_chunk(
+    coset_inv: F,
+    challenge: &DeviceVariable<EF>,
+    root_offset: usize,
+    src: &DVec<VectorizedExtensionField>,
+    dst: &mut DVec<VectorizedExtensionField>,
+    dst_offset: usize,
 ) -> CudaResult<()> {
-    let domain_size = c0.len();
-    let fold_size = domain_size >> 1;
-    assert!(domain_size.is_power_of_two());
-    assert!(fold_size.is_power_of_two());
-    assert_eq!(c0.len(), c1.len());
-    assert_eq!(dst_c0.len(), dst_c1.len());
-    assert_eq!(dst_c0.len(), fold_size);
-
-    let mut values = dvec!(2 * domain_size);
-    mem::d2d(c0, &mut values[..domain_size])?;
-    mem::d2d(c1, &mut values[domain_size..])?;
-
-    let values = unsafe {
-        let values = DeviceSlice::from_slice(&values[..]);
-        values.transmute::<VectorizedExtensionField>()
-    };
-
-    let mut d_challenge: SVec<EF> = svec!(1);
-    let d_challenge = unsafe {
-        mem::d2d(
-            &challenge.c0.inner[..],
-            &mut d_challenge.data[0].coeffs[..1],
-        )?;
-        mem::d2d(
-            &challenge.c1.inner[..],
-            &mut d_challenge.data[0].coeffs[1..],
-        )?;
-        DeviceVariable::from_ref(&d_challenge[0])
-    };
-
-    let mut result: DVec<F> = dvec!(2 * fold_size);
-    let result_slice = unsafe {
-        let result = DeviceSlice::from_mut_slice(&mut result);
-        result.transmute_mut()
-    };
-
-    let coset_inv = coset_inv.inner.to_vec()?;
-    if_not_dry_run!(boojum_cuda::ops_complex::fold(
-        coset_inv[0], // host data
-        &d_challenge[0],
-        values,
-        result_slice,
-        get_stream(),
-    ))?;
-
-    mem::d2d(&result[..fold_size], dst_c0)?;
-    mem::d2d(&result[fold_size..], dst_c1)?;
-
-    Ok(())
-}
-
-pub fn fold_flattened(src: &[F], dst: &mut [F], coset_inv: F, challenge: &DExt) -> CudaResult<()> {
-    let domain_size = src.len();
-    let fold_size = domain_size >> 1;
-    assert!(domain_size.is_power_of_two());
-    assert!(fold_size.is_power_of_two());
-    assert_eq!(dst.len(), fold_size);
-
-    let values = unsafe {
-        let values = DeviceSlice::from_slice(&src[..]);
-        values.transmute::<VectorizedExtensionField>()
-    };
-
-    // TODO
-    let mut d_challenge: SVec<EF> = svec!(1);
-    let d_challenge = unsafe {
-        mem::d2d(
-            &challenge.c0.inner[..],
-            &mut d_challenge.data[0].coeffs[..1],
-        )?;
-        mem::d2d(
-            &challenge.c1.inner[..],
-            &mut d_challenge.data[0].coeffs[1..],
-        )?;
-        DeviceVariable::from_ref(&d_challenge[0])
-    };
-
-    let _result: DVec<F> = dvec!(2 * fold_size);
-    let result_ref = unsafe {
-        let result = DeviceSlice::from_mut_slice(dst);
-        result.transmute_mut()
-    };
-
     if_not_dry_run! {
-        boojum_cuda::ops_complex::fold(coset_inv, &d_challenge[0], values, result_ref, get_stream())
+        let src : &DeviceSlice<VectorizedExtensionField> = src.into();
+        let mut dst = DeviceVectorChunkMut::new(dst.into(), dst_offset, src.len() >> 1);
+        boojum_cuda::ops_complex::fold(coset_inv, challenge, root_offset, src , &mut dst, get_stream())
     }
 }
 
@@ -430,7 +351,7 @@ pub fn compute_powers_ext(base: &DExt, size: usize) -> CudaResult<[DVec<F>; 2]> 
 
     let tmp_size = helpers::calculate_tmp_buffer_size_for_grand_product(2 * size)?;
     let mut tmp = dvec!(tmp_size);
-    arith::complex_shifted_grand_product(&mut powers_c0, &mut powers_c1, &mut tmp)?;
+    complex_shifted_grand_product(&mut powers_c0, &mut powers_c1, &mut tmp)?;
 
     Ok([powers_c0, powers_c1])
 }
@@ -542,13 +463,13 @@ fn barycentric_evaluate<E: boojum_cuda::barycentric::EvalImpl, A: GoodAllocator>
         let values_matrix = DeviceMatrix::new(values, domain_size);
 
         let v_bases = std::slice::from_raw_parts(bases.as_ptr() as *const _, domain_size);
-        let bases = DeviceSlice::from_slice(&v_bases);
+        let bases = DeviceSlice::from_slice(v_bases);
         (values_matrix, bases)
     };
 
     // allocate necessary tmp buffers
     let (partial_reduce_temp_elems, final_cub_reduce_temp_bytes) =
-        boojum_cuda::barycentric::get_batch_eval_temp_storage_sizes::<E>(&values_matrix).unwrap();
+        boojum_cuda::barycentric::get_batch_eval_temp_storage_sizes::<E>(&values_matrix)?;
 
     let temp_storage_partial_reduce: DVec<EF, StaticDeviceAllocator> =
         dvec!(partial_reduce_temp_elems);
@@ -587,6 +508,8 @@ fn barycentric_evaluate<E: boojum_cuda::barycentric::EvalImpl, A: GoodAllocator>
 }
 
 // TODO: Rework to accept slices
+#[allow(clippy::upper_case_acronyms)]
+#[allow(clippy::too_many_arguments)]
 pub fn partial_products_num_denom_chunk<'a>(
     num: &mut ComplexPoly<'a, LagrangeBasis>,
     denom: &mut ComplexPoly<'a, LagrangeBasis>,
@@ -613,8 +536,8 @@ pub fn partial_products_num_denom_chunk<'a>(
         );
     }
     let num_ptr = num_c0_ptr as *mut VEF;
-    let mut num_slice: &mut [VEF] = unsafe { slice::from_raw_parts_mut(num_ptr, domain_size) };
-    let num_vector = unsafe { DeviceSlice::from_mut_slice(&mut num_slice) };
+    let num_slice: &mut [VEF] = unsafe { slice::from_raw_parts_mut(num_ptr, domain_size) };
+    let num_vector = unsafe { DeviceSlice::from_mut_slice(num_slice) };
 
     assert_eq!(denom.c0.storage.len(), domain_size);
     let denom_c0_ptr = denom.c0.storage.as_ref().as_ptr();
@@ -625,29 +548,29 @@ pub fn partial_products_num_denom_chunk<'a>(
         );
     }
     let denom_ptr = denom_c0_ptr as *mut VEF;
-    let mut denom_slice: &mut [VEF] = unsafe { slice::from_raw_parts_mut(denom_ptr, domain_size) };
-    let denom_vector = unsafe { DeviceSlice::from_mut_slice(&mut denom_slice) };
+    let denom_slice: &mut [VEF] = unsafe { slice::from_raw_parts_mut(denom_ptr, domain_size) };
+    let denom_vector = unsafe { DeviceSlice::from_mut_slice(denom_slice) };
 
     assert_eq!(variable_cols_chunk.len(), num_polys);
-    let variable_cols_ptr = variable_cols_chunk[0].storage.as_ref().as_ptr() as *const F;
+    let variable_cols_ptr = variable_cols_chunk[0].storage.as_ref().as_ptr();
     let variable_cols_slice =
         unsafe { slice::from_raw_parts(variable_cols_ptr, num_polys * domain_size) };
     let variable_cols_device_slice = unsafe { DeviceSlice::from_slice(variable_cols_slice) };
     let variable_cols_matrix = DeviceMatrix::new(variable_cols_device_slice, domain_size);
 
     assert_eq!(sigma_cols_chunk.len(), num_polys);
-    let sigma_cols_ptr = sigma_cols_chunk[0].storage.as_ref().as_ptr() as *const F;
+    let sigma_cols_ptr = sigma_cols_chunk[0].storage.as_ref().as_ptr();
     let sigma_cols_slice =
         unsafe { slice::from_raw_parts(sigma_cols_ptr, num_polys * domain_size) };
     let sigma_cols_device_slice = unsafe { DeviceSlice::from_slice(sigma_cols_slice) };
     let sigma_cols_matrix = DeviceMatrix::new(sigma_cols_device_slice, domain_size);
 
     assert_eq!(omega_values.len(), domain_size);
-    let omega_values_vector = unsafe { DeviceSlice::from_slice(&omega_values) };
+    let omega_values_vector = unsafe { DeviceSlice::from_slice(omega_values) };
 
     assert_eq!(non_residues_by_beta_chunk.len(), num_polys);
     let non_residues_by_beta_vector =
-        unsafe { DeviceSlice::from_slice(&non_residues_by_beta_chunk) };
+        unsafe { DeviceSlice::from_slice(non_residues_by_beta_chunk) };
 
     let beta_c0 = unsafe { DeviceVariable::from_ref(&beta.c0.inner[0]) };
     let beta_c1 = unsafe { DeviceVariable::from_ref(&beta.c1.inner[0]) };
@@ -673,7 +596,9 @@ pub fn partial_products_num_denom_chunk<'a>(
 }
 
 // TODO: Rework to accept slices
-pub fn partial_products_quotient_terms<'a, 'b>(
+#[allow(clippy::upper_case_acronyms)]
+#[allow(clippy::too_many_arguments)]
+pub fn partial_products_quotient_terms<'a>(
     partial_products: &'a [ComplexPoly<'a, CosetEvaluations>],
     z_poly: &'a ComplexPoly<'a, CosetEvaluations>,
     variable_cols: &[Poly<'a, CosetEvaluations>],
@@ -683,7 +608,7 @@ pub fn partial_products_quotient_terms<'a, 'b>(
     non_residues_by_beta: &[EF],
     beta: &DExt,
     gamma: &DExt,
-    quotient: &mut ComplexPoly<'b, CosetEvaluations>,
+    quotient: &mut ComplexPoly<CosetEvaluations>,
     num_cols_per_product: usize,
     num_polys: usize,
     domain_size: usize,
@@ -692,8 +617,8 @@ pub fn partial_products_quotient_terms<'a, 'b>(
     type VEF = VectorizedExtensionField;
 
     // Handling empty partial products would require special-case logic.
-    // For now we don't need it. Assert as a reminder.
-    assert!(partial_products.len() > 0);
+    // For now, we don't need it. Assert as a reminder.
+    assert!(!partial_products.is_empty());
 
     let num_partial_products = ((num_polys + num_cols_per_product - 1) / num_cols_per_product) - 1;
 
@@ -714,32 +639,32 @@ pub fn partial_products_quotient_terms<'a, 'b>(
     }
     let z_poly_ptr = z_poly_c0_ptr as *const VEF;
     let z_poly_slice: &[VEF] = unsafe { slice::from_raw_parts(z_poly_ptr, domain_size) };
-    let z_poly_vector = unsafe { DeviceSlice::from_slice(&z_poly_slice) };
+    let z_poly_vector = unsafe { DeviceSlice::from_slice(z_poly_slice) };
 
     assert_eq!(variable_cols.len(), num_polys);
-    let variable_cols_ptr = variable_cols[0].storage.as_ref().as_ptr() as *const F;
+    let variable_cols_ptr = variable_cols[0].storage.as_ref().as_ptr();
     let variable_cols_slice =
         unsafe { slice::from_raw_parts(variable_cols_ptr, num_polys * domain_size) };
     let variable_cols_device_slice = unsafe { DeviceSlice::from_slice(variable_cols_slice) };
     let variable_cols_matrix = DeviceMatrix::new(variable_cols_device_slice, domain_size);
 
     assert_eq!(sigma_cols.len(), num_polys);
-    let sigma_cols_ptr = sigma_cols[0].storage.as_ref().as_ptr() as *const F;
+    let sigma_cols_ptr = sigma_cols[0].storage.as_ref().as_ptr();
     let sigma_cols_slice =
         unsafe { slice::from_raw_parts(sigma_cols_ptr, num_polys * domain_size) };
     let sigma_cols_device_slice = unsafe { DeviceSlice::from_slice(sigma_cols_slice) };
     let sigma_cols_matrix = DeviceMatrix::new(sigma_cols_device_slice, domain_size);
 
     assert_eq!(omega_values.storage.len(), domain_size);
-    let omega_values_ptr = omega_values.storage.as_ref().as_ptr() as *const F;
+    let omega_values_ptr = omega_values.storage.as_ref().as_ptr();
     let omega_values_slice = unsafe { slice::from_raw_parts(omega_values_ptr, domain_size) };
-    let omega_values_vector = unsafe { DeviceSlice::from_slice(&omega_values_slice) };
+    let omega_values_vector = unsafe { DeviceSlice::from_slice(omega_values_slice) };
 
     assert_eq!(powers_of_alpha.len(), num_partial_products + 1);
-    let powers_of_alpha_vector = unsafe { DeviceSlice::from_slice(&powers_of_alpha) };
+    let powers_of_alpha_vector = unsafe { DeviceSlice::from_slice(powers_of_alpha) };
 
     assert_eq!(non_residues_by_beta.len(), num_polys);
-    let non_residues_by_beta_vector = unsafe { DeviceSlice::from_slice(&non_residues_by_beta) };
+    let non_residues_by_beta_vector = unsafe { DeviceSlice::from_slice(non_residues_by_beta) };
 
     let beta_c0 = unsafe { DeviceVariable::from_ref(&beta.c0.inner[0]) };
     let beta_c1 = unsafe { DeviceVariable::from_ref(&beta.c1.inner[0]) };
@@ -755,9 +680,9 @@ pub fn partial_products_quotient_terms<'a, 'b>(
         );
     }
     let quotient_ptr = quotient_c0_ptr as *mut VEF;
-    let mut quotient_slice: &mut [VEF] =
+    let quotient_slice: &mut [VEF] =
         unsafe { slice::from_raw_parts_mut(quotient_ptr, domain_size) };
-    let quotient_vector = unsafe { DeviceSlice::from_mut_slice(&mut quotient_slice) };
+    let quotient_vector = unsafe { DeviceSlice::from_mut_slice(quotient_slice) };
 
     if_not_dry_run! {
         boojum_cuda::ops_complex::partial_products_quotient_terms(
@@ -780,6 +705,7 @@ pub fn partial_products_quotient_terms<'a, 'b>(
 }
 
 // TODO: Rework to accept slices
+#[allow(clippy::upper_case_acronyms)]
 pub fn lookup_aggregated_table_values<'a>(
     table_cols: &[Poly<'a, LagrangeBasis>],
     beta: &DExt,
@@ -794,7 +720,7 @@ pub fn lookup_aggregated_table_values<'a>(
     let num_polys = num_cols_per_subarg + 1;
 
     assert_eq!(table_cols.len(), num_polys);
-    let table_cols_ptr = table_cols[0].storage.as_ref().as_ptr() as *const F;
+    let table_cols_ptr = table_cols[0].storage.as_ref().as_ptr();
     let table_cols_slice =
         unsafe { slice::from_raw_parts(table_cols_ptr, num_polys * domain_size) };
     let table_cols_device_slice = unsafe { DeviceSlice::from_slice(table_cols_slice) };
@@ -804,7 +730,7 @@ pub fn lookup_aggregated_table_values<'a>(
     let beta_c1 = unsafe { DeviceVariable::from_ref(&beta.c1.inner[0]) };
 
     assert_eq!(powers_of_gamma.len(), num_polys);
-    let powers_of_gamma_vector = unsafe { DeviceSlice::from_slice(&powers_of_gamma) };
+    let powers_of_gamma_vector = unsafe { DeviceSlice::from_slice(powers_of_gamma) };
 
     assert_eq!(aggregated_table_values.c0.storage.len(), domain_size);
     let aggregated_table_values_c0_ptr = aggregated_table_values.c0.storage.as_ref().as_ptr();
@@ -815,10 +741,10 @@ pub fn lookup_aggregated_table_values<'a>(
         );
     }
     let aggregated_table_values_ptr = aggregated_table_values_c0_ptr as *mut VEF;
-    let mut aggregated_table_values_slice: &mut [VEF] =
+    let aggregated_table_values_slice: &mut [VEF] =
         unsafe { slice::from_raw_parts_mut(aggregated_table_values_ptr, domain_size) };
     let aggregated_table_values_vector =
-        unsafe { DeviceSlice::from_mut_slice(&mut aggregated_table_values_slice) };
+        unsafe { DeviceSlice::from_mut_slice(aggregated_table_values_slice) };
 
     if_not_dry_run! {
         boojum_cuda::ops_complex::lookup_aggregated_table_values(
@@ -834,6 +760,8 @@ pub fn lookup_aggregated_table_values<'a>(
 }
 
 // TODO: Rework to accept slices
+#[allow(clippy::upper_case_acronyms)]
+#[allow(clippy::too_many_arguments)]
 pub fn lookup_subargs<'a>(
     variable_cols: &[Poly<'a, LagrangeBasis>],
     subargs_a: &mut [ComplexPoly<'a, LagrangeBasis>],
@@ -857,7 +785,7 @@ pub fn lookup_subargs<'a>(
     assert_eq!(num_subargs_b, 1);
 
     assert_eq!(variable_cols.len(), num_polys);
-    let variable_cols_ptr = variable_cols[0].storage.as_ref().as_ptr() as *const F;
+    let variable_cols_ptr = variable_cols[0].storage.as_ref().as_ptr();
     let variable_cols_slice =
         unsafe { slice::from_raw_parts(variable_cols_ptr, num_polys * domain_size) };
     let variable_cols_device_slice = unsafe { DeviceSlice::from_slice(variable_cols_slice) };
@@ -881,12 +809,12 @@ pub fn lookup_subargs<'a>(
     let beta_c1 = unsafe { DeviceVariable::from_ref(&beta.c1.inner[0]) };
 
     assert_eq!(powers_of_gamma.len(), num_cols_per_subarg + 1);
-    let powers_of_gamma_vector = unsafe { DeviceSlice::from_slice(&powers_of_gamma) };
+    let powers_of_gamma_vector = unsafe { DeviceSlice::from_slice(powers_of_gamma) };
 
     assert_eq!(table_id_col.storage.len(), domain_size);
-    let table_id_col_ptr = table_id_col.storage.as_ref().as_ptr() as *const F;
+    let table_id_col_ptr = table_id_col.storage.as_ref().as_ptr();
     let table_id_col_slice = unsafe { slice::from_raw_parts(table_id_col_ptr, domain_size) };
-    let table_id_col_vector = unsafe { DeviceSlice::from_slice(&table_id_col_slice) };
+    let table_id_col_vector = unsafe { DeviceSlice::from_slice(table_id_col_slice) };
 
     assert_eq!(aggregated_table_values_inv.c0.storage.len(), domain_size);
     let aggregated_table_values_inv_c0_ptr =
@@ -901,10 +829,10 @@ pub fn lookup_subargs<'a>(
     let aggregated_table_values_inv_slice: &[VEF] =
         unsafe { slice::from_raw_parts(aggregated_table_values_inv_ptr, domain_size) };
     let aggregated_table_values_inv_vector =
-        unsafe { DeviceSlice::from_slice(&aggregated_table_values_inv_slice) };
+        unsafe { DeviceSlice::from_slice(aggregated_table_values_inv_slice) };
 
     assert_eq!(multiplicity_cols.len(), num_subargs_b);
-    let multiplicity_cols_ptr = multiplicity_cols[0].storage.as_ref().as_ptr() as *const F;
+    let multiplicity_cols_ptr = multiplicity_cols[0].storage.as_ref().as_ptr();
     let multiplicity_cols_slice =
         unsafe { slice::from_raw_parts(multiplicity_cols_ptr, num_subargs_b * domain_size) };
     let multiplicity_cols_device_slice =
@@ -929,7 +857,9 @@ pub fn lookup_subargs<'a>(
 }
 
 // TODO: Rework to accept slices
-pub fn lookup_quotient_ensure_a_and_b_are_well_formed<'a, 'b>(
+#[allow(clippy::upper_case_acronyms)]
+#[allow(clippy::too_many_arguments)]
+pub fn lookup_quotient_ensure_a_and_b_are_well_formed<'a>(
     variable_cols: &[Poly<'a, CosetEvaluations>],
     table_cols: &[Poly<'a, CosetEvaluations>],
     subargs_a: &[ComplexPoly<'a, CosetEvaluations>],
@@ -939,7 +869,7 @@ pub fn lookup_quotient_ensure_a_and_b_are_well_formed<'a, 'b>(
     powers_of_alpha: &[EF],
     table_id_col: &Poly<'a, CosetEvaluations>,
     multiplicity_cols: &[Poly<'a, CosetEvaluations>],
-    quotient: &mut ComplexPoly<'b, CosetEvaluations>,
+    quotient: &mut ComplexPoly<CosetEvaluations>,
     num_cols_per_subarg: usize,
     num_polys: usize,
     domain_size: usize,
@@ -955,14 +885,14 @@ pub fn lookup_quotient_ensure_a_and_b_are_well_formed<'a, 'b>(
     let num_cols_per_subarg_b = num_cols_per_subarg + 1;
 
     assert_eq!(variable_cols.len(), num_polys);
-    let variable_cols_ptr = variable_cols[0].storage.as_ref().as_ptr() as *const F;
+    let variable_cols_ptr = variable_cols[0].storage.as_ref().as_ptr();
     let variable_cols_slice =
         unsafe { slice::from_raw_parts(variable_cols_ptr, num_polys * domain_size) };
     let variable_cols_device_slice = unsafe { DeviceSlice::from_slice(variable_cols_slice) };
     let variable_cols_matrix = DeviceMatrix::new(variable_cols_device_slice, domain_size);
 
     assert_eq!(table_cols.len(), num_cols_per_subarg_b);
-    let table_cols_ptr = table_cols[0].storage.as_ref().as_ptr() as *const F;
+    let table_cols_ptr = table_cols[0].storage.as_ref().as_ptr();
     let table_cols_slice =
         unsafe { slice::from_raw_parts(table_cols_ptr, num_cols_per_subarg_b * domain_size) };
     let table_cols_device_slice = unsafe { DeviceSlice::from_slice(table_cols_slice) };
@@ -986,18 +916,18 @@ pub fn lookup_quotient_ensure_a_and_b_are_well_formed<'a, 'b>(
     let beta_c1 = unsafe { DeviceVariable::from_ref(&beta.c1.inner[0]) };
 
     assert_eq!(powers_of_gamma.len(), num_cols_per_subarg + 1);
-    let powers_of_gamma_vector = unsafe { DeviceSlice::from_slice(&powers_of_gamma) };
+    let powers_of_gamma_vector = unsafe { DeviceSlice::from_slice(powers_of_gamma) };
 
     assert_eq!(powers_of_alpha.len(), num_subargs_a + num_subargs_b);
-    let powers_of_alpha_vector = unsafe { DeviceSlice::from_slice(&powers_of_alpha) };
+    let powers_of_alpha_vector = unsafe { DeviceSlice::from_slice(powers_of_alpha) };
 
     assert_eq!(table_id_col.storage.len(), domain_size);
-    let table_id_col_ptr = table_id_col.storage.as_ref().as_ptr() as *const F;
+    let table_id_col_ptr = table_id_col.storage.as_ref().as_ptr();
     let table_id_col_slice = unsafe { slice::from_raw_parts(table_id_col_ptr, domain_size) };
-    let table_id_col_vector = unsafe { DeviceSlice::from_slice(&table_id_col_slice) };
+    let table_id_col_vector = unsafe { DeviceSlice::from_slice(table_id_col_slice) };
 
     assert_eq!(multiplicity_cols.len(), num_subargs_b);
-    let multiplicity_cols_ptr = multiplicity_cols[0].storage.as_ref().as_ptr() as *const F;
+    let multiplicity_cols_ptr = multiplicity_cols[0].storage.as_ref().as_ptr();
     let multiplicity_cols_slice =
         unsafe { slice::from_raw_parts(multiplicity_cols_ptr, num_subargs_b * domain_size) };
     let multiplicity_cols_device_slice =
@@ -1013,9 +943,9 @@ pub fn lookup_quotient_ensure_a_and_b_are_well_formed<'a, 'b>(
         );
     }
     let quotient_ptr = quotient_c0_ptr as *mut VEF;
-    let mut quotient_slice: &mut [VEF] =
+    let quotient_slice: &mut [VEF] =
         unsafe { slice::from_raw_parts_mut(quotient_ptr, domain_size) };
-    let quotient_vector = unsafe { DeviceSlice::from_mut_slice(&mut quotient_slice) };
+    let quotient_vector = unsafe { DeviceSlice::from_mut_slice(quotient_slice) };
 
     if_not_dry_run! {
         boojum_cuda::ops_complex::lookup_quotient_a_and_b(
@@ -1036,7 +966,9 @@ pub fn lookup_quotient_ensure_a_and_b_are_well_formed<'a, 'b>(
     }
 }
 
-pub fn deep_quotient_except_public_inputs<'a, 'b>(
+#[allow(clippy::upper_case_acronyms)]
+#[allow(clippy::too_many_arguments)]
+pub fn deep_quotient_except_public_inputs<'a>(
     variable_cols: &[Poly<'a, CosetEvaluations>],
     maybe_witness_cols: &Option<&Vec<Poly<'a, CosetEvaluations>>>,
     constant_cols: &[Poly<'a, CosetEvaluations>],
@@ -1055,14 +987,14 @@ pub fn deep_quotient_except_public_inputs<'a, 'b>(
     denom_at_z: &ComplexPoly<'a, CosetEvaluations>,
     denom_at_z_omega: &ComplexPoly<'a, CosetEvaluations>,
     maybe_denom_at_zero: &Option<Poly<'a, CosetEvaluations>>,
-    quotient: &mut ComplexPoly<'b, CosetEvaluations>,
+    quotient: &mut ComplexPoly<CosetEvaluations>,
 ) -> CudaResult<()> {
     use std::slice;
     type VEF = VectorizedExtensionField;
 
     // Handling empty partial products would require special-case logic.
-    // For now we don't need it. Assert as a reminder.
-    assert!(partial_products.len() > 0);
+    // For now, we don't need it. Assert as a reminder.
+    assert!(!partial_products.is_empty());
 
     let domain_size = z_poly.c0.storage.len();
 
@@ -1091,10 +1023,10 @@ pub fn deep_quotient_except_public_inputs<'a, 'b>(
         if let Some(multiplicity_cols) = maybe_multiplicity_cols {
             (
                 multiplicity_cols.len(),
-                multiplicity_cols[0].storage.as_ref().as_ptr() as *const F,
+                multiplicity_cols[0].storage.as_ref().as_ptr(),
             )
         } else {
-            (0 as usize, std::ptr::null::<F>())
+            (0, std::ptr::null::<F>())
         };
     let (lookup_a_polys_len, lookup_a_polys_ptr) =
         if let Some(lookup_a_polys) = maybe_lookup_a_polys {
@@ -1103,7 +1035,7 @@ pub fn deep_quotient_except_public_inputs<'a, 'b>(
                 lookup_a_polys[0].c0.storage.as_ref().as_ptr() as *const VEF,
             )
         } else {
-            (0 as usize, std::ptr::null::<VEF>())
+            (0, std::ptr::null::<VEF>())
         };
     let (lookup_b_polys_len, lookup_b_polys_ptr) =
         if let Some(lookup_b_polys) = maybe_lookup_b_polys {
@@ -1112,23 +1044,20 @@ pub fn deep_quotient_except_public_inputs<'a, 'b>(
                 lookup_b_polys[0].c0.storage.as_ref().as_ptr() as *const VEF,
             )
         } else {
-            (0 as usize, std::ptr::null::<VEF>())
+            (0, std::ptr::null::<VEF>())
         };
     let (table_cols_len, table_cols_ptr) = if let Some(table_cols) = maybe_table_cols {
-        (
-            table_cols.len(),
-            table_cols[0].storage.as_ref().as_ptr() as *const F,
-        )
+        (table_cols.len(), table_cols[0].storage.as_ref().as_ptr())
     } else {
-        (0 as usize, std::ptr::null::<F>())
+        (0, std::ptr::null::<F>())
     };
     let (witness_cols_len, witness_cols_ptr) = if let Some(witness_cols) = maybe_witness_cols {
         (
             witness_cols.len(),
-            witness_cols[0].storage.as_ref().as_ptr() as *const F,
+            witness_cols[0].storage.as_ref().as_ptr(),
         )
     } else {
-        (0 as usize, std::ptr::null::<F>())
+        (0, std::ptr::null::<F>())
     };
     let (evaluations_at_zero_len, evaluations_at_zero_ptr) = if evaluations_at_zero.is_some() {
         let evaluations_at_zero_ref = evaluations_at_zero.as_ref().expect("must exist");
@@ -1137,7 +1066,7 @@ pub fn deep_quotient_except_public_inputs<'a, 'b>(
             evaluations_at_zero_ref.as_ptr(),
         )
     } else {
-        (0 as usize, std::ptr::null::<EF>())
+        (0, std::ptr::null::<EF>())
     };
     let (denom_at_zero_len, denom_at_zero_ptr) = if maybe_denom_at_zero.is_some() {
         let denom_at_zero_ref = maybe_denom_at_zero.as_ref().expect("must exist");
@@ -1145,7 +1074,7 @@ pub fn deep_quotient_except_public_inputs<'a, 'b>(
         assert_eq!(len, domain_size);
         (len, denom_at_zero_ref.storage.as_ref().as_ptr())
     } else {
-        (0 as usize, std::ptr::null::<F>())
+        (0, std::ptr::null::<F>())
     };
 
     let mut num_terms_at_z = 0;
@@ -1173,50 +1102,59 @@ pub fn deep_quotient_except_public_inputs<'a, 'b>(
     num_terms_from_evals += evaluations_at_zero_len;
     assert_eq!(challenges.len(), num_terms_from_evals);
 
-    let variable_cols_ptr = variable_cols[0].storage.as_ref().as_ptr() as *const F;
-    let variable_cols_slice =
-        unsafe { slice::from_raw_parts(variable_cols_ptr, variable_cols.len() * domain_size) };
-    let variable_cols_device_slice = unsafe { DeviceSlice::from_slice(variable_cols_slice) };
+    let variable_cols_ptr = variable_cols[0].storage.as_ref().as_ptr();
+    let variable_cols_device_slice = unsafe {
+        DeviceSlice::from_raw_parts(variable_cols_ptr, variable_cols.len() * domain_size)
+    };
     let variable_cols_matrix = DeviceMatrix::new(variable_cols_device_slice, domain_size);
 
-    let witness_cols_slice =
-        unsafe { slice::from_raw_parts(witness_cols_ptr, witness_cols_len * domain_size) };
-    let witness_cols_device_slice = unsafe { DeviceSlice::from_slice(witness_cols_slice) };
+    let witness_cols_device_slice = if witness_cols_len == 0 {
+        DeviceSlice::empty()
+    } else {
+        unsafe { DeviceSlice::from_raw_parts(witness_cols_ptr, witness_cols_len * domain_size) }
+    };
     let witness_cols_matrix = DeviceMatrix::new(witness_cols_device_slice, domain_size);
 
-    let constant_cols_ptr = constant_cols[0].storage.as_ref().as_ptr() as *const F;
-    let constant_cols_slice =
-        unsafe { slice::from_raw_parts(constant_cols_ptr, constant_cols.len() * domain_size) };
-    let constant_cols_device_slice = unsafe { DeviceSlice::from_slice(constant_cols_slice) };
+    let constant_cols_ptr = constant_cols[0].storage.as_ref().as_ptr();
+    let constant_cols_device_slice = unsafe {
+        DeviceSlice::from_raw_parts(constant_cols_ptr, constant_cols.len() * domain_size)
+    };
     let constant_cols_matrix = DeviceMatrix::new(constant_cols_device_slice, domain_size);
 
-    let permutation_cols_ptr = permutation_cols[0].storage.as_ref().as_ptr() as *const F;
-    let permutation_cols_slice = unsafe {
-        slice::from_raw_parts(permutation_cols_ptr, permutation_cols.len() * domain_size)
+    let permutation_cols_ptr = permutation_cols[0].storage.as_ref().as_ptr();
+    let permutation_cols_device_slice = unsafe {
+        DeviceSlice::from_raw_parts(permutation_cols_ptr, permutation_cols.len() * domain_size)
     };
-    let permutation_cols_device_slice = unsafe { DeviceSlice::from_slice(permutation_cols_slice) };
     let permutation_cols_matrix = DeviceMatrix::new(permutation_cols_device_slice, domain_size);
 
-    let multiplicity_cols_slice = unsafe {
-        slice::from_raw_parts(multiplicity_cols_ptr, multiplicity_cols_len * domain_size)
+    let multiplicity_cols_device_slice = if multiplicity_cols_len == 0 {
+        DeviceSlice::empty()
+    } else {
+        unsafe {
+            DeviceSlice::from_raw_parts(multiplicity_cols_ptr, multiplicity_cols_len * domain_size)
+        }
     };
-    let multiplicity_cols_device_slice =
-        unsafe { DeviceSlice::from_slice(multiplicity_cols_slice) };
     let multiplicity_cols_matrix = DeviceMatrix::new(multiplicity_cols_device_slice, domain_size);
 
-    let lookup_a_polys_slice =
-        unsafe { slice::from_raw_parts(lookup_a_polys_ptr, lookup_a_polys_len * domain_size) };
-    let lookup_a_polys_device_slice = unsafe { DeviceSlice::from_slice(lookup_a_polys_slice) };
+    let lookup_a_polys_device_slice = if lookup_a_polys_len == 0 {
+        DeviceSlice::empty()
+    } else {
+        unsafe { DeviceSlice::from_raw_parts(lookup_a_polys_ptr, lookup_a_polys_len * domain_size) }
+    };
     let lookup_a_polys_matrix = DeviceMatrix::new(lookup_a_polys_device_slice, domain_size);
 
-    let lookup_b_polys_slice =
-        unsafe { slice::from_raw_parts(lookup_b_polys_ptr, lookup_b_polys_len * domain_size) };
-    let lookup_b_polys_device_slice = unsafe { DeviceSlice::from_slice(lookup_b_polys_slice) };
+    let lookup_b_polys_device_slice = if lookup_b_polys_len == 0 {
+        DeviceSlice::empty()
+    } else {
+        unsafe { DeviceSlice::from_raw_parts(lookup_b_polys_ptr, lookup_b_polys_len * domain_size) }
+    };
     let lookup_b_polys_matrix = DeviceMatrix::new(lookup_b_polys_device_slice, domain_size);
 
-    let table_cols_slice =
-        unsafe { slice::from_raw_parts(table_cols_ptr, table_cols_len * domain_size) };
-    let table_cols_device_slice = unsafe { DeviceSlice::from_slice(table_cols_slice) };
+    let table_cols_device_slice = if table_cols_len == 0 {
+        DeviceSlice::empty()
+    } else {
+        unsafe { DeviceSlice::from_raw_parts(table_cols_ptr, table_cols_len * domain_size) }
+    };
     let table_cols_matrix = DeviceMatrix::new(table_cols_device_slice, domain_size);
 
     let z_poly_c0_ptr = z_poly.c0.storage.as_ref().as_ptr();
@@ -1227,35 +1165,33 @@ pub fn deep_quotient_except_public_inputs<'a, 'b>(
         );
     }
     let z_poly_ptr = z_poly_c0_ptr as *const VEF;
-    let z_poly_slice: &[VEF] = unsafe { slice::from_raw_parts(z_poly_ptr, domain_size) };
-    let z_poly_vector = unsafe { DeviceSlice::from_slice(&z_poly_slice) };
+    let z_poly_vector = unsafe { DeviceSlice::from_raw_parts(z_poly_ptr, domain_size) };
 
     let partial_products_ptr = partial_products[0].c0.storage.as_ref().as_ptr() as *const VEF;
-    let partial_products_slice = unsafe {
-        slice::from_raw_parts(partial_products_ptr, partial_products.len() * domain_size)
+    let partial_products_device_slice = unsafe {
+        DeviceSlice::from_raw_parts(partial_products_ptr, partial_products.len() * domain_size)
     };
-    let partial_products_device_slice = unsafe { DeviceSlice::from_slice(partial_products_slice) };
     let partial_products_matrix = DeviceMatrix::new(partial_products_device_slice, domain_size);
 
     let quotient_constraint_polys_ptr =
         quotient_constraint_polys[0].c0.storage.as_ref().as_ptr() as *const VEF;
-    let quotient_constraint_polys_slice = unsafe {
-        slice::from_raw_parts(
+    let quotient_constraint_polys_device_slice = unsafe {
+        DeviceSlice::from_raw_parts(
             quotient_constraint_polys_ptr,
             quotient_constraint_polys.len() * domain_size,
         )
     };
-    let quotient_constraint_polys_device_slice =
-        unsafe { DeviceSlice::from_slice(quotient_constraint_polys_slice) };
     let quotient_constraint_polys_matrix =
         DeviceMatrix::new(quotient_constraint_polys_device_slice, domain_size);
 
-    let evaluations_at_z_vector = unsafe { DeviceSlice::from_slice(&evaluations_at_z) };
-    let evaluations_at_z_omega_vector = unsafe { DeviceSlice::from_slice(&evaluations_at_z_omega) };
-    let evaluations_at_zero_slice =
-        unsafe { slice::from_raw_parts(evaluations_at_zero_ptr, evaluations_at_zero_len) };
-    let evaluations_at_zero_vector = unsafe { DeviceSlice::from_slice(evaluations_at_zero_slice) };
-    let challenges_vector = unsafe { DeviceSlice::from_slice(&challenges) };
+    let evaluations_at_z_vector = unsafe { DeviceSlice::from_slice(evaluations_at_z) };
+    let evaluations_at_z_omega_vector = unsafe { DeviceSlice::from_slice(evaluations_at_z_omega) };
+    let evaluations_at_zero_vector = if evaluations_at_zero_len == 0 {
+        DeviceSlice::empty()
+    } else {
+        unsafe { DeviceSlice::from_raw_parts(evaluations_at_zero_ptr, evaluations_at_zero_len) }
+    };
+    let challenges_vector = unsafe { DeviceSlice::from_slice(challenges) };
 
     let denom_at_z_c0_ptr = denom_at_z.c0.storage.as_ref().as_ptr();
     unsafe {
@@ -1266,7 +1202,7 @@ pub fn deep_quotient_except_public_inputs<'a, 'b>(
     }
     let denom_at_z_ptr = denom_at_z_c0_ptr as *const VEF;
     let denom_at_z_slice: &[VEF] = unsafe { slice::from_raw_parts(denom_at_z_ptr, domain_size) };
-    let denom_at_z_vector = unsafe { DeviceSlice::from_slice(&denom_at_z_slice) };
+    let denom_at_z_vector = unsafe { DeviceSlice::from_slice(denom_at_z_slice) };
 
     let denom_at_z_omega_c0_ptr = denom_at_z_omega.c0.storage.as_ref().as_ptr();
     unsafe {
@@ -1278,11 +1214,13 @@ pub fn deep_quotient_except_public_inputs<'a, 'b>(
     let denom_at_z_omega_ptr = denom_at_z_omega_c0_ptr as *const VEF;
     let denom_at_z_omega_slice: &[VEF] =
         unsafe { slice::from_raw_parts(denom_at_z_omega_ptr, domain_size) };
-    let denom_at_z_omega_vector = unsafe { DeviceSlice::from_slice(&denom_at_z_omega_slice) };
+    let denom_at_z_omega_vector = unsafe { DeviceSlice::from_slice(denom_at_z_omega_slice) };
 
-    let denom_at_zero_slice =
-        unsafe { slice::from_raw_parts(denom_at_zero_ptr, denom_at_zero_len) };
-    let denom_at_zero_vector = unsafe { DeviceSlice::from_slice(&denom_at_zero_slice) };
+    let denom_at_zero_vector = if denom_at_zero_len == 0 {
+        DeviceSlice::empty()
+    } else {
+        unsafe { DeviceSlice::from_raw_parts(denom_at_zero_ptr, denom_at_zero_len) }
+    };
 
     let quotient_c0_ptr = quotient.c0.storage.as_ref().as_ptr();
     unsafe {
@@ -1292,9 +1230,7 @@ pub fn deep_quotient_except_public_inputs<'a, 'b>(
         );
     }
     let quotient_ptr = quotient_c0_ptr as *mut VEF;
-    let mut quotient_slice: &mut [VEF] =
-        unsafe { slice::from_raw_parts_mut(quotient_ptr, domain_size) };
-    let quotient_vector = unsafe { DeviceSlice::from_mut_slice(&mut quotient_slice) };
+    let quotient_vector = unsafe { DeviceSlice::from_raw_parts_mut(quotient_ptr, domain_size) };
 
     if_not_dry_run! {
         boojum_cuda::ops_complex::deep_quotient_except_public_inputs(
@@ -1322,11 +1258,12 @@ pub fn deep_quotient_except_public_inputs<'a, 'b>(
     }
 }
 
-pub fn deep_quotient_public_input<'a, 'b>(
-    values: &Poly<'a, CosetEvaluations>,
+#[allow(clippy::upper_case_acronyms)]
+pub fn deep_quotient_public_input(
+    values: &Poly<CosetEvaluations>,
     expected_value: F,
     challenge: &[EF],
-    quotient: &mut ComplexPoly<'b, CosetEvaluations>,
+    quotient: &mut ComplexPoly<CosetEvaluations>,
 ) -> CudaResult<()> {
     use std::slice;
     type VEF = VectorizedExtensionField;
@@ -1335,11 +1272,11 @@ pub fn deep_quotient_public_input<'a, 'b>(
 
     let domain_size = values.storage.len();
 
-    let values_ptr = values.storage.as_ref().as_ptr() as *const F;
+    let values_ptr = values.storage.as_ref().as_ptr();
     let values_slice = unsafe { slice::from_raw_parts(values_ptr, domain_size) };
-    let values_vector = unsafe { DeviceSlice::from_slice(&values_slice) };
+    let values_vector = unsafe { DeviceSlice::from_slice(values_slice) };
 
-    let challenge_vector = unsafe { DeviceSlice::from_slice(&challenge) };
+    let challenge_vector = unsafe { DeviceSlice::from_slice(challenge) };
 
     assert_eq!(quotient.c0.storage.len(), domain_size);
     let quotient_c0_ptr = quotient.c0.storage.as_ref().as_ptr();
@@ -1350,9 +1287,9 @@ pub fn deep_quotient_public_input<'a, 'b>(
         );
     }
     let quotient_ptr = quotient_c0_ptr as *mut VEF;
-    let mut quotient_slice: &mut [VEF] =
+    let quotient_slice: &mut [VEF] =
         unsafe { slice::from_raw_parts_mut(quotient_ptr, domain_size) };
-    let quotient_vector = unsafe { DeviceSlice::from_mut_slice(&mut quotient_slice) };
+    let quotient_vector = unsafe { DeviceSlice::from_mut_slice(quotient_slice) };
 
     if_not_dry_run! {
         boojum_cuda::ops_complex::deep_quotient_public_input(

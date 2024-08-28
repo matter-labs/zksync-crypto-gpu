@@ -2,9 +2,11 @@ name: Test on GPU
 
 on:
   pull_request:
-    branches: [ main ]
-  push:
-    branches: [ main ]
+    paths:
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/test-gpu.yaml"
 
 jobs:
   zksync-crypto-gpu-build:

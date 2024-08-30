@@ -19,6 +19,7 @@ gpu-ffi = { version = "=0.150.4", path = "crates/gpu-ffi", package = "zksync-gpu
 gpu-prover = { version = "=0.150.4", path = "crates/gpu-prover", package = "zksync-gpu-prover" }
 shivini = { version = "=0.150.4", path = "crates/shivini" }
 wrapper-prover = { version = "=0.150.4", path = "crates/wrapper-prover", package = "zksync-wrapper-prover" }
+fflonk-gpu = { version = "=0.150.4", path = "crates/fflonk", package = "fflonk-gpu" }
 
 # These dependencies should be shared by all the crates.
 circuit_definitions = { version = "=0.150.4" }

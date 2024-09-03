@@ -60,7 +60,10 @@ fn test_proof_comparison_for_poseidon_gate_with_private_witnesses() {
         prover_config.merkle_tree_cap_size,
     );
     let domain_size = setup_cs.max_trace_len;
-    let _ctx = ProverContext::dev(domain_size).expect("init gpu prover context");
+    let _ctx = ProverContext::create_with_config(
+        ProverContextConfig::default().with_smallest_supported_domain_size(domain_size),
+    )
+    .expect("init gpu prover context");
     let gpu_setup = GpuSetup::<Global>::from_setup_and_hints(
         setup_base.clone(),
         clone_reference_tree(&setup_tree),
@@ -225,7 +228,8 @@ fn test_permutation_polys() {
     let expected_permutation_polys = setup_base.copy_permutation_polys.clone();
 
     let domain_size = setup_cs.max_trace_len;
-    let _ctx = ProverContext::dev(domain_size).expect("init gpu prover context");
+    let cfg = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
+    let _ctx = ProverContext::create_with_config(cfg).expect("init gpu prover context");
 
     let num_copy_permutation_polys = variables_hint.maps.len();
     let gpu_setup = GpuSetup::<Global>::from_setup_and_hints(
@@ -289,7 +293,8 @@ fn test_setup_comparison() {
     let _expected_permutation_polys = setup_base.copy_permutation_polys.clone();
 
     let domain_size = setup_cs.max_trace_len;
-    let _ctx = ProverContext::dev(domain_size).expect("init gpu prover context");
+    let cfg = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
+    let _ctx = ProverContext::create_with_config(cfg).expect("init gpu prover context");
 
     let expected_setup = GenericSetupStorage::from_host_values(&setup_base).unwrap();
 
@@ -424,7 +429,8 @@ fn test_proof_comparison_for_sha256() {
         prover_config.merkle_tree_cap_size,
     );
     let domain_size = setup_cs.max_trace_len;
-    let _ctx = ProverContext::dev(domain_size).expect("init gpu prover context");
+    let cfg = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
+    let _ctx = ProverContext::create_with_config(cfg).expect("init gpu prover context");
     let gpu_setup = GpuSetup::<Global>::from_setup_and_hints(
         setup_base.clone(),
         clone_reference_tree(&setup_tree),
@@ -1222,7 +1228,11 @@ mod zksync {
             for i in 0..40 {
                 let num_blocks = 2560 - i * 64;
                 println!("num_blocks = {num_blocks}");
-                let ctx = ProverContext::create_limited(num_blocks).expect("gpu prover context");
+                let max_device_allocation =
+                    (num_blocks * size_of::<F>()) << ZKSYNC_DEFAULT_TRACE_LOG_LENGTH;
+                let cfg = ProverContextConfig::default()
+                    .with_maximum_device_allocation(max_device_allocation);
+                let ctx = ProverContext::create_with_config(cfg).expect("gpu prover context");
                 // technically not needed because CacheStrategy::get calls it internally,
                 // but nice for peace of mind
                 _setup_cache_reset();
@@ -1365,7 +1375,8 @@ mod zksync {
             proof_config.merkle_tree_cap_size,
         );
         let domain_size = setup_cs.max_trace_len;
-        let _ctx = ProverContext::dev(domain_size).expect("init gpu prover context");
+        let cfg = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
+        let _ctx = ProverContext::create_with_config(cfg).expect("init gpu prover context");
         let (proving_cs, _) = init_or_synth_cs_for_sha256::<ProvingCSConfig, Global, true>(
             finalization_hint.as_ref(),
         );

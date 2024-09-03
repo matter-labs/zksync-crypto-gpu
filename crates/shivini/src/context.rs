@@ -35,7 +35,60 @@ static mut CONTEXT: Option<ProverContextSingleton> = None;
 
 pub struct ProverContext;
 
-pub const ZKSYNC_DEFAULT_TRACE_LOG_LENGTH: usize = 20;
+pub const ZKSYNC_DEFAULT_TRACE_LOG_LENGTH: u32 = 20;
+
+#[derive(Copy, Clone, Debug)]
+pub struct ProverContextConfig {
+    // minimum and maximum device allocations are in bytes
+    minimum_device_allocation: Option<usize>,
+    maximum_device_allocation: Option<usize>,
+    smallest_supported_domain_size: usize,
+    powers_of_w_coarse_log_count: u32,
+    powers_of_g_coarse_log_count: u32,
+}
+
+impl Default for ProverContextConfig {
+    fn default() -> Self {
+        Self {
+            minimum_device_allocation: None,
+            maximum_device_allocation: None,
+            smallest_supported_domain_size: 1 << ZKSYNC_DEFAULT_TRACE_LOG_LENGTH,
+            powers_of_w_coarse_log_count: 12,
+            powers_of_g_coarse_log_count: 12,
+        }
+    }
+}
+
+impl ProverContextConfig {
+    pub fn with_minimum_device_allocation(mut self, minimum_device_allocation: usize) -> Self {
+        self.minimum_device_allocation = Some(minimum_device_allocation);
+        self
+    }
+
+    pub fn with_maximum_device_allocation(mut self, maximum_device_allocation: usize) -> Self {
+        self.maximum_device_allocation = Some(maximum_device_allocation);
+        self
+    }
+
+    pub fn with_smallest_supported_domain_size(
+        mut self,
+        smallest_supported_domain_size: usize,
+    ) -> Self {
+        assert!(smallest_supported_domain_size.is_power_of_two());
+        self.smallest_supported_domain_size = smallest_supported_domain_size;
+        self
+    }
+
+    pub fn with_powers_of_w_coarse_log_count(mut self, powers_of_w_coarse_log_count: u32) -> Self {
+        self.powers_of_w_coarse_log_count = powers_of_w_coarse_log_count;
+        self
+    }
+
+    pub fn with_powers_of_g_coarse_log_count(mut self, powers_of_g_coarse_log_count: u32) -> Self {
+        self.powers_of_g_coarse_log_count = powers_of_g_coarse_log_count;
+        self
+    }
+}
 
 impl ProverContext {
     fn create_internal(
@@ -100,50 +153,26 @@ impl ProverContext {
     }
 
     pub fn create() -> CudaResult<Self> {
-        // size counts in field elements
-        let block_size = 1 << ZKSYNC_DEFAULT_TRACE_LOG_LENGTH;
-        let cuda_ctx = CudaContext::create(12, 12)?;
-        // grab small slice then consume everything
-        let small_device_alloc = SmallStaticDeviceAllocator::init()?;
-        let device_alloc = StaticDeviceAllocator::init_all(block_size)?;
-        let small_host_alloc = SmallStaticHostAllocator::init()?;
-        let host_alloc = StaticHostAllocator::init(1 << 8, block_size)?;
-        Self::create_internal(
-            cuda_ctx,
-            small_device_alloc,
-            device_alloc,
-            small_host_alloc,
-            host_alloc,
-        )
+        Self::create_with_config(ProverContextConfig::default())
     }
 
-    #[cfg(test)]
-    pub(crate) fn create_limited(num_blocks: usize) -> CudaResult<Self> {
+    pub fn create_with_config(config: ProverContextConfig) -> CudaResult<Self> {
         // size counts in field elements
-        let block_size = 1 << ZKSYNC_DEFAULT_TRACE_LOG_LENGTH;
-        let cuda_ctx = CudaContext::create(12, 12)?;
-        // grab small slice then consume everything
-        let small_device_alloc = SmallStaticDeviceAllocator::init()?;
-        let device_alloc = StaticDeviceAllocator::init(num_blocks, num_blocks, block_size)?;
-        let small_host_alloc = SmallStaticHostAllocator::init()?;
-        let host_alloc = StaticHostAllocator::init(1 << 8, block_size)?;
-        Self::create_internal(
-            cuda_ctx,
-            small_device_alloc,
-            device_alloc,
-            small_host_alloc,
-            host_alloc,
-        )
-    }
-
-    #[cfg(test)]
-    pub(crate) fn dev(domain_size: usize) -> CudaResult<Self> {
-        assert!(domain_size.is_power_of_two());
-        // size counts in field elements
-        let block_size = domain_size;
+        let block_size = config.smallest_supported_domain_size;
+        let block_size_in_bytes = block_size * size_of::<F>();
         let cuda_ctx = CudaContext::create(12, 12)?;
         let small_device_alloc = SmallStaticDeviceAllocator::init()?;
-        let device_alloc = StaticDeviceAllocator::init_all(block_size)?;
+        let min_num_blocks = if let Some(min) = config.minimum_device_allocation {
+            min / block_size_in_bytes
+        } else {
+            DEFAULT_MIN_NUM_BLOCKS
+        };
+        let device_alloc = if let Some(max) = config.maximum_device_allocation {
+            let max_num_blocks = max / block_size_in_bytes;
+            StaticDeviceAllocator::init(min_num_blocks, max_num_blocks, block_size)?
+        } else {
+            StaticDeviceAllocator::init_all(min_num_blocks, block_size)?
+        };
         let small_host_alloc = SmallStaticHostAllocator::init()?;
         let host_alloc = StaticHostAllocator::init(1 << 8, block_size)?;
         Self::create_internal(

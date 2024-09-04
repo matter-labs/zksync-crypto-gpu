@@ -802,6 +802,7 @@ mod zksync {
     use crate::cs::PACKED_PLACEHOLDER_BITMASK;
     use boojum::cs::implementations::fast_serialization::MemcopySerializable;
     use circuit_definitions::circuit_definitions::base_layer::ZkSyncBaseLayerCircuit;
+    use era_cudart::memory::memory_get_info;
     use era_cudart_sys::CudaError;
 
     pub type ZksyncProof = Proof<F, DefaultTreeHasher, GoldilocksExt2>;
@@ -1576,5 +1577,50 @@ mod zksync {
 
         let data = std::fs::read(circuit_file_path).expect("circuit file");
         bincode::deserialize(&data).expect("circuit")
+    }
+
+    #[serial]
+    #[test]
+    #[ignore]
+    fn context_config_default() -> CudaResult<()> {
+        const SLACK: usize = 1 << 26; // 64MB
+        let (free_before, _) = memory_get_info()?;
+        dbg!(free_before);
+        let cfg = ProverContextConfig::default();
+        let _ctx = ProverContext::create_with_config(cfg)?;
+        let (free_after, _) = memory_get_info()?;
+        dbg!(free_after);
+        assert!(free_after < SLACK);
+        Ok(())
+    }
+
+    #[serial]
+    #[test]
+    #[ignore]
+    fn context_config_with_maximum_device_allocation() -> CudaResult<()> {
+        const MAX: usize = 1 << 32; // 4GB
+        const SLACK: usize = 1 << 26; // 64MB
+        let (free_before, _) = memory_get_info()?;
+        dbg!(free_before);
+        let cfg = ProverContextConfig::default().with_maximum_device_allocation(MAX);
+        let _ctx = ProverContext::create_with_config(cfg)?;
+        let (free_after, _) = memory_get_info()?;
+        dbg!(free_after);
+        assert!(free_before - free_after > MAX);
+        assert!(free_before - free_after < MAX + SLACK);
+        Ok(())
+    }
+
+    #[serial]
+    #[test]
+    #[should_panic]
+    #[ignore]
+    fn context_config_with_minimum_device_allocation() {
+        const SLACK: usize = 1 << 28; // 256MB
+        let (free_before, _) = memory_get_info().unwrap();
+        dbg!(free_before);
+        let min = free_before + SLACK;
+        let cfg = ProverContextConfig::default().with_minimum_device_allocation(min);
+        let _ctx = ProverContext::create_with_config(cfg).unwrap();
     }
 }

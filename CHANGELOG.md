@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.150.6](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.150.5...v0.150.6) (2024-09-04)
+
+
+### Bug Fixes
+
+* **shivini:** pub use ProverContextConfig ([#20](https://github.com/matter-labs/zksync-crypto-gpu/issues/20)) ([fb3c8e7](https://github.com/matter-labs/zksync-crypto-gpu/commit/fb3c8e7f36998fe3ab37a67dc808d7b4624e87a4))
+
 ## [0.150.5](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.150.4...v0.150.5) (2024-09-04)
 
 

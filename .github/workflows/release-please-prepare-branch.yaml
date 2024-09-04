@@ -7,8 +7,6 @@ env:
   EXPECTED_COMMIT_MESSAGE: "Update version in Cargo.toml"
   CARGO_TERM_COLOR: "always"
   CARGO_INCREMENTAL: "0"
-  RUSTC_WRAPPER: "sccache"
-  SCCACHE_GHA_ENABLED: "true"
   # Rust version to use.
   nightly: nightly-2024-08-01
 
@@ -36,15 +34,10 @@ jobs:
           fi
     
   update_version:
-    runs-on: [ubuntu-22.04-github-hosted-32core]
+    runs-on: [ubuntu-latest]
     name: "release-please: Update version in Cargo.toml"
     needs: [check_state]
     if: ${{ needs.check_state.outputs.already_committed != 'true' }}
-    container:
-      image: nvidia/cuda:12.5.0-devel-ubuntu20.04
-    env:
-      BELLMAN_CUDA_DIR: ${{ github.workspace }}/bellman-cuda
-      CUDAARCHS: 89
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4
         with:
@@ -73,44 +66,3 @@ jobs:
           git add ./Cargo.toml
           git commit -m "$EXPECTED_COMMIT_MESSAGE"
           git push
-      
-      - name: Prepare environment
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          apt update && apt install -y \
-            pkg-config libclang-dev build-essential lldb lld \
-            clang openssl libssl-dev gcc g++ wget curl jq
-          echo "/usr/local/nvidia/bin:/usr/local/cuda/bin" >> $GITHUB_PATH
-
-      - name: Setup CMake
-        run: |
-          curl -LO https://github.com/Kitware/CMake/releases/download/v3.24.3/cmake-3.24.3-linux-x86_64.sh && \
-            chmod +x cmake-3.24.3-linux-x86_64.sh && \
-            ./cmake-3.24.3-linux-x86_64.sh --skip-license --prefix=/usr/local
-
-      - name: Prepare bellman-cuda directory
-        shell: bash
-        # Curl ugliness is required because gh can't work with authentication: https://github.com/cli/cli/issues/2680.
-        run: |
-          release=($(curl --silent https://api.github.com/repos/matter-labs/era-bellman-cuda/releases | jq -r '.[0] | .name, .tarball_url, .assets[0].browser_download_url'))
-          curl --silent -L "${release[1]}" --output bellman-cuda-source.tar.gz
-          curl --silent -L "${release[2]}" --output bellman-cuda.tar.gz
-          mkdir -p bellman-cuda
-          tar xvfz bellman-cuda.tar.gz -C ./bellman-cuda
-          tar xvfz bellman-cuda-source.tar.gz -C ./bellman-cuda --strip-components=1 --wildcards \*/src/
-
-      - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.4
-
-      - name: Build each package separately
-        run: cargo ws exec cargo build
-
-      - name: List owners for new packages
-        run: |
-          for PKG in $(cargo ws list); do
-            PACKAGE_OWNERS=$(cargo owner --list --quiet $PKG)
-            echo "Package $PKG is owned by:"
-            echo "$PACKAGE_OWNERS"
-            echo "----"
-          done

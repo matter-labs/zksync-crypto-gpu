@@ -50,13 +50,14 @@ jobs:
           # Remove default `-D warnings`. This is a temporary measure.
           rustflags: ""
 
-      - name: Install cargo-workspaces
-        run: cargo install cargo-workspaces
+      # cargo-workspaces fails to update versions in this repository for some reason.
+      - name: Install cargo-edit
+        run: cargo install cargo-edit
 
       - name: Bump version
         run: |
           NEW_VERSION=$(cat .github/release-please/manifest.json | jq -r '."."')
-          cargo ws version custom $NEW_VERSION --yes --no-git-commit --exact
+          cargo-set-version set-version $NEW_VERSION --workspace
 
       - name: Push changes
         run: |

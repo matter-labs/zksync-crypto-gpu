@@ -6,19 +6,19 @@ resolver = "2"
 
 [workspace.package]
 # All the packages in the workspace should have the same version
-version = "0.150.4"
+version = "0.150.5"
 
 [workspace.dependencies]
 # Local dependencies
 bindings-generator = { version = "=0.150.4", path = "crates/bindings-generator" }
-boojum-cuda = { version = "=0.150.4", path = "crates/boojum-cuda" }
+boojum-cuda = { version = "=0.150.5", path = "crates/boojum-cuda" }
 era_criterion_cuda = { version = "=0.150.4", path = "crates/criterion-cuda" }
-era_cudart = { version = "=0.150.4", path = "crates/cudart" }
-era_cudart_sys = { version = "=0.150.4", path = "crates/cudart-sys" }
-gpu-ffi = { version = "=0.150.4", path = "crates/gpu-ffi", package = "zksync-gpu-ffi" }
-gpu-prover = { version = "=0.150.4", path = "crates/gpu-prover", package = "zksync-gpu-prover" }
-shivini = { version = "=0.150.4", path = "crates/shivini" }
-wrapper-prover = { version = "=0.150.4", path = "crates/wrapper-prover", package = "zksync-wrapper-prover" }
+era_cudart = { version = "=0.150.5", path = "crates/cudart" }
+era_cudart_sys = { version = "=0.150.5", path = "crates/cudart-sys" }
+gpu-ffi = { version = "=0.150.5", path = "crates/gpu-ffi", package = "zksync-gpu-ffi" }
+gpu-prover = { version = "=0.150.5", path = "crates/gpu-prover", package = "zksync-gpu-prover" }
+shivini = { version = "=0.150.5", path = "crates/shivini" }
+wrapper-prover = { version = "=0.150.5", path = "crates/wrapper-prover", package = "zksync-wrapper-prover" }
 
 # These dependencies should be shared by all the crates.
 circuit_definitions = { version = "=0.150.4" }

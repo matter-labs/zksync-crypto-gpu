@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.150.7](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.150.6...v0.150.7) (2024-09-06)
+
+
+### Features
+
+* Bump protocol and crypto deps ([#23](https://github.com/matter-labs/zksync-crypto-gpu/issues/23)) ([e15fdd2](https://github.com/matter-labs/zksync-crypto-gpu/commit/e15fdd2720827e45cfb895debc078c6514b9cbaa))
+
 ## [0.150.6](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.150.5...v0.150.6) (2024-09-04)
 
 

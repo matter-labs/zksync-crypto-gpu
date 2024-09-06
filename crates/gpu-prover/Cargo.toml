@@ -12,10 +12,11 @@ description = "ZKsync GPU prover utilities"
 
 [dependencies]
 gpu-ffi.workspace = true
+franklin-crypto = { workspace = true, optional = true }
+
 crossbeam = "0.8"
 rand = "0.4"
 num_cpus = "1"
-franklin-crypto = { version = "=0.2.2", optional = true }
 itertools = "0.10"
 cfg-if = "1"
 bit-vec = "0.6"

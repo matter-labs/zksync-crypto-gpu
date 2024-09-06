@@ -12,7 +12,7 @@ description = "Shvini is a library implementing a GPU-accelerated zkSync prover"
 exclude = ["/test_data"]
 
 [dependencies]
-boojum = "=0.2.2"
+boojum.workspace = true
 boojum-cuda.workspace = true
 era_cudart.workspace = true
 era_cudart_sys.workspace = true

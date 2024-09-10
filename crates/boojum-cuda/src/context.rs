@@ -9,7 +9,7 @@ use era_cudart_sys::{cudaMemcpyToSymbol, cuda_struct_and_stub, CudaMemoryCopyKin
 use std::mem::size_of;
 use std::os::raw::c_void;
 
-pub const OMEGA_LOG_ORDER: u32 = 29;
+pub const OMEGA_LOG_ORDER: u32 = 24;
 
 #[repr(C)]
 struct PowersLayerData {

@@ -66,4 +66,5 @@ type DefaultTranscript = GoldilocksPoisedon2Transcript;
 type DefaultTreeHasher = GoldilocksPoseidon2Sponge<AbsorptionModeOverwrite>;
 use boojum::cs::traits::GoodAllocator;
 pub use context::ProverContext;
+pub use context::ProverContextConfig;
 pub use prover::gpu_prove_from_external_witness_data;

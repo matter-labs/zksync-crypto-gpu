@@ -994,6 +994,15 @@ extern "C" {
     ) -> bc_error;
 }
 extern "C" {
+    pub fn pn_distribute_values(
+        src: *const ::std::os::raw::c_void,
+        dst: *mut ::std::os::raw::c_void,
+        count: ::std::os::raw::c_uint,
+        stride: ::std::os::raw::c_uint,
+        stream: bc_stream,
+    ) -> bc_error;
+}
+extern "C" {
     pub fn pn_tear_down() -> bc_error;
 }
 extern "C" {

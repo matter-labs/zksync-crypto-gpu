@@ -640,10 +640,11 @@ where
         &mut sparse_product_monomial.as_mut()[..h_sparse_product.len()],
         stream,
     )?;
-    divide_by_chunking_in_values(
+    divide_in_values(
         &mut w_monomial,
         &sparse_product_monomial,
         domain_size,
+        padded_degree,
         stream,
     )?;
 
@@ -681,7 +682,7 @@ where
     // L(x) = Z_T\S0(y)(C0(x) - r0(y)) + alpha*Z_T\S1(y)(C1(x) - r1(y)) + alpha^2*Z_T\S2(y)(C2(x) - r2(y)) - Z_t(y)*W(x)
     // W'(x) = L(x)/(x-y)
     let degree = 9 * domain_size;
-
+    let padded_degree = degree.next_power_of_two();
     assert_eq!(c0.size(), degree);
     assert_eq!(c1.size(), degree);
     assert_eq!(c2.size(), degree);
@@ -705,7 +706,13 @@ where
     let h_divisor = [h_y_negated, F::one()];
     let mut divisor = Poly::zero(2, stream);
     mem::h2d_on_stream(&h_divisor, divisor.as_mut(), stream)?;
-    divide_by_chunking_in_values(&mut w_prime_monomial, &divisor, domain_size, stream)?;
+    divide_in_values(
+        &mut w_prime_monomial,
+        &divisor,
+        padded_degree,
+        domain_size,
+        stream,
+    )?;
 
     Ok(w_prime_monomial)
 }

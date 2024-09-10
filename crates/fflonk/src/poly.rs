@@ -136,6 +136,12 @@ impl<F: PrimeField> Poly<F, MonomialBasis> {
         todo!()
     }
 
+    pub fn lde(&self, lde_factor: usize, stream: bc_stream) -> CudaResult<Poly<F, LDE>> {
+        assert_eq!(lde_factor, 16);
+
+        todo!()
+    }
+
     pub fn coset_fft_on(
         &self,
         coset_idx: usize,
@@ -161,6 +167,10 @@ impl<F: PrimeField> Poly<F, MonomialBasis> {
 }
 
 impl<F: PrimeField> Poly<F, LDE> {
+    pub fn mul_assign_on(&mut self, other: &Self, stream: bc_stream) -> CudaResult<()> {
+        todo!()
+    }
+
     pub fn icoset_fft_on(&self, stream: bc_stream) -> CudaResult<Poly<F, MonomialBasis>> {
         todo!()
     }

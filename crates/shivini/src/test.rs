@@ -60,7 +60,10 @@ fn test_proof_comparison_for_poseidon_gate_with_private_witnesses() {
         prover_config.merkle_tree_cap_size,
     );
     let domain_size = setup_cs.max_trace_len;
-    let _ctx = ProverContext::dev(domain_size).expect("init gpu prover context");
+    let _ctx = ProverContext::create_with_config(
+        ProverContextConfig::default().with_smallest_supported_domain_size(domain_size),
+    )
+    .expect("init gpu prover context");
     let gpu_setup = GpuSetup::<Global>::from_setup_and_hints(
         setup_base.clone(),
         clone_reference_tree(&setup_tree),
@@ -225,7 +228,8 @@ fn test_permutation_polys() {
     let expected_permutation_polys = setup_base.copy_permutation_polys.clone();
 
     let domain_size = setup_cs.max_trace_len;
-    let _ctx = ProverContext::dev(domain_size).expect("init gpu prover context");
+    let cfg = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
+    let _ctx = ProverContext::create_with_config(cfg).expect("init gpu prover context");
 
     let num_copy_permutation_polys = variables_hint.maps.len();
     let gpu_setup = GpuSetup::<Global>::from_setup_and_hints(
@@ -289,7 +293,8 @@ fn test_setup_comparison() {
     let _expected_permutation_polys = setup_base.copy_permutation_polys.clone();
 
     let domain_size = setup_cs.max_trace_len;
-    let _ctx = ProverContext::dev(domain_size).expect("init gpu prover context");
+    let cfg = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
+    let _ctx = ProverContext::create_with_config(cfg).expect("init gpu prover context");
 
     let expected_setup = GenericSetupStorage::from_host_values(&setup_base).unwrap();
 
@@ -424,7 +429,8 @@ fn test_proof_comparison_for_sha256() {
         prover_config.merkle_tree_cap_size,
     );
     let domain_size = setup_cs.max_trace_len;
-    let _ctx = ProverContext::dev(domain_size).expect("init gpu prover context");
+    let cfg = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
+    let _ctx = ProverContext::create_with_config(cfg).expect("init gpu prover context");
     let gpu_setup = GpuSetup::<Global>::from_setup_and_hints(
         setup_base.clone(),
         clone_reference_tree(&setup_tree),
@@ -796,6 +802,7 @@ mod zksync {
     use crate::cs::PACKED_PLACEHOLDER_BITMASK;
     use boojum::cs::implementations::fast_serialization::MemcopySerializable;
     use circuit_definitions::circuit_definitions::base_layer::ZkSyncBaseLayerCircuit;
+    use era_cudart::memory::memory_get_info;
     use era_cudart_sys::CudaError;
 
     pub type ZksyncProof = Proof<F, DefaultTreeHasher, GoldilocksExt2>;
@@ -1222,7 +1229,11 @@ mod zksync {
             for i in 0..40 {
                 let num_blocks = 2560 - i * 64;
                 println!("num_blocks = {num_blocks}");
-                let ctx = ProverContext::create_limited(num_blocks).expect("gpu prover context");
+                let max_device_allocation =
+                    (num_blocks * size_of::<F>()) << ZKSYNC_DEFAULT_TRACE_LOG_LENGTH;
+                let cfg = ProverContextConfig::default()
+                    .with_maximum_device_allocation(max_device_allocation);
+                let ctx = ProverContext::create_with_config(cfg).expect("gpu prover context");
                 // technically not needed because CacheStrategy::get calls it internally,
                 // but nice for peace of mind
                 _setup_cache_reset();
@@ -1365,7 +1376,8 @@ mod zksync {
             proof_config.merkle_tree_cap_size,
         );
         let domain_size = setup_cs.max_trace_len;
-        let _ctx = ProverContext::dev(domain_size).expect("init gpu prover context");
+        let cfg = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
+        let _ctx = ProverContext::create_with_config(cfg).expect("init gpu prover context");
         let (proving_cs, _) = init_or_synth_cs_for_sha256::<ProvingCSConfig, Global, true>(
             finalization_hint.as_ref(),
         );
@@ -1565,5 +1577,50 @@ mod zksync {
 
         let data = std::fs::read(circuit_file_path).expect("circuit file");
         bincode::deserialize(&data).expect("circuit")
+    }
+
+    #[serial]
+    #[test]
+    #[ignore]
+    fn context_config_default() -> CudaResult<()> {
+        const SLACK: usize = 1 << 26; // 64MB
+        let (free_before, _) = memory_get_info()?;
+        dbg!(free_before);
+        let cfg = ProverContextConfig::default();
+        let _ctx = ProverContext::create_with_config(cfg)?;
+        let (free_after, _) = memory_get_info()?;
+        dbg!(free_after);
+        assert!(free_after < SLACK);
+        Ok(())
+    }
+
+    #[serial]
+    #[test]
+    #[ignore]
+    fn context_config_with_maximum_device_allocation() -> CudaResult<()> {
+        const MAX: usize = 1 << 32; // 4GB
+        const SLACK: usize = 1 << 26; // 64MB
+        let (free_before, _) = memory_get_info()?;
+        dbg!(free_before);
+        let cfg = ProverContextConfig::default().with_maximum_device_allocation(MAX);
+        let _ctx = ProverContext::create_with_config(cfg)?;
+        let (free_after, _) = memory_get_info()?;
+        dbg!(free_after);
+        assert!(free_before - free_after > MAX);
+        assert!(free_before - free_after < MAX + SLACK);
+        Ok(())
+    }
+
+    #[serial]
+    #[test]
+    #[should_panic]
+    #[ignore]
+    fn context_config_with_minimum_device_allocation() {
+        const SLACK: usize = 1 << 28; // 256MB
+        let (free_before, _) = memory_get_info().unwrap();
+        dbg!(free_before);
+        let min = free_before + SLACK;
+        let cfg = ProverContextConfig::default().with_minimum_device_allocation(min);
+        let _ctx = ProverContext::create_with_config(cfg).unwrap();
     }
 }

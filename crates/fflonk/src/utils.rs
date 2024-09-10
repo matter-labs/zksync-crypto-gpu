@@ -161,35 +161,25 @@ where
     todo!()
 }
 
-pub(crate) fn divide_by_chunking_in_values<F>(
+pub(crate) fn divide_in_values<F>(
     poly: &mut Poly<F, MonomialBasis>,
     divisor: &Poly<F, MonomialBasis>,
+    combined_degree: usize,
     domain_size: usize,
     stream: bc_stream,
-) -> CudaResult<()>
+) -> CudaResult<Poly<F, MonomialBasis>>
 where
     F: PrimeField,
 {
     assert_eq!(poly.size(), 9 * domain_size);
+    let padded_degree = combined_degree.next_power_of_two();
+    let num_lde = poly.lde(padded_degree, stream)?;
+    let mut denum_lde = divisor.lde(padded_degree, stream)?;
+    denum_lde.batch_inverse(stream)?;
 
-    let mut denum = Poly::<_, MonomialBasis>::zero(domain_size, stream);
-    mem::d2d_on_stream(
-        divisor.as_ref(),
-        &mut denum.as_mut()[..divisor.as_ref().len()],
-        stream,
-    )?;
-    let mut denum_evals = denum.fft_on(stream)?;
-    denum_evals.batch_inverse(stream)?;
-
-    for num_chunk in poly.as_mut().chunks_mut(domain_size) {
-        ntt::inplace_fft_on(num_chunk, stream)?;
-        unsafe {
-            arithmetic::mul_assign(num_chunk, denum_evals.as_ref(), stream)?;
-        }
-        ntt::inplace_ifft_on(num_chunk, stream)?;
-    }
-
-    Ok(())
+    denum_lde.mul_assign_on(&num_lde, stream)?;
+    denum_lde.bitreverse(stream)?;
+    denum_lde.icoset_fft_on(stream)
 }
 
 pub(crate) fn construct_r_monomials<F>(

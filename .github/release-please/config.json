@@ -1,0 +1,12 @@
+{
+    "bootstrap-sha": "d4f2f8c706c93c0cc829ddc2abee1d0627c59593",
+    "include-component-in-tag": false,
+    "bump-minor-pre-major": true,
+    "bump-patch-for-minor-pre-major": true,
+    "packages": {
+        ".": {
+            "component": "zksync-crypto-gpu",
+            "release-type": "simple"
+        }
+    }
+}

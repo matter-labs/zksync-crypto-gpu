@@ -1,20 +1,18 @@
 [package]
-name = "shivini"
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
 version.workspace = true
-edition = "2021"
-authors = ["The Matter Labs Team <hello@matterlabs.dev>"]
-homepage = "https://zksync.io/"
-repository = "https://github.com/matter-labs/era-shivini"
-license = "MIT OR Apache-2.0"
-keywords = ["blockchain", "zksync"]
-categories = ["cryptography"]
+name = "shivini"
 description = "Shvini is a library implementing a GPU-accelerated zkSync prover"
 exclude = ["/test_data"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-boojum = "=0.2.2"
+boojum.workspace = true
 boojum-cuda.workspace = true
 era_cudart.workspace = true
 era_cudart_sys.workspace = true

@@ -10,7 +10,8 @@ use std::ptr::NonNull;
 use std::sync::{Arc, Mutex};
 
 pub const FREE_MEMORY_SLACK: usize = 1 << 23; // 8 MB
-pub const MIN_NUM_BLOCKS: usize = 512;
+pub const DEFAULT_MIN_NUM_BLOCKS: usize = 512;
+pub const SMALL_ALLOCATOR_BLOCK_SIZE: usize = 32;
 pub const SMALL_ALLOCATOR_BLOCKS_COUNT: usize = 1 << 10; // 256 KB
 
 #[derive(Derivative)]
@@ -145,7 +146,7 @@ mod stats {
 impl Default for StaticDeviceAllocator {
     fn default() -> Self {
         let domain_size = 1 << ZKSYNC_DEFAULT_TRACE_LOG_LENGTH;
-        Self::init_all(domain_size).unwrap()
+        Self::init_all(DEFAULT_MIN_NUM_BLOCKS, domain_size).unwrap()
     }
 }
 
@@ -166,8 +167,8 @@ impl StaticDeviceAllocator {
     }
 
     pub fn init(
-        max_num_blocks: usize,
         min_num_blocks: usize,
+        max_num_blocks: usize,
         block_size: usize,
     ) -> CudaResult<Self> {
         assert_ne!(min_num_blocks, 0);
@@ -205,14 +206,14 @@ impl StaticDeviceAllocator {
         Err(CudaError::ErrorMemoryAllocation)
     }
 
-    pub fn init_all(block_size: usize) -> CudaResult<Self> {
+    pub fn init_all(min_num_blocks: usize, block_size: usize) -> CudaResult<Self> {
         let block_size_in_bytes = block_size * std::mem::size_of::<F>();
         let (memory_size_in_bytes, _total) = memory_get_info().expect("get memory info");
         assert!(memory_size_in_bytes >= FREE_MEMORY_SLACK);
         let free_memory_size_in_bytes = memory_size_in_bytes - FREE_MEMORY_SLACK;
         assert!(free_memory_size_in_bytes >= block_size);
         let max_num_blocks = free_memory_size_in_bytes / block_size_in_bytes;
-        Self::init(max_num_blocks, MIN_NUM_BLOCKS, block_size)
+        Self::init(min_num_blocks, max_num_blocks, block_size)
     }
 
     fn find_free_block(&self) -> Option<usize> {
@@ -384,11 +385,10 @@ pub struct SmallStaticDeviceAllocator {
 impl SmallStaticDeviceAllocator {
     pub fn init() -> CudaResult<Self> {
         // cuda requires alignment to be  multiple of 32 goldilocks elems
-        const BLOCK_SIZE: usize = 32;
         let inner = StaticDeviceAllocator::init(
             SMALL_ALLOCATOR_BLOCKS_COUNT,
             SMALL_ALLOCATOR_BLOCKS_COUNT,
-            BLOCK_SIZE,
+            SMALL_ALLOCATOR_BLOCK_SIZE,
         )?;
         Ok(Self { inner })
     }

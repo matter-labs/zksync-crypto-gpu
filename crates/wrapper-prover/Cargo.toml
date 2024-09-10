@@ -1,17 +1,15 @@
 [package]
-name = "zksync-wrapper-prover"
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
 version.workspace = true
-edition = "2021"
-authors = ["The Matter Labs Team <hello@matterlabs.dev>"]
-homepage = "https://zksync.io/"
-repository = "https://github.com/matter-labs/era-heavy-ops-service"
-license = "MIT OR Apache-2.0"
-keywords = ["blockchain", "zksync"]
-categories = ["cryptography"]
+name = "zksync-wrapper-prover"
 description = "ZKsync GPU wrapper prover"
 exclude = [ "test_proofs" ]
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 gpu-prover.workspace = true

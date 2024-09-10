@@ -9,7 +9,7 @@ use era_cudart_sys::{cudaMemcpyToSymbol, cuda_struct_and_stub, CudaMemoryCopyKin
 use std::mem::size_of;
 use std::os::raw::c_void;
 
-pub const OMEGA_LOG_ORDER: u32 = 24;
+pub const OMEGA_LOG_ORDER: u32 = 29;
 
 #[repr(C)]
 struct PowersLayerData {
@@ -132,9 +132,9 @@ unsafe fn copy_to_symbols(
         &powers_data_g_i,
         &PowersData::new(
             powers_of_g_i_fine,
-            coarse_log_count,
-            powers_of_g_i_coarse,
             fine_log_count,
+            powers_of_g_i_coarse,
+            coarse_log_count,
         ),
     )?;
     copy_to_symbol(&inv_sizes, &inv_sizes_host)?;

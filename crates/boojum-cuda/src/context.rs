@@ -132,9 +132,9 @@ unsafe fn copy_to_symbols(
         &powers_data_g_i,
         &PowersData::new(
             powers_of_g_i_fine,
-            coarse_log_count,
-            powers_of_g_i_coarse,
             fine_log_count,
+            powers_of_g_i_coarse,
+            coarse_log_count,
         ),
     )?;
     copy_to_symbol(&inv_sizes, &inv_sizes_host)?;

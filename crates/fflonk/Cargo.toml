@@ -1,0 +1,20 @@
+[package]
+name = "fflonk-gpu"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+# fflonk = {git = "https://git@github.com/matter-labs/zksync-crypto", package = "fflonk", branch = "si/fflonk"}
+fflonk = { path = "../../../zksync-crypto/crates/fflonk", package = "fflonk", default-features = false, optional = true }
+gpu-ffi.workspace = true
+rand = "0.4"
+derivative = "2.2"
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+serde_derive = "1"
+
+[features]
+default = ["fflonk"]
+sanity = ["fflonk/sanity"]

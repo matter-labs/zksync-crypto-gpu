@@ -1,7 +1,5 @@
 [workspace]
-members = [
-    "crates/*"
-]
+members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
@@ -26,6 +24,7 @@ gpu-ffi = { version = "=0.150.7", path = "crates/gpu-ffi", package = "zksync-gpu
 gpu-prover = { version = "=0.150.7", path = "crates/gpu-prover", package = "zksync-gpu-prover" }
 shivini = { version = "=0.150.7", path = "crates/shivini" }
 wrapper-prover = { version = "=0.150.7", path = "crates/wrapper-prover", package = "zksync-wrapper-prover" }
+fflonk = { version = "=0.150.7", path = "crates/fflonk", package = "fflonk-gpu-prover" }
 
 # These dependencies should be shared by all the crates.
 circuit_definitions = { version = "=0.150.5" }

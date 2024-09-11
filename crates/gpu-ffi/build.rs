@@ -63,12 +63,16 @@ fn link_multiexp_library(bellman_cuda_path: &str) {
             .unwrap()
             .to_string()
     } else {
+        let start = std::time::Instant::now();
+        println!("Building bellman-cuda at {bellman_cuda_path} from scractch");
         let cudaarchs = var("CUDAARCHS").unwrap_or("native".to_string());
         let dst = cmake::Config::new(bellman_cuda_path)
             .profile("Release")
             .define("CMAKE_CUDA_ARCHITECTURES", cudaarchs)
             .build();
+        println!("bellman-cuda build takes {} ms", start.elapsed().as_millis());
         dst.to_str().unwrap().to_string()
+        
     };
     println!("cargo:rustc-link-search=native={bellman_cuda_lib_path}");
     println!("cargo:rustc-link-lib=static=bellman-cuda");

@@ -1,6 +1,7 @@
 #![feature(allocator_api)]
 #![feature(slice_index_methods)]
 #![feature(ptr_metadata)]
+#![feature(raw_slice_split)]
 
 #[cfg(feature = "sanity")]
 pub(crate) const SANITY_CHECK: bool = true;
@@ -20,6 +21,9 @@ use dbuffer::*;
 mod context;
 pub use context::*;
 
+mod convenience;
+pub use convenience::*;
+
 mod error;
 use error::*;
 
@@ -35,6 +39,12 @@ use poly::*;
 mod prover;
 pub use prover::*;
 
+mod setup;
+pub use setup::*;
+
+#[cfg(test)]
+mod test;
+
 mod utils;
 pub(crate) use utils::*;
 
@@ -43,3 +53,4 @@ use gpu_ffi::{bc_event, bc_stream};
 use std::alloc::Allocator;
 
 pub use context::{DeviceContext, DeviceContextWithSingleDevice};
+pub use fflonk::MAX_COMBINED_DEGREE_FACTOR;

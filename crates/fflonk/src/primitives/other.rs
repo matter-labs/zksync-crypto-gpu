@@ -27,6 +27,34 @@ pub fn intersperse_coeffs<F: PrimeField>(
             )));
         }
     }
-    sync_all();
+    Ok(())
+}
+
+pub fn materialize_domain_elems<F>(
+    buf: &mut DSlice<F>,
+    domain_size: usize,
+    bitreversed_output: bool,
+    stream: bc_stream,
+) -> CudaResult<()>
+where
+    F: PrimeField,
+{
+    let ptr = buf.as_mut_ptr();
+    let log_degree = domain_size.trailing_zeros();
+    unsafe {
+        let result = gpu_ffi::ff_get_powers_of_w(
+            ptr.cast(),
+            log_degree,
+            0,
+            domain_size as u32,
+            false,
+            bitreversed_output,
+            stream,
+        );
+        if result != 0 {
+            return Err(CudaError::Error(format!("Materialize omegas {result}")));
+        }
+    }
+
     Ok(())
 }

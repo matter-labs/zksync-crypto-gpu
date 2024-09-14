@@ -12,5 +12,5 @@ pub(crate) use msm::*;
 pub mod ntt;
 use ntt::*;
 
-mod other;
+pub mod other;
 pub use other::*;

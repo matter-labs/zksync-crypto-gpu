@@ -36,29 +36,29 @@ where
 
     let qa_evals = qa_mon.coset_fft_on(coset_idx, quotient_degree, stream)?;
     a_evals.mul_assign_on(&qa_evals, stream)?;
-    drop(qa_evals);
+    drop_on(qa_evals, stream);
     sum.add_assign_on(&a_evals, stream)?;
-    drop(a_evals);
+    drop_on(a_evals, stream);
 
     let qb_evals = qb_mon.coset_fft_on(coset_idx, quotient_degree, stream)?;
     b_evals.mul_assign_on(&qb_evals, stream)?;
-    drop(qb_evals);
+    drop_on(qb_evals, stream);
     sum.add_assign_on(&b_evals, stream)?;
-    drop(b_evals);
+    drop_on(b_evals, stream);
 
     let mut c_evals = c_mon.coset_fft_on(coset_idx, quotient_degree, stream)?;
     let qc_evals = qc_mon.coset_fft_on(coset_idx, quotient_degree, stream)?;
     c_evals.mul_assign_on(&qc_evals, stream)?;
-    drop(qc_evals);
+    drop_on(qc_evals, stream);
     sum.add_assign_on(&c_evals, stream)?;
-    drop(c_evals);
+    drop_on(c_evals, stream);
 
     let qconst_evals = qconst_mon.coset_fft_on(coset_idx, quotient_degree, stream)?;
     sum.add_assign_on(&qconst_evals, stream)?;
-    drop(qconst_evals);
+    drop_on(qconst_evals, stream);
 
     let mut public_input_evals = Poly::<F, LagrangeBasis>::zero(domain_size, stream);
-    mem::d2d_on_stream(
+    mem::d2d_on(
         &public_inputs,
         &mut public_input_evals.as_mut()[..public_inputs.len()],
         stream,
@@ -67,6 +67,8 @@ where
     let public_input_evals =
         public_input_monomial.coset_fft_on(coset_idx, quotient_degree, stream)?;
     sum.add_assign_on(&public_input_evals, stream)?;
+
+    divide_by_vanishing_poly_over_coset(&mut sum, domain_size, coset_idx, quotient_degree, stream)?;
 
     Ok(sum)
 }

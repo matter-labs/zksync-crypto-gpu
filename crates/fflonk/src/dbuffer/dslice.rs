@@ -1,4 +1,6 @@
-use super::{DChunks, DChunksMut, DIter, DIterMut};
+use gpu_ffi::bc_stream;
+
+use super::{CudaResult, DChunks, DChunksMut, DIter, DIterMut, DVec};
 
 pub struct DSlice<T>([T]);
 
@@ -12,11 +14,11 @@ impl<T> DSlice<T> {
     }
 
     pub unsafe fn from_raw_parts<'a>(ptr: *const T, len: usize) -> &'a Self {
-        todo!()
+        std::mem::transmute(std::slice::from_raw_parts(ptr, len))
     }
 
     pub unsafe fn from_raw_parts_mut<'a>(ptr: *mut T, len: usize) -> &'a mut Self {
-        todo!()
+        std::mem::transmute(std::slice::from_raw_parts_mut(ptr, len))
     }
 
     pub fn as_ptr(&self) -> *const T {
@@ -40,7 +42,7 @@ impl<T> DSlice<T> {
         let len = self.len();
         unsafe {
             (
-                DSlice::from_raw_parts(ptr, len),
+                DSlice::from_raw_parts(ptr, mid),
                 DSlice::from_raw_parts(ptr.add(mid), len - mid),
             )
         }
@@ -51,7 +53,7 @@ impl<T> DSlice<T> {
         let len = self.len();
         unsafe {
             (
-                DSlice::from_raw_parts_mut(ptr, len),
+                DSlice::from_raw_parts_mut(ptr, mid),
                 DSlice::from_raw_parts_mut(ptr.add(mid), len - mid),
             )
         }
@@ -72,6 +74,25 @@ impl<T> DSlice<T> {
     pub fn iter_mut<'a>(&'a mut self) -> DIterMut<'a, T> {
         DIterMut::new(self)
     }
+
+    pub fn copy_from_slice_on(&mut self, other: &DSlice<T>, stream: bc_stream) -> CudaResult<()> {
+        super::mem::d2d_on(other, self, stream)
+    }
+
+    pub fn to_vec_on(&self, stream: bc_stream) -> CudaResult<Vec<T>> {
+        let mut dst: Vec<_> = Vec::with_capacity(self.len());
+        unsafe { dst.set_len(self.len()) };
+        super::mem::d2h_on(self, &mut dst, stream)?;
+
+        Ok(dst)
+    }
+
+    pub fn to_dvec_on(&self, stream: bc_stream) -> CudaResult<DVec<T>> {
+        let mut dst = DVec::allocate_zeroed_on(self.len(), stream);
+        super::mem::d2d_on(self, &mut dst, stream)?;
+
+        Ok(dst)
+    }
 }
 
 impl<T> std::ops::Index<usize> for DSlice<T> {
@@ -91,17 +112,23 @@ impl<T> std::ops::Index<std::ops::Range<usize>> for DSlice<T> {
 
     fn index(&self, index: std::ops::Range<usize>) -> &Self::Output {
         let start = index.start;
-        let len = index.end - start;
-        let ptr = self.as_ptr();
-        unsafe { Self::from_raw_parts(ptr, len) }
+        let len = index.len();
+
+        unsafe {
+            let ptr = self.as_ptr().add(start);
+            Self::from_raw_parts(ptr, len)
+        }
     }
 }
 impl<T> std::ops::IndexMut<std::ops::Range<usize>> for DSlice<T> {
     fn index_mut(&mut self, index: std::ops::Range<usize>) -> &mut Self::Output {
         let start = index.start;
-        let len = index.end - start;
-        let ptr = self.as_mut_ptr();
-        unsafe { Self::from_raw_parts_mut(ptr, len) }
+        let len = index.len();
+
+        unsafe {
+            let ptr = self.as_mut_ptr().add(start);
+            Self::from_raw_parts_mut(ptr, len)
+        }
     }
 }
 

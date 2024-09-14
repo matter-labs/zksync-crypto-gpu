@@ -52,24 +52,47 @@ pub(crate) fn dealloc_async(ptr: *mut c_void, stream: bc_stream) -> CudaResult<(
     }
 }
 
-pub(crate) fn memcopy_async<'a, 'b, T>(
+pub(crate) fn host_allocate(num_bytes: usize) -> CudaResult<*mut c_void> {
+    let mut ptr = std::ptr::null_mut();
+    unsafe {
+        let result = gpu_ffi::bc_malloc_host(std::ptr::addr_of_mut!(ptr), num_bytes as u64);
+        if result != 0 {
+            panic!("Couln't allocate host buffer");
+        }
+    }
+
+    Ok(ptr)
+}
+
+pub(crate) fn host_dealloc(ptr: *mut c_void) -> CudaResult<()> {
+    unsafe {
+        let result = gpu_ffi::bc_free_host(ptr);
+        if result != 0 {
+            panic!("Couln't free host buffer");
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn memcopy_async<T>(
     dst: &mut DSlice<T>,
-    src: &'b DSlice<T>,
+    src: &DSlice<T>,
     stream: bc_stream,
 ) -> CudaResult<()> {
     assert_eq!(dst.is_empty(), false);
     assert_eq!(dst.len(), src.len());
     let num_bytes = src.len() * std::mem::size_of::<T>();
-    let src_ptr = src.as_ptr() as *mut c_void;
-    let dst_ptr = dst.as_mut_ptr() as *mut c_void;
-    memcopy_async_inner(dst_ptr, src_ptr, num_bytes, stream)?;
+    let src_ptr = src.as_ptr();
+    let dst_ptr = dst.as_mut_ptr();
+    memcopy_async_inner::<T>(dst_ptr.cast(), src_ptr.cast(), num_bytes, stream)?;
 
     Ok(())
 }
 
-pub(crate) fn memcopy_from_host_async<'a, 'b, T>(
+pub(crate) fn memcopy_from_host_async<T>(
     dst: &mut DSlice<T>,
-    src: &'b [T],
+    src: &[T],
     stream: bc_stream,
 ) -> CudaResult<()> {
     assert_eq!(dst.is_empty(), false);
@@ -80,9 +103,9 @@ pub(crate) fn memcopy_from_host_async<'a, 'b, T>(
     Ok(())
 }
 
-pub(crate) fn memcopy_to_host_async<'a, 'b, T>(
-    dst: &'a mut [T],
-    src: &'b DSlice<T>,
+pub(crate) fn memcopy_to_host_async<T>(
+    dst: &mut [T],
+    src: &DSlice<T>,
     stream: bc_stream,
 ) -> CudaResult<()> {
     assert_eq!(dst.is_empty(), false);
@@ -109,7 +132,7 @@ pub(crate) fn memcopy_async_inner<T>(
     Ok(())
 }
 
-pub(crate) fn memcopy_from_host<'a, 'b, T>(dst: &mut DSlice<T>, src: &'b [T]) -> CudaResult<()> {
+pub(crate) fn memcopy_from_host<T>(dst: &mut DSlice<T>, src: &[T]) -> CudaResult<()> {
     assert_eq!(dst.is_empty(), false);
     assert_eq!(dst.len(), src.len());
     let num_bytes = src.len() * std::mem::size_of::<T>();
@@ -118,7 +141,7 @@ pub(crate) fn memcopy_from_host<'a, 'b, T>(dst: &mut DSlice<T>, src: &'b [T]) ->
     Ok(())
 }
 
-pub(crate) fn memcopy_to_host<'a, 'b, T>(dst: &'a mut [T], src: &'b DSlice<T>) -> CudaResult<()> {
+pub(crate) fn memcopy_to_host<T>(dst: &mut [T], src: &DSlice<T>) -> CudaResult<()> {
     assert_eq!(dst.is_empty(), false);
     assert_eq!(dst.len(), src.len());
     let num_bytes = src.len() * std::mem::size_of::<T>();
@@ -142,47 +165,16 @@ pub(crate) fn memcopy_inner<T>(
     Ok(())
 }
 
-pub(crate) fn h2d<'a, 'b, T>(host: &'a [T], device: &'b mut DSlice<T>) -> CudaResult<()> {
-    h2d_on_stream(host, device, _h2d_stream())
-}
-
-pub fn h2d_on_stream<'a, 'b, T>(
-    host: &'a [T],
-    device: &'b mut DSlice<T>,
-    stream: bc_stream,
-) -> CudaResult<()> {
+pub fn h2d_on<T>(host: &[T], device: &mut DSlice<T>, stream: bc_stream) -> CudaResult<()> {
     memcopy_from_host_async(device, host, stream)
 }
 
-pub(crate) fn d2h<'a, 'b, T>(device: &'a DSlice<T>, host: &'b mut [T]) -> CudaResult<()> {
-    memcopy_to_host_async(host, device, _d2h_stream())
-}
-
-pub(crate) fn d2h_on_stream<'a, 'b, T>(
-    device: &'a DSlice<T>,
-    host: &'b mut [T],
-    stream: bc_stream,
-) -> CudaResult<()> {
+pub(crate) fn d2h_on<T>(device: &DSlice<T>, host: &mut [T], stream: bc_stream) -> CudaResult<()> {
     memcopy_to_host_async(host, device, stream)
 }
 
-pub(crate) fn d2d<'a, 'b, T>(src: &'a DSlice<T>, dst: &'b mut DSlice<T>) -> CudaResult<()> {
-    d2d_on_stream(src, dst, _d2d_stream())
-}
-
-pub(crate) fn d2d_on_stream<'a, 'b, T>(
-    src: &'a DSlice<T>,
-    dst: &'b mut DSlice<T>,
-    stream: bc_stream,
-) -> CudaResult<()> {
+pub(crate) fn d2d_on<T>(src: &DSlice<T>, dst: &mut DSlice<T>, stream: bc_stream) -> CudaResult<()> {
     memcopy_async(dst, src, stream)
-}
-pub(crate) fn d2d_on_stream_<T, S, D>(src: &S, dst: &mut D, stream: bc_stream) -> CudaResult<()>
-where
-    S: AsRef<DSlice<T>>,
-    D: AsMut<DSlice<T>>,
-{
-    memcopy_async(dst.as_mut(), src.as_ref(), stream)
 }
 
 pub(crate) fn set_one<F>(buf: &mut DSlice<F>, stream: bc_stream) -> CudaResult<()>
@@ -236,11 +228,4 @@ pub(crate) fn set_zero<T>(buf: &mut DSlice<T>, stream: bc_stream) -> CudaResult<
 
         Ok(())
     }
-}
-
-pub(crate) fn sync_all() {
-    println!("Synchronizing all streams");
-    _h2d_stream().sync().unwrap();
-    _d2d_stream().sync().unwrap();
-    _d2h_stream().sync().unwrap();
 }

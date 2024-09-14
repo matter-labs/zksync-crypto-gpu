@@ -1,6 +1,8 @@
 use std::{alloc::Layout, ptr::NonNull};
 
-use super::{DeviceAllocator, GlobalDevice};
+use gpu_ffi::bc_stream;
+
+use super::{DeviceAllocator, DropOn, GlobalDevice};
 
 enum AllocInit {
     /// The contents of the new memory are uninitialized.
@@ -9,35 +11,44 @@ enum AllocInit {
     Zeroed,
 }
 
-pub(crate) struct RawDDVec<T, A: DeviceAllocator = GlobalDevice> {
+// A buffer doesn't have a `capacity` property
+// since it doesn't need to be shrinked/extended
+pub(crate) struct RawDVec<T, A: DeviceAllocator = GlobalDevice> {
     ptr: std::ptr::NonNull<T>,
-    cap: usize,
+    len: usize,
     pub(crate) stream: Option<A::Stream>,
     alloc: A,
 }
 
-impl<T, A: DeviceAllocator> RawDDVec<T, A> {
-    pub fn new_in(alloc: A) -> Self {
+impl<T> RawDVec<T> {
+    pub fn dangling() -> Self {
         Self {
             ptr: std::ptr::NonNull::dangling(),
-            cap: 0,
+            len: 0,
             stream: None,
-            alloc,
+            alloc: GlobalDevice,
         }
     }
+}
 
-    pub fn with_capacity_zeroed_in(capacity: usize, alloc: A, stream: Option<A::Stream>) -> Self {
-        Self::allocate_in(capacity, AllocInit::Zeroed, alloc, stream)
+impl<T, A: DeviceAllocator> RawDVec<T, A> {
+    pub fn allocate_zeroed_on(length: usize, alloc: A, stream: Option<A::Stream>) -> Self {
+        Self::inner_allocate_in(length, AllocInit::Zeroed, alloc, stream)
     }
 
-    pub fn with_capacity_in(capacity: usize, alloc: A, stream: Option<A::Stream>) -> Self {
-        Self::allocate_in(capacity, AllocInit::Uninitialized, alloc, stream)
+    pub fn allocate_on(length: usize, alloc: A, stream: Option<A::Stream>) -> Self {
+        Self::inner_allocate_in(length, AllocInit::Uninitialized, alloc, stream)
     }
 
-    fn allocate_in(capacity: usize, init: AllocInit, alloc: A, stream: Option<A::Stream>) -> Self {
-        let layout = match std::alloc::Layout::array::<T>(capacity) {
+    fn inner_allocate_in(
+        length: usize,
+        init: AllocInit,
+        alloc: A,
+        stream: Option<A::Stream>,
+    ) -> Self {
+        let layout = match std::alloc::Layout::array::<T>(length) {
             Ok(layout) => layout,
-            Err(_) => panic!("allocation error: capacity overflow"),
+            Err(_) => panic!("allocation error: length overflow"),
         };
 
         let result = match stream {
@@ -45,7 +56,10 @@ impl<T, A: DeviceAllocator> RawDDVec<T, A> {
                 AllocInit::Uninitialized => alloc.allocate_async(layout, stream),
                 AllocInit::Zeroed => alloc.allocate_zeroed_async(layout, stream),
             },
-            None => alloc.allocate(layout),
+            None => match init {
+                AllocInit::Uninitialized => alloc.allocate(layout),
+                AllocInit::Zeroed => alloc.allocate_zeroed(layout),
+            },
         };
 
         let ptr = match result {
@@ -55,21 +69,25 @@ impl<T, A: DeviceAllocator> RawDDVec<T, A> {
 
         Self {
             ptr: ptr.cast(),
-            cap: capacity,
+            len: length,
             stream,
             alloc,
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
     pub(crate) unsafe fn from_raw_parts_in(
         ptr: *mut T,
-        capacity: usize,
+        len: usize,
         alloc: A,
         stream: Option<A::Stream>,
     ) -> Self {
         Self {
             ptr: unsafe { std::ptr::NonNull::new_unchecked(ptr) },
-            cap: capacity,
+            len,
             stream,
             alloc,
         }
@@ -80,13 +98,13 @@ impl<T, A: DeviceAllocator> RawDDVec<T, A> {
     }
 
     fn current_memory(&self) -> Option<(NonNull<u8>, Layout, Option<A::Stream>)> {
-        if self.cap == 0 {
+        if self.len == 0 {
             None
         } else {
             assert!(std::mem::size_of::<T>() % std::mem::align_of::<T>() == 0);
             unsafe {
                 let align = std::mem::align_of::<T>();
-                let size = std::mem::size_of::<T>().unchecked_mul(self.cap);
+                let size = std::mem::size_of::<T>().unchecked_mul(self.len);
                 let layout = Layout::from_size_align_unchecked(size, align);
                 Some((self.ptr.cast().into(), layout, self.stream))
             }
@@ -94,13 +112,22 @@ impl<T, A: DeviceAllocator> RawDDVec<T, A> {
     }
 }
 
-impl<T, A: DeviceAllocator> Drop for RawDDVec<T, A> {
+impl<T, A: DeviceAllocator> Drop for RawDVec<T, A> {
     fn drop(&mut self) {
         if let Some((ptr, layout, stream)) = self.current_memory() {
             match stream {
                 Some(stream) => self.alloc.deallocate_async(ptr, layout, stream),
                 None => self.alloc.deallocate(ptr, layout),
             }
+        }
+    }
+}
+
+impl<T> DropOn for RawDVec<T> {
+    fn drop_on(&mut self, stream: bc_stream) {
+        if let Some((ptr, layout, inner_stream)) = self.current_memory() {
+            assert!(inner_stream.is_some());
+            self.alloc.deallocate_async(ptr, layout, stream)
         }
     }
 }

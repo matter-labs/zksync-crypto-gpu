@@ -9,11 +9,14 @@ unsafe impl Allocator for GlobalHost {
         &self,
         layout: std::alloc::Layout,
     ) -> Result<std::ptr::NonNull<[u8]>, std::alloc::AllocError> {
-        todo!()
+        host_allocate(layout.size())
+            .map(|ptr| unsafe { std::ptr::NonNull::new_unchecked(ptr as _) })
+            .map(|ptr| std::ptr::NonNull::slice_from_raw_parts(ptr, layout.size()))
+            .map_err(|_| std::alloc::AllocError)
     }
 
     unsafe fn deallocate(&self, ptr: std::ptr::NonNull<u8>, layout: std::alloc::Layout) {
-        todo!()
+        host_dealloc(ptr.as_ptr().cast()).expect("deallocate static buffer")
     }
 }
 
@@ -98,8 +101,7 @@ impl DeviceAllocator for GlobalDevice {
         let ptr = self.allocate(layout)?;
         let stream = bc_stream::new().unwrap();
         unsafe {
-            let result =
-                gpu_ffi::ff_set_value_zero(ptr.as_ptr().cast(), layout.size() as u32, stream);
+            let result = gpu_ffi::bc_memset(ptr.as_ptr().cast(), 0, layout.size() as u64);
             if result != 0 {
                 panic!("Couldn't allocate zeroed buffer")
             }
@@ -113,12 +115,11 @@ impl DeviceAllocator for GlobalDevice {
         stream: Self::Stream,
     ) -> Result<std::ptr::NonNull<[u8]>, std::alloc::AllocError> {
         let ptr = self.allocate_async(layout, stream)?;
-        // SAFETY: `alloc` returns a valid memory block
         unsafe {
             let result =
-                gpu_ffi::ff_set_value_zero(ptr.as_ptr().cast(), layout.size() as u32, stream);
+                gpu_ffi::bc_memset_async(ptr.as_ptr().cast(), 0, layout.size() as u64, stream);
             if result != 0 {
-                panic!("Couldn't allocate zeroed buffer")
+                panic!("Couldn't allocate zeroed buffer: Error {result}")
             }
         }
         Ok(ptr)

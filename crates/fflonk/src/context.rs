@@ -1,4 +1,5 @@
 use super::*;
+use bellman::compact_bn256::Bn256 as CompactBn256;
 use gpu_ffi::bc_mem_pool;
 
 pub(crate) static mut _MEMPOOL: Option<bc_mem_pool> = None;
@@ -32,10 +33,10 @@ impl<const N: usize> DeviceContext<N> {
         Ok(Self)
     }
 
-    pub unsafe fn init<E: Engine>(bases: &[E::G1Affine], domain_size: usize) -> CudaResult<Self> {
+    pub unsafe fn init(domain_size: usize) -> CudaResult<Self> {
         let context = Self::init_minimal()?;
 
-        Self::init_msm_on_static_memory::<E>(bases, domain_size)?;
+        Self::init_msm_on_static_memory(domain_size)?;
 
         let result = gpu_ffi::ff_set_up(
             POWERS_OF_OMEGA_COARSE_LOG_COUNT,
@@ -58,61 +59,88 @@ impl<const N: usize> DeviceContext<N> {
         Ok(context)
     }
 
-    pub unsafe fn init_msm_only<E: Engine>(
-        bases: &[E::G1Affine],
-        domain_size: usize,
-    ) -> CudaResult<Self> {
+    pub unsafe fn init_no_msm() -> CudaResult<Self> {
         let context = Self::init_minimal()?;
-        Self::init_msm_on_static_memory::<E>(bases, domain_size)?;
+
+        let result = gpu_ffi::ff_set_up(
+            POWERS_OF_OMEGA_COARSE_LOG_COUNT,
+            POWERS_OF_COSET_OMEGA_COARSE_LOG_COUNT,
+        );
+        if result != 0 {
+            return Err(CudaError::Error(format!("FF Setup Error: {}", result)));
+        }
+
+        let result = gpu_ffi::ntt_set_up();
+        if result != 0 {
+            return Err(CudaError::Error(format!("NTT Setup Error: {}", result)));
+        }
+
+        let result = gpu_ffi::pn_set_up();
+        if result != 0 {
+            return Err(CudaError::Error(format!("PN Setup Error: {}", result)));
+        }
+
+        Ok(context)
+    }
+
+    pub unsafe fn init_msm_only<E: Engine>(domain_size: usize) -> CudaResult<Self> {
+        let context = Self::init_minimal()?;
+        Self::init_msm_on_static_memory(domain_size)?;
         _h2d_stream().sync().unwrap();
 
         Ok(context)
     }
 
-    unsafe fn init_msm_on_static_memory<E: Engine>(
-        bases: &[E::G1Affine],
-        domain_size: usize,
-    ) -> CudaResult<()> {
+    unsafe fn init_msm_on_static_memory(domain_size: usize) -> CudaResult<()> {
         assert!(_BASES.is_none(), "MSM context is already initialized");
-        Self::init_msm::<E>(bases, domain_size, None)?;
+        Self::init_msm(domain_size, None)?;
 
         Ok(())
     }
     // In reality we keep bases on a statically allocated buffer.
-    unsafe fn init_msm_on_async<E: Engine>(
-        bases: &[E::G1Affine],
-        domain_size: usize,
-    ) -> CudaResult<()> {
-        Self::init_msm::<E>(bases, domain_size, Some(_h2d_stream()))?;
+    unsafe fn init_msm_on_async(domain_size: usize) -> CudaResult<()> {
+        Self::init_msm(domain_size, Some(_h2d_stream()))?;
 
         Ok(())
     }
 
-    unsafe fn init_msm<E: Engine>(
-        bases: &[E::G1Affine],
-        domain_size: usize,
-        stream: Option<bc_stream>,
-    ) -> CudaResult<()> {
-        assert!(
-            std::mem::size_of_val(&bases[0]) == 64 || std::mem::size_of_val(&bases[0]) == 72,
-            "Provided bases aren't valid"
-        );
-        assert_eq!(bases.is_empty(), false);
-
+    unsafe fn init_msm(domain_size: usize, stream: Option<bc_stream>) -> CudaResult<()> {
         println!("Transferring bases to the static memory of device");
-        let padded_size = bases.len().next_multiple_of(domain_size);
         // MSM impl requires bases to be located in a buffer that is
         // multiple of the domain_size
+        let common_combined_degree = 10 * domain_size;
+        let crs = init_compact_crs(
+            &bellman::worker::Worker::new(),
+            domain_size,
+            common_combined_degree,
+        );
+        use bellman::CurveAffine;
         let d_bases = match stream {
             Some(stream) => {
-                let mut d_bases = DVec::with_capacity_zeroed_on(padded_size, stream);
-                mem::h2d_on_stream(&bases, &mut d_bases[..bases.len()], stream)?;
+                let mut d_bases = DVec::allocate_zeroed_on(common_combined_degree, stream);
+                let (actual_bases, remainder) = d_bases.split_at_mut(crs.g1_bases.len());
+                mem::h2d_on(&crs.g1_bases, actual_bases, stream)?;
+                if !remainder.is_empty() {
+                    mem::h2d_on(
+                        &vec![CompactG1Affine::zero(); remainder.len()],
+                        remainder,
+                        stream,
+                    )?;
+                }
+
                 stream.sync().unwrap();
                 d_bases
             }
             None => {
-                let mut d_bases = DVec::with_capacity_zeroed(padded_size);
-                mem::memcopy_from_host(&mut d_bases, bases)?;
+                let mut d_bases = DVec::allocate_zeroed(common_combined_degree);
+                let (actual_bases, remainder) = d_bases.split_at_mut(crs.g1_bases.len());
+                mem::memcopy_from_host(actual_bases, &crs.g1_bases)?;
+                if !remainder.is_empty() {
+                    mem::memcopy_from_host(
+                        remainder,
+                        &vec![CompactG1Affine::zero(); remainder.len()],
+                    )?;
+                }
                 d_bases
             }
         };
@@ -144,6 +172,19 @@ impl<const N: usize> Drop for DeviceContext<N> {
             let _ = _D2H_STREAM.take().unwrap();
             let _ = _D2D_STREAM.take().unwrap();
 
+            let result = gpu_ffi::pn_tear_down();
+            if result != 0 {
+                println!("Couldn't tear down the permutation precomputations");
+            }
+            let result = gpu_ffi::ntt_tear_down();
+            if result != 0 {
+                println!("Couldn't tear down the permutation precomputations");
+            }
+            let result = gpu_ffi::ff_tear_down();
+            if result != 0 {
+                println!("Couldn't tear down the permutation precomputations");
+            }
+
             let mempool = _MEMPOOL.take().unwrap();
             let result = gpu_ffi::bc_mem_pool_destroy(mempool);
             if result != 0 {
@@ -158,7 +199,7 @@ pub fn is_context_initialized() -> bool {
 }
 
 pub(crate) fn _mem_pool() -> bc_mem_pool {
-    unsafe { _MEMPOOL.as_ref().expect("mempool").clone() }
+    unsafe { *_MEMPOOL.as_ref().expect("mempool") }
 }
 
 pub(crate) fn _bases() -> &'static DVec<CompactG1Affine> {
@@ -175,4 +216,31 @@ pub(crate) fn _d2h_stream() -> bc_stream {
 
 pub(crate) fn _d2d_stream() -> bc_stream {
     unsafe { *_D2D_STREAM.as_ref().expect("d2h stream") }
+}
+
+use bellman::kate_commitment::{Crs, CrsForMonomialForm};
+
+pub fn init_compact_crs(
+    worker: &bellman::worker::Worker,
+    domain_size: usize,
+    max_combined_degree: usize,
+) -> Crs<CompactBn256, CrsForMonomialForm> {
+    assert!(domain_size <= 1 << fflonk::L1_VERIFIER_DOMAIN_SIZE_LOG);
+    let mon_crs = if let Ok(crs_file_path) = std::env::var("CRS_FILE") {
+        println!("using crs file at {crs_file_path}");
+        let crs_file =
+            std::fs::File::open(&crs_file_path).expect(&format!("crs file at {}", crs_file_path));
+        let mon_crs = Crs::<CompactBn256, CrsForMonomialForm>::read(crs_file)
+            .expect(&format!("read crs file at {}", crs_file_path));
+        assert!(max_combined_degree <= mon_crs.g1_bases.len());
+
+        mon_crs
+    } else {
+        Crs::<CompactBn256, CrsForMonomialForm>::non_power_of_two_crs_42(
+            max_combined_degree,
+            &worker,
+        )
+    };
+
+    mon_crs
 }

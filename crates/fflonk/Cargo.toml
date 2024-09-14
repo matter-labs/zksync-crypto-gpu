@@ -9,6 +9,7 @@ fflonk = { path = "../../../zksync-crypto/crates/fflonk", package = "fflonk", de
 gpu-ffi.workspace = true
 rand = "0.4"
 derivative = "2.2"
+byteorder = "1"
 
 [dev-dependencies]
 serde = { version = "1", features = ["derive", "rc"] }

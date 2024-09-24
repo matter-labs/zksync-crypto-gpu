@@ -53,7 +53,15 @@ pub fn get_cuda_version() -> Option<String> {
     }
 }
 
-#[cfg(no_cuda)]
+pub fn is_no_cuda() -> bool {
+    if cfg!(no_cuda) {
+        true
+    } else {
+        let no_cuda = option_env!("ZKSYNC_USE_CUDA_STUBS").unwrap_or("");
+        no_cuda == "1" || no_cuda.to_lowercase() == "true" || no_cuda.to_lowercase() == "yes"
+    }
+}
+
 #[macro_export]
 macro_rules! no_cuda_message {
     () => {

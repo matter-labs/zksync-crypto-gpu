@@ -4,12 +4,10 @@ include!("src/utils.rs");
 
 fn main() {
     println!("cargo::rustc-check-cfg=cfg(no_cuda)");
-    #[cfg(no_cuda)]
-    {
+    if is_no_cuda() {
         println!("cargo::warning={}", no_cuda_message!());
-    }
-    #[cfg(not(no_cuda))]
-    {
+        println!("cargo::rustc-cfg=no_cuda");
+    } else {
         let cuda_version =
             get_cuda_version().expect("Failed to determine the CUDA Toolkit version.");
         if !cuda_version.starts_with("12.") {

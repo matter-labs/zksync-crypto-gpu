@@ -25,6 +25,10 @@ Then add the following variable to your config (`.bashrc`/`.zshrc`):
 export BELLMAN_CUDA_DIR=<PATH_TO>/era-bellman-cuda
 ```
 
+Alternatively, if you can't or don't want to install the CUDA toolkit, you can compile the crates `cudart-sys` and `boojum-cuda` and crates that depend on them without CUDA toolkit.
+Doing so will result in stubs replacing calls to CUDA API and any GPU device code. The code will compile but any call to one of the stubs will result in an error during runtime.
+To compile in this mode, either include the rucstc `cfg` flag named `no_cuda`, for example by setting the `RUSTFLAGS` environment variable to  `--cfg no_cuda`, or by setting the environment variable `ZKSYNC_USE_CUDA_STUBS` to `1` or `true` or `yes` in any capitalization.
+
 ## Crates
 
 - [bindings-generator](./crates/bindings-generator/)

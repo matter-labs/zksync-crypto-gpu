@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.150.9](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.150.8...v0.150.9) (2024-09-24)
+
+
+### Features
+
+* enable compilation with CUDA stubs via the `ZKSYNC_USE_CUDA_STUBS` environment variable ([#29](https://github.com/matter-labs/zksync-crypto-gpu/issues/29)) ([f77ff80](https://github.com/matter-labs/zksync-crypto-gpu/commit/f77ff80ee4bbe6d83ffab9b9915fc922ef87c1ad))
+
 ## [0.150.8](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.150.7...v0.150.8) (2024-09-10)
 
 

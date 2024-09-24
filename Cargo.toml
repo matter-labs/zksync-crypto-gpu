@@ -13,19 +13,19 @@ keywords = ["blockchain", "zksync"]
 categories = ["cryptography"]
 repository = "https://github.com/matter-labs/zksync-crypto-gpu"
 # All the packages in the workspace should have the same version
-version = "0.150.8"
+version = "0.150.9"
 
 [workspace.dependencies]
 # Local dependencies
-bindings-generator = { version = "=0.150.8", path = "crates/bindings-generator" }
-boojum-cuda = { version = "=0.150.8", path = "crates/boojum-cuda" }
-era_criterion_cuda = { version = "=0.150.8", path = "crates/criterion-cuda" }
-era_cudart = { version = "=0.150.8", path = "crates/cudart" }
-era_cudart_sys = { version = "=0.150.8", path = "crates/cudart-sys" }
-gpu-ffi = { version = "=0.150.8", path = "crates/gpu-ffi", package = "zksync-gpu-ffi" }
-gpu-prover = { version = "=0.150.8", path = "crates/gpu-prover", package = "zksync-gpu-prover" }
-shivini = { version = "=0.150.8", path = "crates/shivini" }
-wrapper-prover = { version = "=0.150.8", path = "crates/wrapper-prover", package = "zksync-wrapper-prover" }
+bindings-generator = { version = "=0.150.9", path = "crates/bindings-generator" }
+boojum-cuda = { version = "=0.150.9", path = "crates/boojum-cuda" }
+era_criterion_cuda = { version = "=0.150.9", path = "crates/criterion-cuda" }
+era_cudart = { version = "=0.150.9", path = "crates/cudart" }
+era_cudart_sys = { version = "=0.150.9", path = "crates/cudart-sys" }
+gpu-ffi = { version = "=0.150.9", path = "crates/gpu-ffi", package = "zksync-gpu-ffi" }
+gpu-prover = { version = "=0.150.9", path = "crates/gpu-prover", package = "zksync-gpu-prover" }
+shivini = { version = "=0.150.9", path = "crates/shivini" }
+wrapper-prover = { version = "=0.150.9", path = "crates/wrapper-prover", package = "zksync-wrapper-prover" }
 
 # These dependencies should be shared by all the crates.
 circuit_definitions = { version = "=0.150.5" }

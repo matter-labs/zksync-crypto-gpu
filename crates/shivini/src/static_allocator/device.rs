@@ -2,24 +2,23 @@ use era_cudart::memory::{memory_get_info, DeviceAllocation};
 
 use super::*;
 use derivative::*;
+use era_cudart_sys::CudaError;
 use std::alloc::{Allocator, Layout};
 use std::ops::Deref;
-
-use era_cudart_sys::CudaError;
 use std::ptr::NonNull;
 use std::sync::{Arc, Mutex};
 
 pub const FREE_MEMORY_SLACK: usize = 1 << 23; // 8 MB
 pub const DEFAULT_MIN_NUM_BLOCKS: usize = 512;
-pub const SMALL_ALLOCATOR_BLOCK_SIZE: usize = 32;
-pub const SMALL_ALLOCATOR_BLOCKS_COUNT: usize = 1 << 10; // 256 KB
+pub const SMALL_ALLOCATOR_BLOCK_SIZE: usize = 8;
+pub const SMALL_ALLOCATOR_BLOCKS_COUNT: usize = 1 << 14; // 1 MB
 
 #[derive(Derivative)]
 #[derivative(Clone, Debug)]
 pub struct StaticDeviceAllocator {
     memory: Arc<DeviceAllocation<u8>>,
-    memory_size: usize,
-    block_size_in_bytes: usize,
+    pub(crate) memory_size: usize,
+    pub(crate) block_size_in_bytes: usize,
     // TODO: Can we use deque
     bitmap: Arc<Mutex<Vec<bool>>>,
     #[cfg(feature = "allocator_stats")]
@@ -27,7 +26,6 @@ pub struct StaticDeviceAllocator {
 }
 
 #[cfg(feature = "allocator_stats")]
-#[allow(dead_code)]
 mod stats {
     use derivative::Derivative;
     use std::collections::BTreeMap;
@@ -124,6 +122,7 @@ mod stats {
             self.allocations.remove(&index);
         }
 
+        #[allow(dead_code)]
         pub fn print(&self, detailed: bool, with_backtrace: bool) {
             println!("allocations:");
             self.allocations.print(detailed, with_backtrace);
@@ -177,8 +176,8 @@ impl StaticDeviceAllocator {
         let mut num_blocks = max_num_blocks;
         while num_blocks >= min_num_blocks {
             let memory_size = num_blocks * block_size;
-            let memory_size_in_bytes = memory_size * std::mem::size_of::<F>();
-            let block_size_in_bytes = block_size * std::mem::size_of::<F>();
+            let memory_size_in_bytes = memory_size * size_of::<F>();
+            let block_size_in_bytes = block_size * size_of::<F>();
 
             let result = DeviceAllocation::alloc(memory_size_in_bytes);
             let memory = match result {
@@ -207,7 +206,7 @@ impl StaticDeviceAllocator {
     }
 
     pub fn init_all(min_num_blocks: usize, block_size: usize) -> CudaResult<Self> {
-        let block_size_in_bytes = block_size * std::mem::size_of::<F>();
+        let block_size_in_bytes = block_size * size_of::<F>();
         let (memory_size_in_bytes, _total) = memory_get_info().expect("get memory info");
         assert!(memory_size_in_bytes >= FREE_MEMORY_SLACK);
         let free_memory_size_in_bytes = memory_size_in_bytes - FREE_MEMORY_SLACK;
@@ -250,7 +249,7 @@ impl StaticDeviceAllocator {
                     busy_block_idx = start + idx;
                 }
             }
-            if has_busy_block == false {
+            if !has_busy_block {
                 for entry in bitmap[start..end].iter_mut() {
                     *entry = true;
                 }
@@ -359,6 +358,7 @@ unsafe impl Allocator for StaticDeviceAllocator {
         todo!()
     }
 
+    #[allow(unused_must_use)]
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
         let size = layout.size();
         assert!(size > 0);

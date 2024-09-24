@@ -17,5 +17,6 @@ serde_json = "1"
 serde_derive = "1"
 
 [features]
-default = ["fflonk"]
+default = ["sanity"]
 sanity = ["fflonk/sanity"]
+no-sanity = ["fflonk"]

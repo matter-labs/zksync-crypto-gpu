@@ -174,26 +174,26 @@ mod tests {
     use itertools::Itertools;
     use rand::distributions::Uniform;
     use rand::prelude::*;
-    use std::{mem, vec};
+    use std::vec;
 
     #[test]
     fn extension_field_size() {
-        assert_eq!(mem::size_of::<ExtensionField>(), 16);
+        assert_eq!(size_of::<ExtensionField>(), 16);
     }
 
     #[test]
     fn extension_field_align() {
-        assert_eq!(mem::align_of::<ExtensionField>(), 8);
+        assert_eq!(align_of::<ExtensionField>(), 8);
     }
 
     #[test]
     fn vectorized_extension_field_size() {
-        assert_eq!(mem::size_of::<VectorizedExtensionField>(), 16);
+        assert_eq!(size_of::<VectorizedExtensionField>(), 16);
     }
 
     #[test]
     fn vectorized_extension_field_align() {
-        assert_eq!(mem::align_of::<VectorizedExtensionField>(), 8);
+        assert_eq!(align_of::<VectorizedExtensionField>(), 8);
     }
 
     fn test_conversion<T>()

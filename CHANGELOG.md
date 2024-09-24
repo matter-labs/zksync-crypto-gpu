@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.150.8](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.150.7...v0.150.8) (2024-09-10)
+
+
+### Features
+
+* **gpu-ffi:** add bindings for the distribute function in bellman-cuda ([#22](https://github.com/matter-labs/zksync-crypto-gpu/issues/22)) ([a099924](https://github.com/matter-labs/zksync-crypto-gpu/commit/a099924566592ea0587c27ff26ea2e0f742f775f))
+
+
+### Bug Fixes
+
+* **boojum-cuda:** "un-swap" coarse and fine count for powers_data_g_i ([#27](https://github.com/matter-labs/zksync-crypto-gpu/issues/27)) ([95b29da](https://github.com/matter-labs/zksync-crypto-gpu/commit/95b29da7581121b1e2ffc068d90725a9616f7123))
+
 ## [0.150.7](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.150.6...v0.150.7) (2024-09-06)
 
 

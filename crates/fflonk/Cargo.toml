@@ -4,8 +4,8 @@ edition = "2021"
 version.workspace = true
 
 [dependencies]
-# fflonk = {git = "https://git@github.com/matter-labs/zksync-crypto", package = "fflonk", branch = "si/fflonk"}
-fflonk = { path = "../../../zksync-crypto/crates/fflonk", package = "fflonk", default-features = false, optional = true }
+fflonk = { git = "https://github.com/matter-labs/zksync-crypto", package = "fflonk", branch = "si/fflonk", optional = true }
+# fflonk = { path = "../../../zksync-crypto/crates/fflonk", package = "fflonk", default-features = false, optional = true }
 gpu-ffi.workspace = true
 rand = "0.4"
 derivative = "2.2"

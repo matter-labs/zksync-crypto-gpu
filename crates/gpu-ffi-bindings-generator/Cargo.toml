@@ -7,10 +7,9 @@ keywords.workspace = true
 categories.workspace = true
 repository.workspace = true
 version.workspace = true
-name = "era_cuda_bindings_generator"
-description = "CUDA Bindings generator for ZKsync"
+name = "zksync-gpu-ffi-bindings-generator"
+description = "ZKsync gpu-ffi bindings generator"
 publish = false
 
 [dependencies]
-bindgen = "0.69"
-era_cudart_sys.workspace = true
+bindgen = "0.70"

@@ -2,6 +2,7 @@
 #![feature(slice_index_methods)]
 #![feature(ptr_metadata)]
 #![feature(raw_slice_split)]
+#![feature(generic_const_exprs)]
 
 #[cfg(feature = "sanity")]
 pub(crate) const SANITY_CHECK: bool = true;
@@ -54,3 +55,10 @@ use std::alloc::Allocator;
 
 pub use context::{DeviceContext, DeviceContextWithSingleDevice};
 pub use fflonk::MAX_COMBINED_DEGREE_FACTOR;
+
+pub use fflonk::{
+    convenience::*, FflonkSnarkVerifierCircuit, FflonkSnarkVerifierCircuitProof,
+    FflonkSnarkVerifierCircuitSetup,
+};
+
+pub use convenience::FflonkSnarkVerifierCircuitDeviceSetup;

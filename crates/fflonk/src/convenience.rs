@@ -19,7 +19,7 @@ pub type FflonkSnarkVerifierCircuitDeviceSetup =
 
 use super::*;
 
-pub fn prove_fflonk_snark_verifier_circuit_single_shot(
+pub fn gpu_prove_fflonk_snark_verifier_circuit_single_shot(
     circuit: &FflonkSnarkVerifierCircuit,
     worker: &Worker,
 ) -> (
@@ -55,12 +55,13 @@ pub fn prove_fflonk_snark_verifier_circuit_single_shot(
     (proof, vk)
 }
 
-pub fn prove_fflonk_snark_verifier_circuit_with_precomputation(
+pub fn gpu_prove_fflonk_snark_verifier_circuit_with_precomputation(
     circuit: &FflonkSnarkVerifierCircuit,
     setup: &FflonkSnarkVerifierCircuitDeviceSetup,
     vk: &FflonkSnarkVerifierCircuitVK,
     worker: &Worker,
 ) -> FflonkSnarkVerifierCircuitProof {
+    println!("Synthesizing for fflonk proving");
     let mut proving_assembly = FflonkAssembly::<Bn256, SynthesisModeProve>::new();
     circuit
         .synthesize(&mut proving_assembly)
@@ -88,13 +89,14 @@ pub fn prove_fflonk_snark_verifier_circuit_with_precomputation(
     proof
 }
 
-pub fn precompute_and_save_setup_for_fflonk_snark_circuit(
+pub fn precompute_and_save_setup_and_vk_for_fflonk_snark_circuit(
     circuit: &FflonkSnarkVerifierCircuit,
     worker: &Worker,
-    output_blob_path: &str,
+    path: &str,
 ) {
     let compression_wrapper_mode = circuit.wrapper_function.numeric_circuit_type();
     println!("Compression mode: {compression_wrapper_mode}");
+    println!("Synthesizing for fflonk setup");
     let mut setup_assembly = FflonkAssembly::<Bn256, SynthesisModeGenerateSetup>::new();
     circuit.synthesize(&mut setup_assembly).expect("must work");
     assert!(setup_assembly.is_satisfied());
@@ -104,6 +106,40 @@ pub fn precompute_and_save_setup_for_fflonk_snark_circuit(
     assert!(domain_size.is_power_of_two());
     assert!(domain_size <= 1 << L1_VERIFIER_DOMAIN_SIZE_LOG);
 
+    println!("Generating fflonk setup data");
     let mon_crs = init_crs(&worker, domain_size);
-    todo!()
+    let host_setup =
+        FflonkSnarkVerifierCircuitSetup::create_setup(&setup_assembly, &worker, &mon_crs).unwrap();
+    let vk = FflonkSnarkVerifierCircuitVK::from_setup(&host_setup, &mon_crs).unwrap();
+
+    let device_setup = FflonkSnarkVerifierCircuitDeviceSetup::from_host_setup(host_setup);
+    let setup_file_path = format!("{}/final_snark_device_setup.bin", path);
+
+    let device_setup_file = std::fs::File::create(&setup_file_path).unwrap();
+    device_setup.write(&device_setup_file).unwrap();
+    println!("fflonk device setup saved into {}", setup_file_path);
+
+    let vk_file_path = format!("{}/final_vk.json", path);
+    let vk_file = std::fs::File::create(&vk_file_path).unwrap();
+    serde_json::to_writer(&vk_file, &vk).unwrap();
+    println!("fflonk vk saved into {}", vk_file_path);
+}
+
+pub fn load_device_setup_and_vk_of_fflonk_snark_circuit(
+    path: &str,
+) -> (
+    FflonkSnarkVerifierCircuitDeviceSetup,
+    FflonkSnarkVerifierCircuitVK,
+) {
+    println!("Loading fflonk setup for snark circuit");
+    let setup_file_path = format!("{}/final_snark_device_setup.bin", path);
+    let setup_file = std::fs::File::open(setup_file_path).unwrap();
+    let device_setup = FflonkDeviceSetup::read(&setup_file).unwrap();
+
+    let vk_file_path = format!("{}/final_vk.json", path);
+    let vk_file_path = std::path::Path::new(&vk_file_path);
+    let vk_file = std::fs::File::open(&vk_file_path).unwrap();
+    let vk = serde_json::from_reader(&vk_file).unwrap();
+
+    (device_setup, vk)
 }

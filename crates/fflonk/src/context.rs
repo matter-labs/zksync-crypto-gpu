@@ -34,6 +34,12 @@ impl<const N: usize> DeviceContext<N> {
     }
 
     pub unsafe fn init(domain_size: usize) -> CudaResult<Self> {
+        assert_eq!(
+            is_context_initialized(),
+            false,
+            "Context is already initialized"
+        );
+
         let context = Self::init_minimal()?;
 
         Self::init_msm_on_static_memory(domain_size)?;
@@ -105,19 +111,16 @@ impl<const N: usize> DeviceContext<N> {
     }
 
     unsafe fn init_msm(domain_size: usize, stream: Option<bc_stream>) -> CudaResult<()> {
+        assert!(_BASES.is_none(), "MSM context is already initialized");
         println!("Transferring bases to the static memory of device");
         // MSM impl requires bases to be located in a buffer that is
         // multiple of the domain_size
-        let common_combined_degree = 10 * domain_size;
-        let crs = init_compact_crs(
-            &bellman::worker::Worker::new(),
-            domain_size,
-            common_combined_degree,
-        );
+        let crs = init_compact_crs(&bellman::worker::Worker::new(), domain_size);
         use bellman::CurveAffine;
+        let num_bases = MAX_COMBINED_DEGREE_FACTOR * domain_size;
         let d_bases = match stream {
             Some(stream) => {
-                let mut d_bases = DVec::allocate_zeroed_on(common_combined_degree, stream);
+                let mut d_bases = DVec::allocate_zeroed_on(num_bases, stream);
                 let (actual_bases, remainder) = d_bases.split_at_mut(crs.g1_bases.len());
                 mem::h2d_on(&crs.g1_bases, actual_bases, stream)?;
                 if !remainder.is_empty() {
@@ -132,7 +135,7 @@ impl<const N: usize> DeviceContext<N> {
                 d_bases
             }
             None => {
-                let mut d_bases = DVec::allocate_zeroed(common_combined_degree);
+                let mut d_bases = DVec::allocate_zeroed(num_bases);
                 let (actual_bases, remainder) = d_bases.split_at_mut(crs.g1_bases.len());
                 mem::memcopy_from_host(actual_bases, &crs.g1_bases)?;
                 if !remainder.is_empty() {
@@ -223,24 +226,35 @@ use bellman::kate_commitment::{Crs, CrsForMonomialForm};
 pub fn init_compact_crs(
     worker: &bellman::worker::Worker,
     domain_size: usize,
-    max_combined_degree: usize,
 ) -> Crs<CompactBn256, CrsForMonomialForm> {
     assert!(domain_size <= 1 << fflonk::L1_VERIFIER_DOMAIN_SIZE_LOG);
-    let mon_crs = if let Ok(crs_file_path) = std::env::var("CRS_FILE") {
+    let num_points = MAX_COMBINED_DEGREE_FACTOR * domain_size;
+    let mon_crs = if let Ok(socket_path) = std::env::var("TEST_SOCK_FILE") {
+        read_crs_over_socket(&socket_path).unwrap()
+    } else if let Ok(crs_file_path) = std::env::var("CRS_FILE") {
         println!("using crs file at {crs_file_path}");
         let crs_file =
             std::fs::File::open(&crs_file_path).expect(&format!("crs file at {}", crs_file_path));
         let mon_crs = Crs::<CompactBn256, CrsForMonomialForm>::read(crs_file)
             .expect(&format!("read crs file at {}", crs_file_path));
-        assert!(max_combined_degree <= mon_crs.g1_bases.len());
+        assert!(num_points <= mon_crs.g1_bases.len());
 
         mon_crs
     } else {
-        Crs::<CompactBn256, CrsForMonomialForm>::non_power_of_two_crs_42(
-            max_combined_degree,
-            &worker,
-        )
+        Crs::<CompactBn256, CrsForMonomialForm>::non_power_of_two_crs_42(num_points, &worker)
     };
 
     mon_crs
+}
+
+// This is convenient for faster testing
+fn read_crs_over_socket(
+    socket_path: &str,
+) -> std::io::Result<Crs<CompactBn256, CrsForMonomialForm>> {
+    let mut socket = std::os::unix::net::UnixStream::connect(socket_path)?;
+    std::io::Write::write_all(&mut socket, &[1])?;
+    let crs = Crs::<CompactBn256, CrsForMonomialForm>::read(&socket)?;
+    println!("CRS loaded");
+
+    Ok(crs)
 }

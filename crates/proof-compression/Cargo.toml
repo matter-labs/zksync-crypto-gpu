@@ -12,7 +12,7 @@ version.workspace = true
 [dependencies]
 shivini = { package = "shivini", workspace = true, default-features = false }
 fflonk = { package = "fflonk", workspace = true }
-circuit_definitions = { path = "../../../zksync-protocol/crates/circuit_definitions", optional = true }
+circuit_definitions = { package = "circuit_definitions", workspace = true }
 
 serde_json = "1"
 bincode = "1.3"

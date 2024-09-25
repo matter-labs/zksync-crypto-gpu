@@ -95,8 +95,10 @@ fn raw_msm<E: Engine>(
     };
     println!("Scheduling MSM kernel on device");
     unsafe {
-        if msm_execute_async(cfg) != 0 {
-            return Err(CudaError::MsmError("Scheduling Error".to_string()));
+        let result = msm_execute_async(cfg);
+
+        if result != 0 {
+            return Err(CudaError::MsmError(result.to_string()));
         };
     }
     stream.sync().unwrap();

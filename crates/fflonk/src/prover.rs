@@ -4,12 +4,9 @@ use std::{
     slice::{Iter, IterMut},
 };
 
-use bellman::{
-    bn256::Bn256,
-    plonk::{
-        better_better_cs::cs::{Circuit, SynthesisMode},
-        commitments::transcript::Transcript,
-    },
+use bellman::plonk::{
+    better_better_cs::cs::{Circuit, SynthesisMode},
+    commitments::transcript::Transcript,
 };
 use fflonk::{
     commit_point_as_xy, compute_generators, horner_evaluation, FflonkAssembly, FflonkProof,
@@ -102,6 +99,11 @@ pub fn create_proof<
         domain_size.trailing_zeros() <= 23,
         "Only trace length up to 2^23 is allowed"
     );
+    let mut context = None;
+    if is_context_initialized() == false {
+        context = Some(unsafe { DeviceContextWithSingleDevice::init(domain_size)? })
+    }
+    assert!(is_context_initialized());
 
     let mut transcript = T::new();
 
@@ -291,7 +293,11 @@ pub fn create_proof<
         3,
         stream,
     )?;
-
+    if SANITY_CHECK {
+        stream.sync().unwrap();
+        let result = gpu_ffi::device_info(0).unwrap();
+        dbg!(result);
+    }
     // commit to the c2(x)
     let c2_commitment = commit_monomial::<E>(&c2_monomial, domain_size, stream)?;
     dbg!(c2_commitment);

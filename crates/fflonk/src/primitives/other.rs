@@ -58,3 +58,14 @@ where
 
     Ok(())
 }
+
+pub fn set_default_device() -> CudaResult<()> {
+    unsafe {
+        let result = gpu_ffi::bc_set_device(0);
+        if result != 0 {
+            return Err(CudaError::Error(format!("Set device error: {result}")));
+        }
+    }
+
+    Ok(())
+}

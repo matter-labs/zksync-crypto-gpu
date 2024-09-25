@@ -5,6 +5,7 @@ use bellman::{
     plonk::{
         better_better_cs::cs::{Circuit, SynthesisModeTesting},
         commitments::transcript::keccak_transcript::RollingKeccakTranscript,
+        polynomials::Polynomial,
     },
     worker::Worker,
 };
@@ -69,7 +70,7 @@ fn test_snark_circuit_with_naive_main_gate() {
     let worker = Worker::new();
     let circuit = init_snark_wrapper_circuit(&path);
     let (proof, vk) =
-        crate::convenience::prove_fflonk_snark_verifier_circuit_single_shot(&circuit, &worker);
+        crate::convenience::gpu_prove_fflonk_snark_verifier_circuit_single_shot(&circuit, &worker);
 
     save_fflonk_proof_and_vk_into_file(&proof, &vk, &path);
 }
@@ -110,4 +111,33 @@ fn test_test_circuit_with_naive_main_gate() {
 
     let valid = fflonk::verify::<_, _, RollingKeccakTranscript<Fr>>(&vk, &proof, None).unwrap();
     assert!(valid, "proof verification fails");
+}
+
+#[test]
+fn test_large_msm() {
+    unsafe {
+        use rand::Rand;
+        let mut rng = rand::thread_rng();
+        let worker = Worker::new();
+        let domain_size = 1 << 23;
+        let degree = 10 * domain_size;
+
+        let coeffs = (0..degree).map(|_| Fr::rand(&mut rng)).collect();
+        let this = Polynomial::from_coeffs_unpadded(coeffs).unwrap();
+
+        let context = DeviceContextWithSingleDevice::init(domain_size).unwrap();
+        let stream = bc_stream::new().unwrap();
+
+        let other = DVec::from_host_slice_on(this.as_ref(), stream).unwrap();
+        let other = Poly::<Fr, MonomialBasis>::from_buffer(other);
+
+        let actual = commit_monomial::<Bn256>(&other, domain_size, stream).unwrap();
+        stream.sync().unwrap();
+
+        let mon_crs = init_crs(&worker, domain_size);
+
+        let expected =
+            bellman::kate_commitment::commit_using_monomials(&this, &mon_crs, &worker).unwrap();
+        assert_eq!(expected, actual);
+    }
 }

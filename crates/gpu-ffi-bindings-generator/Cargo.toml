@@ -1,0 +1,15 @@
+[package]
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
+version.workspace = true
+name = "zksync-gpu-ffi-bindings-generator"
+description = "ZKsync gpu-ffi bindings generator"
+publish = false
+
+[dependencies]
+bindgen = "0.70"

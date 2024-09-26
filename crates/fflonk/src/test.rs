@@ -104,9 +104,14 @@ fn test_test_circuit_with_naive_main_gate() {
 
     let setup = FflonkDeviceSetup::create_setup_on_host(&circuit, &mon_crs, &worker);
 
-    let proof = create_proof::<_, FflonkTestCircuit, _, RollingKeccakTranscript<Fr>, Global>(
-        &assembly, &setup, &worker,
-    )
+    let proof = create_proof::<
+        _,
+        FflonkTestCircuit,
+        _,
+        RollingKeccakTranscript<Fr>,
+        CombinedMonomialDeviceStorage<Fr>,
+        Global,
+    >(&assembly, &setup, &worker)
     .expect("proof");
 
     let valid = fflonk::verify::<_, _, RollingKeccakTranscript<Fr>>(&vk, &proof, None).unwrap();

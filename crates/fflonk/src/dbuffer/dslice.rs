@@ -1,6 +1,6 @@
 use gpu_ffi::bc_stream;
 
-use super::{CudaResult, DChunks, DChunksMut, DIter, DIterMut, DVec};
+use super::{CudaResult, DChunks, DChunksMut, DIter, DIterMut, DVec, HostAllocator};
 
 pub struct DSlice<T>([T]);
 
@@ -80,7 +80,11 @@ impl<T> DSlice<T> {
     }
 
     pub fn to_vec_on(&self, stream: bc_stream) -> CudaResult<Vec<T>> {
-        let mut dst: Vec<_> = Vec::with_capacity(self.len());
+        self.to_vec_in_on::<std::alloc::Global>(stream)
+    }
+
+    pub fn to_vec_in_on<A: HostAllocator>(&self, stream: bc_stream) -> CudaResult<Vec<T, A>> {
+        let mut dst: Vec<_, A> = Vec::with_capacity_in(self.len(), A::default());
         unsafe { dst.set_len(self.len()) };
         super::mem::d2h_on(self, &mut dst, stream)?;
 

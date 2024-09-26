@@ -43,9 +43,14 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_single_shot(
     let setup = FflonkDeviceSetup::<_, FflonkSnarkVerifierCircuit>::from_host_setup(host_setup);
 
     let start = std::time::Instant::now();
-    let proof = create_proof::<_, FflonkSnarkVerifierCircuit, _, RollingKeccakTranscript<_>, _>(
-        &assembly, &setup, &worker,
-    )
+    let proof = create_proof::<
+        _,
+        FflonkSnarkVerifierCircuit,
+        _,
+        RollingKeccakTranscript<_>,
+        CombinedMonomialDeviceStorage<Fr>,
+        _,
+    >(&assembly, &setup, &worker)
     .unwrap();
     println!("proof generation takes {} ms", start.elapsed().as_millis());
 
@@ -75,11 +80,14 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_with_precomputation(
     let context = unsafe { DeviceContextWithSingleDevice::init(domain_size).unwrap() };
 
     let start = std::time::Instant::now();
-    let proof = create_proof::<_, FflonkSnarkVerifierCircuit, _, RollingKeccakTranscript<_>, _>(
-        &proving_assembly,
-        &setup,
-        &worker,
-    )
+    let proof = create_proof::<
+        _,
+        FflonkSnarkVerifierCircuit,
+        _,
+        RollingKeccakTranscript<_>,
+        CombinedMonomialDeviceStorage<Fr>,
+        _,
+    >(&proving_assembly, &setup, &worker)
     .unwrap();
     println!("proof generation takes {} ms", start.elapsed().as_millis());
 

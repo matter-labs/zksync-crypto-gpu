@@ -58,6 +58,15 @@ where
     }
 }
 
+impl<F, const N: usize> DropOn for MonomialStorage<F, N>
+where
+    F: PrimeField,
+{
+    fn drop_on(&mut self, stream: bc_stream) {
+        todo!()
+    }
+}
+
 impl<F, const N: usize> Drop for MonomialStorage<F, N>
 where
     F: PrimeField,
@@ -417,6 +426,14 @@ pub fn create_proof<
         8,
         stream,
     )?;
+    drop(main_gate_selectors_monomial);
+    drop(permutation_monomials);
+    drop(trace_monomials);
+    drop(main_gate_quotient_monomial);
+    drop(copy_perm_grand_prod_monomial);
+    drop(copy_perm_first_quotient_monomial);
+    drop(copy_perm_second_quotient_monomial);
+
     if SANITY_CHECK {
         let [setup_omega, trace_omega, copy_perm_omega] = compute_generators::<E::Fr>(8, 4, 3);
         let mut expected = DScalar::zero(stream)?;

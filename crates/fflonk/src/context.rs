@@ -252,9 +252,10 @@ fn read_crs_over_socket(
     socket_path: &str,
 ) -> std::io::Result<Crs<CompactBn256, CrsForMonomialForm>> {
     let mut socket = std::os::unix::net::UnixStream::connect(socket_path)?;
+    let start = std::time::Instant::now();
     std::io::Write::write_all(&mut socket, &[1])?;
     let crs = Crs::<CompactBn256, CrsForMonomialForm>::read(&socket)?;
-    println!("CRS loaded");
+    println!("Loading CRS takes {} s", start.elapsed().as_secs());
 
     Ok(crs)
 }

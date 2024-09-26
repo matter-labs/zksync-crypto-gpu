@@ -212,7 +212,6 @@ impl CompressionInput {
 }
 
 #[test]
-#[ignore]
 fn run_proof_compression_by_schedule() {
     let path = if let Ok(path) = std::env::var("BLOB_PATH") {
         path.to_string()
@@ -527,7 +526,6 @@ pub fn load_device_setup_in_memory_and_vk_of_fflonk_snark_circuit(
 ) {
     println!("Loading fflonk setup for snark circuit");
     let device_setup = read_setup_over_socket().unwrap();
-
     let vk_file_path = format!("{}/final_vk.json", path);
     let vk_file_path = std::path::Path::new(&vk_file_path);
     let vk_file = std::fs::File::open(&vk_file_path).unwrap();
@@ -539,9 +537,10 @@ pub fn load_device_setup_in_memory_and_vk_of_fflonk_snark_circuit(
 fn read_setup_over_socket() -> std::io::Result<FflonkSnarkVerifierCircuitDeviceSetup> {
     let socket_path = std::env::var("TEST_SOCK_FILE").unwrap();
     let mut socket = std::os::unix::net::UnixStream::connect(socket_path)?;
+    let start = std::time::Instant::now();
     std::io::Write::write_all(&mut socket, &[0])?;
     let device_setup = FflonkSnarkVerifierCircuitDeviceSetup::read(&socket).unwrap();
-    println!("Setup decoded");
+    println!("Decoding setup takes {} s", start.elapsed().as_secs());
 
     Ok(device_setup)
 }

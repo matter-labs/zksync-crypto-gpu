@@ -8,6 +8,7 @@ pub enum CudaError {
     BitreverseError(String),
     BatchInverseError(String),
     GrandProductErr(String),
+    PolyEvaluationErr(String),
     MsmError(String),
     TransferError(String),
     AllocationError(String),

@@ -268,7 +268,7 @@ where
     unsafe {
         let result = gpu_ffi::ff_poly_evaluate(cfg);
         if result != 0 {
-            return Err(CudaError::GrandProductErr(result.to_string()));
+            return Err(CudaError::PolyEvaluationErr(result.to_string()));
         }
     }
 

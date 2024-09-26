@@ -88,17 +88,19 @@ where
     }
 }
 
-pub fn create_proof<
+pub fn create_proof<E, C, S, T, CM, A>(
+    assembly: &FflonkAssembly<E, S>,
+    setup: &FflonkDeviceSetup<E, C, A>,
+    worker: &bellman::worker::Worker,
+) -> CudaResult<FflonkProof<E, C>>
+where
     E: Engine,
     C: Circuit<E>,
     S: SynthesisMode,
     T: Transcript<E::Fr>,
+    CM: CombinedMonomialStorage<E::Fr>,
     A: HostAllocator,
->(
-    assembly: &FflonkAssembly<E, S>,
-    setup: &FflonkDeviceSetup<E, C, A>,
-    worker: &bellman::worker::Worker,
-) -> CudaResult<FflonkProof<E, C>> {
+{
     assert!(S::PRODUCE_WITNESS);
     assert!(assembly.is_finalized);
 
@@ -125,8 +127,66 @@ pub fn create_proof<
     commit_point_as_xy::<E, _>(&mut transcript, &setup.c0_commitment);
     dbg!(setup.c0_commitment);
 
-    // take witnesses
     let stream = bc_stream::new().unwrap();
+
+    let mut combined_monomial_storage = CM::allocate_on(domain_size, stream)?;
+
+    let ([c1_commitment, c2_commitment], h_all_evaluations, h_aux_evaluations, challenges) =
+        prove_statements(
+            &assembly,
+            &setup,
+            &mut combined_monomial_storage,
+            &mut transcript,
+            domain_size,
+            stream,
+            worker,
+        )?;
+
+    let ([w_commitment, w_prime_commitment], h_lagrange_basis_inverses) = prove_openings::<E, _, _>(
+        &mut combined_monomial_storage,
+        &mut transcript,
+        h_all_evaluations.clone(),
+        h_aux_evaluations.clone(),
+        challenges,
+        domain_size,
+        stream,
+    )?;
+
+    // make proof
+    let mut proof = FflonkProof::empty();
+    proof.inputs = h_public_inputs;
+    proof.commitments = vec![
+        c1_commitment,
+        c2_commitment,
+        w_commitment,
+        w_prime_commitment,
+    ];
+    proof.evaluations = h_all_evaluations;
+    proof.lagrange_basis_inverses = h_lagrange_basis_inverses;
+
+    stream.sync().unwrap();
+    Ok(proof)
+}
+
+pub fn prove_statements<E, C, S, T, CM, A>(
+    assembly: &FflonkAssembly<E, S>,
+    setup: &FflonkDeviceSetup<E, C, A>,
+    combined_monomial_stoarge: &mut CM,
+    transcript: &mut T,
+    domain_size: usize,
+    stream: bc_stream,
+    worker: &bellman::worker::Worker,
+) -> CudaResult<([E::G1Affine; 2], Vec<E::Fr>, Vec<E::Fr>, [E::Fr; 3])>
+where
+    E: Engine,
+    C: Circuit<E>,
+    S: SynthesisMode,
+    T: Transcript<E::Fr>,
+    CM: CombinedMonomialStorage<E::Fr>,
+    A: HostAllocator,
+{
+    // take witnesses
+
     let trace_monomials = unsafe {
         load_trace_from_precomputations(assembly, worker, domain_size, stream).expect("load trace")
     };
@@ -140,7 +200,7 @@ pub fn create_proof<
     let mut main_gate_quotient_lde_bitreversed =
         Poly::<_, LDE>::zero(main_gate_quotient_degree * domain_size, stream);
 
-    let public_inputs = DVec::from_host_slice_on(&h_public_inputs, stream)?;
+    let public_inputs = DVec::from_host_slice_on(&assembly.input_assingments, stream)?;
     for coset_idx in 0..main_gate_quotient_degree {
         let quotient_sum = evaluate_main_gate_constraints(
             coset_idx,
@@ -171,7 +231,6 @@ pub fn create_proof<
             .enumerate()
             .for_each(|(idx, coeff)| assert!(coeff.is_zero(), "{idx}-th coeff should be zero"));
     }
-
     // combine monomials into c1 combined monomial
     // max degree combined poly is c2 where deg(c2) = 9(n-1) + 12
     // let common_combined_poly_degree = 10 * domain_size;
@@ -193,7 +252,8 @@ pub fn create_proof<
     dbg!(c1_commitment);
 
     // commit commitment into transcript
-    commit_point_as_xy::<E, _>(&mut transcript, &c1_commitment);
+    commit_point_as_xy::<E, T>(transcript, &c1_commitment);
+    combined_monomial_stoarge.write(1, c1_monomial, stream)?;
 
     let h_beta = transcript.get_challenge();
     let h_gamma = transcript.get_challenge();
@@ -302,6 +362,7 @@ pub fn create_proof<
         3,
         stream,
     )?;
+
     if SANITY_CHECK {
         stream.sync().unwrap();
         let result = gpu_ffi::device_info(0).unwrap();
@@ -311,7 +372,8 @@ pub fn create_proof<
     let c2_commitment = commit_monomial::<E>(&c2_monomial, domain_size, stream)?;
     dbg!(c2_commitment);
     // commit commitment into transcript
-    commit_point_as_xy::<E, _>(&mut transcript, &c2_commitment);
+    commit_point_as_xy::<E, T>(transcript, &c2_commitment);
+    combined_monomial_stoarge.write(2, c2_monomial, stream)?;
 
     // get evaluation challenge
     let power = 24;
@@ -388,6 +450,56 @@ pub fn create_proof<
 
     let h_aux_evaluations = aux_evaluations.to_host_scalars_on(stream)?;
 
+    let c0_degree = 8 * domain_size;
+    let mut c0_monomial = Poly::<_, MonomialBasis>::zero(c0_degree, stream);
+    combine_monomials(
+        main_gate_selectors_monomial
+            .iter()
+            .chain(permutation_monomials.iter()),
+        &mut c0_monomial,
+        8,
+        stream,
+    )?;
+
+    combined_monomial_stoarge.write(0, c0_monomial, stream)?;
+
+    Ok((
+        [c1_commitment, c2_commitment],
+        h_all_evaluations,
+        h_aux_evaluations,
+        [h_r, h_z, h_z_omega],
+    ))
+}
+
+// our fflonk implementation commits to the polynomials that each has
+// degree of 9*2^23=2.42GB
+// MSM of same size alloctes twice as memory ~5GB
+
+// Cuda has following available devices:
+// T4 has total 16GB memory, 11GB for the proving
+// L4 has 24GB memory, 21GB for the proving
+// A100 has both 40GB and 80GB memory,
+
+// If we decide to do divisons on the opening protocol on the device,
+// then memory becomes bottleneck
+// Simplest obvious solution is to transfer combined monomials to the host
+// in a async way then load them back to the device sequantially each time
+// Obviously it will affect proof generation time but it is still much better
+// than the case where we do divison on the host.
+pub fn prove_openings<E, T, CM>(
+    combined_monomial_stoarge: &mut CM,
+    transcript: &mut T,
+    h_all_evaluations: Vec<E::Fr>,
+    h_aux_evaluations: Vec<E::Fr>,
+    previous_round_challenges: [E::Fr; 3],
+    domain_size: usize,
+    stream: bc_stream,
+) -> CudaResult<([E::G1Affine; 2], Vec<E::Fr>)>
+where
+    E: Engine,
+    T: Transcript<E::Fr>,
+    CM: CombinedMonomialStorage<E::Fr>,
+{
     // get linearization challenge
     let h_alpha = transcript.get_challenge();
     dbg!(h_alpha);
@@ -395,6 +507,8 @@ pub fn create_proof<
     h_alpha_pows[1].mul_assign(&h_alpha);
     let alpha_pows = DScalars::from_host_scalars_on(&h_alpha_pows, stream)?;
 
+    let [h_r, h_z, h_z_omega] = previous_round_challenges;
+    let power = 24;
     let opening_points = compute_opening_points(h_r, h_z, h_z_omega, power, domain_size);
 
     dbg!(&opening_points);
@@ -416,24 +530,6 @@ pub fn create_proof<
     mem::h2d_on(&h_r2_monomial, r2_monomial.as_mut(), stream)?;
 
     // re-construct combined polynomial of the preprocessing parts
-    let c0_degree = 8 * domain_size;
-    let mut c0_monomial = Poly::<_, MonomialBasis>::zero(c0_degree, stream);
-    combine_monomials(
-        main_gate_selectors_monomial
-            .iter()
-            .chain(permutation_monomials.iter()),
-        &mut c0_monomial,
-        8,
-        stream,
-    )?;
-    drop(main_gate_selectors_monomial);
-    drop(permutation_monomials);
-    drop(trace_monomials);
-    drop(main_gate_quotient_monomial);
-    drop(copy_perm_grand_prod_monomial);
-    drop(copy_perm_first_quotient_monomial);
-    drop(copy_perm_second_quotient_monomial);
-
     if SANITY_CHECK {
         let [setup_omega, trace_omega, copy_perm_omega] = compute_generators::<E::Fr>(8, 4, 3);
         let mut expected = DScalar::zero(stream)?;
@@ -441,6 +537,7 @@ pub fn create_proof<
 
         let mut opening_points_iter = opening_points.into_iter();
         let mut h_current = opening_points_iter.next().unwrap();
+        let c0_monomial = combined_monomial_stoarge.read(0, stream)?;
         for _ in 0..8 {
             let current = DScalar::from_host_value_on(&h_current, stream)?;
             c0_monomial.evaluate_at_into_on(&current, &mut expected, stream)?;
@@ -452,6 +549,7 @@ pub fn create_proof<
             h_current.mul_assign(&setup_omega);
         }
         let mut h_current = opening_points_iter.next().unwrap();
+        let c1_monomial = combined_monomial_stoarge.read(1, stream)?;
         for _ in 0..4 {
             let current = DScalar::from_host_value_on(&h_current, stream)?;
             c1_monomial.evaluate_at_into_on(&current, &mut expected, stream)?;
@@ -464,6 +562,7 @@ pub fn create_proof<
         }
 
         let mut h_current = opening_points_iter.next().unwrap();
+        let c2_monomial = combined_monomial_stoarge.read(2, stream)?;
         for _ in 0..3 {
             let current = DScalar::from_host_value_on(&h_current, stream)?;
             c2_monomial.evaluate_at_into_on(&current, &mut expected, stream)?;
@@ -487,13 +586,13 @@ pub fn create_proof<
             h_current.mul_assign(&copy_perm_omega);
         }
     }
-    let combined_monomials = [c0_monomial, c1_monomial, c2_monomial];
+
     let r_monomials = [r0_monomial, r1_monomial, r2_monomial];
 
     // compute opening proof W(x) in monomial  W(x) = f(x) / Z(x)
     let w_monomial = compute_w_monomial(
         domain_size,
-        &combined_monomials,
+        combined_monomial_stoarge,
         &r_monomials,
         h_z,
         h_z_omega,
@@ -503,7 +602,7 @@ pub fn create_proof<
     )?;
     // commit W(x) commitment into transcript
     let w_commitment = commit_monomial::<E>(&w_monomial, domain_size, stream)?;
-    commit_point_as_xy::<E, _>(&mut transcript, &w_commitment);
+    commit_point_as_xy::<E, T>(transcript, &w_commitment);
     dbg!(w_commitment);
 
     // get challenge
@@ -529,7 +628,7 @@ pub fn create_proof<
     let w_prime_monomial = compute_w_prime_monomial(
         domain_size,
         w_monomial,
-        combined_monomials,
+        combined_monomial_stoarge,
         r_evals_at_y,
         h_z,
         h_z_omega,
@@ -541,20 +640,11 @@ pub fn create_proof<
     let w_prime_commitment = commit_monomial::<E>(&w_prime_monomial, domain_size, stream)?;
     dbg!(w_prime_commitment);
 
-    // make proof
-    let mut proof = FflonkProof::empty();
-    proof.inputs = h_public_inputs;
-    proof.commitments = vec![
-        c1_commitment,
-        c2_commitment,
-        w_commitment,
-        w_prime_commitment,
-    ];
-    proof.evaluations = h_all_evaluations;
-    proof.lagrange_basis_inverses = compute_flattened_lagrange_basis_inverses(opening_points, h_y);
-
-    stream.sync().unwrap();
-    Ok(proof)
+    let h_lagrange_basis_inverses = compute_flattened_lagrange_basis_inverses(opening_points, h_y);
+    Ok((
+        [w_commitment, w_prime_commitment],
+        h_lagrange_basis_inverses,
+    ))
 }
 
 // TODO: bit representation of the selectors
@@ -751,9 +841,9 @@ pub unsafe fn materialize_permutation_polys<F: PrimeField>(
     Ok(permutations_monomial)
 }
 
-pub fn compute_w_monomial<F>(
+pub fn compute_w_monomial<F, CM>(
     domain_size: usize,
-    combined_monomials: &[Poly<F, MonomialBasis>; 3],
+    combined_monomial_storage: &mut CM,
     r_monomials: &[Poly<F, MonomialBasis>; 3],
     h_z: F,
     h_z_omega: F,
@@ -763,6 +853,7 @@ pub fn compute_w_monomial<F>(
 ) -> CudaResult<Poly<F, MonomialBasis>>
 where
     F: PrimeField,
+    CM: CombinedMonomialStorage<F>,
 {
     assert_eq!(alpha_pows.len(), 2);
     let [
@@ -775,7 +866,6 @@ where
         h_z_omega,
     );
 
-    let [c0, c1, c2] = combined_monomials;
     let [r0, r1, r2] = r_monomials;
 
     let mut alpha_pows_iter = alpha_pows.iter();
@@ -787,6 +877,7 @@ where
 
     // aggregate parts
     // c2 degree is the largest one, we can use it as accumulator
+    let c2 = combined_monomial_storage.read(2, stream)?;
     assert!(c2.size() <= 9 * (domain_size - 1) + 12);
     let mut tmp = c2.clone_on(stream)?;
     tmp.sub_assign_on(&r2, stream)?;
@@ -794,19 +885,27 @@ where
     let mut w_monomial_proto =
         multiply_monomial_with_multiple_sparse_polys(tmp, sparse_polys_for_copy_perm, stream)?;
 
-    for (c, r, sparse_poly, alpha) in [
-        (c0, r0, sparse_polys_for_setup, None),
-        (c1, r1, sparse_polys_for_trace, Some(alpha)),
+    for (poly_idx, r, sparse_poly, alpha) in [
+        (0, r0, sparse_polys_for_setup, None),
+        (1, r1, sparse_polys_for_trace, Some(alpha)),
     ]
     .into_iter()
     {
-        let mut tmp = c.clone_on(stream)?;
+        let mut tmp = combined_monomial_storage
+            .read(poly_idx, stream)?
+            .clone_on(stream)?;
         tmp.sub_assign_on(&r, stream)?;
         if let Some(alpha) = alpha {
             tmp.scale_on(alpha, stream)?;
         }
         let tmp = multiply_monomial_with_multiple_sparse_polys(tmp, sparse_poly, stream)?;
         w_monomial_proto.add_assign_on(&tmp, stream)?;
+    }
+
+    if SANITY_CHECK {
+        stream.sync().unwrap();
+        let result = gpu_ffi::device_info(0).unwrap();
+        dbg!(result);
     }
 
     // do divison
@@ -846,10 +945,10 @@ where
     Ok(w_monomial)
 }
 
-pub fn compute_w_prime_monomial<F>(
+pub fn compute_w_prime_monomial<F, CM>(
     domain_size: usize,
     w: Poly<F, MonomialBasis>,
-    combined_monomials: [Poly<F, MonomialBasis>; 3],
+    combined_monomial_storage: &mut CM,
     r_evals_at_y: [DScalar<F>; 3],
     h_z: F,
     h_z_omega: F,
@@ -859,6 +958,7 @@ pub fn compute_w_prime_monomial<F>(
 ) -> CudaResult<Poly<F, MonomialBasis>>
 where
     F: PrimeField,
+    CM: CombinedMonomialStorage<F>,
 {
     // each product already cancels evaluation of Z_T{S0} and also
     // contains factor of corresponding power of the alpha
@@ -874,23 +974,26 @@ where
         stream,
     )?;
 
-    let [mut c0, mut c1, mut c2] = combined_monomials;
     let [r0_at_y, r1_at_y, r2_at_y] = r_evals_at_y;
 
     // L(x) = (C0(x) - r0(y)) + (alpha*Z_T\S1(y)/Z_T\S0(y))(C1(x) - r1(y)) + (alpha^2*Z_T\S2(y)/Z_T\S0(y))(C2(x) - r2(y)) - (Z_t(y)/Z_T\S0(y))*W(x)
     // W'(x) = L(x)/(x-y)
-
+    // combined_monomial_storage.load(0, stream)?.clo;
     let mut w_prime_monomial_proto = w;
     w_prime_monomial_proto.scale_on(&product_of_sparse_polys_at_y_negated, stream)?;
 
-    arithmetic::sub_constant(&mut c0.as_mut()[0..1], &r0_at_y, stream)?;
-    w_prime_monomial_proto.add_assign_on(&c0, stream)?;
+    let mut tmp = Poly::<F, MonomialBasis>::zero(9 * domain_size, stream);
+    combined_monomial_storage.read_into(0, &mut tmp, stream)?;
+    arithmetic::sub_constant(&mut tmp.as_mut()[0..1], &r0_at_y, stream)?;
+    w_prime_monomial_proto.add_assign_on(&tmp, stream)?;
 
-    arithmetic::sub_constant(&mut c1.as_mut()[0..1], &r1_at_y, stream)?;
-    w_prime_monomial_proto.add_assign_scaled_on(&c1, &sparse_polys_for_trace_at_y, stream)?;
+    combined_monomial_storage.read_into(1, &mut tmp, stream)?;
+    arithmetic::sub_constant(&mut tmp.as_mut()[0..1], &r1_at_y, stream)?;
+    w_prime_monomial_proto.add_assign_scaled_on(&tmp, &sparse_polys_for_trace_at_y, stream)?;
 
-    arithmetic::sub_constant(&mut c2.as_mut()[0..1], &r2_at_y, stream)?;
-    w_prime_monomial_proto.add_assign_scaled_on(&c2, &sparse_polys_for_copy_perm_at_y, stream)?;
+    combined_monomial_storage.read_into(2, &mut tmp, stream)?;
+    arithmetic::sub_constant(&mut tmp.as_mut()[0..1], &r2_at_y, stream)?;
+    w_prime_monomial_proto.add_assign_scaled_on(&tmp, &sparse_polys_for_copy_perm_at_y, stream)?;
 
     let mut h_y_negated = h_y;
     h_y_negated.negate();

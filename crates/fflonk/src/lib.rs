@@ -25,6 +25,9 @@ pub use context::*;
 mod convenience;
 pub use convenience::*;
 
+mod combined_poly;
+use combined_poly::*;
+
 mod error;
 use error::*;
 

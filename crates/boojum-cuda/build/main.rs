@@ -12,12 +12,10 @@ fn main() {
     poseidon2_bn::generate();
     poseidon2_gl::generate();
     println!("cargo::rustc-check-cfg=cfg(no_cuda)");
-    #[cfg(no_cuda)]
-    {
+    if era_cudart_sys::is_no_cuda() {
         println!("cargo::warning={}", era_cudart_sys::no_cuda_message!());
-    }
-    #[cfg(not(no_cuda))]
-    {
+        println!("cargo::rustc-cfg=no_cuda");
+    } else {
         use era_cudart_sys::{get_cuda_lib_path, get_cuda_version};
         use std::env::var;
         let cuda_version =

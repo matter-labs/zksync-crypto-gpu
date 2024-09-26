@@ -1,0 +1,16 @@
+[package]
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
+version.workspace = true
+name = "era_cudart_sys_bindings_generator"
+description = "CUDA Bindings generator for ZKsync"
+publish = false
+
+[dependencies]
+bindgen = "0.69"
+era_cudart_sys.workspace = true

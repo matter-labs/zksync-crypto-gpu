@@ -2,9 +2,31 @@ use super::*;
 
 pub struct DScalar<F: PrimeField>(DVec<F>);
 
+static mut _SMALL_SCALAR_MEMPOOL: Option<bc_mem_pool> = None;
+
+pub(crate) fn init_small_scalar_mempool() {
+    assert!(is_small_scalar_mempool_initialized() == false);
+    unsafe {
+        _SMALL_SCALAR_MEMPOOL = Some(bc_mem_pool::new(DEFAULT_DEVICE_ID).unwrap());
+    }
+}
+
+pub(crate) fn _small_scalar_mempool() -> bc_mem_pool {
+    unsafe { _SMALL_SCALAR_MEMPOOL.expect("small scalar mempool intialized") }
+}
+
+pub(crate) fn is_small_scalar_mempool_initialized() -> bool {
+    unsafe { _SMALL_SCALAR_MEMPOOL.is_some() }
+}
+
 impl<F: PrimeField> DScalar<F> {
-    pub fn zero(stream: bc_stream) -> CudaResult<Self> {
-        Ok(Self(DVec::allocate_zeroed_on(1, stream)))
+    pub fn zero(stream: bc_stream) -> CudaResult<DScalar<F>> {
+        assert!(is_small_scalar_mempool_initialized());
+        Ok(Self(DVec::allocate_zeroed_on(
+            1,
+            _small_scalar_mempool(),
+            stream,
+        )))
     }
 
     pub fn one(stream: bc_stream) -> CudaResult<Self> {
@@ -51,8 +73,9 @@ where
     F: PrimeField,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let el = self.to_host_value_on(_d2h_stream()).unwrap();
-        _d2h_stream().sync().unwrap();
+        let stream = bc_stream::new().unwrap();
+        let el = self.to_host_value_on(stream).unwrap();
+        stream.sync().unwrap();
         println!("{}", el);
         Ok(())
     }

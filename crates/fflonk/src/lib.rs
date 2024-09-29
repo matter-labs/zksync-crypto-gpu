@@ -12,6 +12,7 @@ pub(crate) const SANITY_CHECK: bool = false;
 use bellman::compact_bn256::G1Affine as CompactG1Affine;
 use bellman::{CurveProjective, Engine, Field, PrimeField};
 pub use fflonk::bellman;
+pub use fflonk_cpu as fflonk;
 
 mod allocator;
 use allocator::*;
@@ -25,8 +26,8 @@ pub use context::*;
 mod convenience;
 pub use convenience::*;
 
-mod combined_poly;
-use combined_poly::*;
+mod device;
+pub use device::*;
 
 mod error;
 use error::*;
@@ -46,6 +47,9 @@ pub use prover::*;
 mod setup;
 pub use setup::*;
 
+mod storage;
+pub use storage::*;
+
 #[cfg(test)]
 mod test;
 
@@ -53,7 +57,7 @@ mod utils;
 pub(crate) use utils::*;
 
 pub use gpu_ffi;
-use gpu_ffi::{bc_event, bc_stream};
+use gpu_ffi::{bc_event, bc_mem_pool, bc_stream};
 use std::alloc::Allocator;
 
 pub use context::{DeviceContext, DeviceContextWithSingleDevice};
@@ -65,3 +69,6 @@ pub use fflonk::{
 };
 
 pub use convenience::FflonkSnarkVerifierCircuitDeviceSetup;
+
+// TODO: env variable can configure it
+pub(crate) const DEFAULT_DEVICE_ID: usize = 0;

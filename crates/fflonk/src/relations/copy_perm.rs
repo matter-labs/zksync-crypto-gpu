@@ -7,6 +7,7 @@ pub fn compute_copy_perm_grand_product<'a, 'b, F: PrimeField, ITrace, IPermutati
     non_residues_by_beta: &DScalars<F>,
     beta: &DScalar<F>,
     gamma: &DScalar<F>,
+    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<Poly<F, MonomialBasis>>
 where
@@ -27,23 +28,25 @@ where
     assert_eq!(non_residues_by_beta.len(), 3);
 
     let one = DScalar::one(stream)?;
-    let mut num = Poly::<_, LagrangeBasis>::allocate_on(domain_size, stream);
+    let mut num = Poly::<_, LagrangeBasis>::allocate_on(domain_size, pool, stream);
     mem::set_value(num.as_mut(), &one, stream)?;
-    let mut denum = Poly::<_, LagrangeBasis>::zero(domain_size, stream);
+    let mut denum = Poly::<_, LagrangeBasis>::zero(domain_size, pool, stream);
     mem::set_value(denum.as_mut(), &one, stream)?;
+
     for ((col_mon, sigma_mon), non_residue_by_beta) in
         [(a_mon, sigma_a), (b_mon, sigma_b), (c_mon, sigma_c)]
             .into_iter()
             .zip(non_residues_by_beta.iter())
     {
+        let mut num_tmp = DVec::allocate_zeroed_on(domain_size, pool, stream);
         // (A(x) + beta*X + gamma) * (B(x) + beta*X*k1 + gamma) * (C(x) + beta*X*k2 + gamma)
-        let num_tmp = materialize_domain_elems_in_natural(domain_size, stream)?;
+        materialize_domain_elems_in_natural(&mut num_tmp, domain_size, stream)?;
         let mut num_tmp = Poly::from_buffer(num_tmp);
         num_tmp.scale_on(&non_residue_by_beta, stream)?;
-        let mut col_evals_natural = col_mon.fft_on(stream)?;
+        let mut col_evals_natural = col_mon.clone_on(pool, stream)?.fft_on(stream)?;
         col_evals_natural.bitreverse(stream)?;
         if SANITY_CHECK {
-            let mut tmp = col_evals_natural.clone_on(stream)?;
+            let mut tmp = col_evals_natural.clone_on(pool, stream)?;
             ntt::bitreverse(tmp.as_mut(), stream)?;
             let coeffs = tmp.as_ref()[domain_size - 1..].to_vec_on(stream)?;
             stream.sync().unwrap();
@@ -54,7 +57,7 @@ where
         num.mul_assign_on(&num_tmp, stream)?;
 
         // (A(x) + beta*sigma_a(x) + gamma) * (B(x) + beta*sigma_b(x) + gamma) * (C(x) + beta*sigma_c(x) + gamma)
-        let mut denum_tmp = sigma_mon.fft_on(stream)?;
+        let mut denum_tmp = sigma_mon.clone_on(pool, stream)?.fft_on(stream)?;
         denum_tmp.bitreverse(stream)?;
         denum_tmp.scale_on(&beta, stream)?;
         denum_tmp.add_assign_on(&col_evals_natural, stream)?;
@@ -64,7 +67,7 @@ where
 
     denum.batch_inverse(stream)?;
     denum.mul_assign_on(&num, stream)?;
-    denum.grand_product(stream)?;
+    denum.grand_product(pool, stream)?;
     if SANITY_CHECK {
         assert_eq!(denum.as_ref()[0..1].to_vec_on(stream).unwrap()[0], F::one())
     }
@@ -81,6 +84,7 @@ pub fn evaluate_copy_permutation_constraint<'a, 'b, F, ITrace, IPermutations>(
     non_residues_by_beta: &DScalars<F>,
     beta: &DScalar<F>,
     gamma: &DScalar<F>,
+    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<Poly<F, CosetEvals>>
 where
@@ -106,8 +110,8 @@ where
         .unwrap()
         .generator;
     let omega = DScalar::from_host_value_on(&h_omega, stream)?;
-    let mut shifted_grand_prod = grand_product_monomial.clone_on(stream)?;
-    arithmetic::mul_assign_by_powers(shifted_grand_prod.as_mut(), &omega, stream)?;
+    let mut shifted_grand_prod = grand_product_monomial.clone_on(pool, stream)?;
+    arithmetic::mul_assign_by_powers(shifted_grand_prod.as_mut(), &omega, pool, stream)?;
 
     let mut num = grand_product_monomial.coset_fft_on(coset_idx, padded_quotient_degree, stream)?;
 
@@ -118,8 +122,10 @@ where
             .into_iter()
             .zip(non_residues_by_beta.iter())
     {
+        let mut num_tmp = Poly::zero(domain_size, pool, stream);
         // (A(x) + beta*X + gamma) * (B(x) + beta*X*k1 + gamma) * (C(x) + beta*X*k2 + gamma)
-        let mut num_tmp = materialize_domain_elems_bitreversed_for_coset(
+        materialize_domain_elems_bitreversed_for_coset(
+            &mut num_tmp,
             domain_size,
             coset_idx,
             padded_quotient_degree,
@@ -155,6 +161,7 @@ where
 pub fn prove_copy_perm_second_constraint<F>(
     grand_product_monomial: &Poly<F, MonomialBasis>,
     domain_size: usize,
+    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<Poly<F, MonomialBasis>>
 where
@@ -171,16 +178,16 @@ where
     // constraint is (z(x)-1)*L0(x) and divide by Z_H(x)
 
     // evaluate grand prod over shifted coset first
-    let mut grand_prod_bitreversed = grand_product_monomial.as_ref().to_dvec_on(stream)?;
+    let mut grand_prod_bitreversed = grand_product_monomial.as_ref().to_dvec_on(pool, stream)?;
     // arithmetic::mul_assign_by_powers(&mut num, &coset_shift, stream)?;
-    ntt::inplace_coset_fft_for_gen_on(&mut grand_prod_bitreversed, &coset_shift, stream)?;
+    ntt::inplace_coset_fft_for_gen_on(&mut grand_prod_bitreversed, &coset_shift, pool, stream)?;
     let one = DScalar::one(stream)?;
     arithmetic::sub_constant(&mut grand_prod_bitreversed, &one, stream)?;
 
-    let mut l0_bitreversed = DVec::allocate_zeroed_on(domain_size, stream);
+    let mut l0_bitreversed = DVec::allocate_zeroed_on(domain_size, pool, stream);
     mem::set_one(&mut l0_bitreversed[..1], stream)?;
-    ntt::inplace_ifft_on(&mut l0_bitreversed, stream)?;
-    ntt::inplace_coset_fft_for_gen_on(&mut l0_bitreversed, &coset_shift, stream)?;
+    ntt::inplace_ifft_on(&mut l0_bitreversed, pool, stream)?;
+    ntt::inplace_coset_fft_for_gen_on(&mut l0_bitreversed, &coset_shift, pool, stream)?;
 
     arithmetic::mul_assign(&mut grand_prod_bitreversed, &l0_bitreversed, stream)?;
 
@@ -201,7 +208,12 @@ where
 
     // get monomial finally
     ntt::bitreverse(&mut grand_prod_bitreversed, stream)?;
-    ntt::inplace_coset_ifft_for_gen_on(&mut grand_prod_bitreversed, &coset_shift_inv, stream)?;
+    ntt::inplace_coset_ifft_for_gen_on(
+        &mut grand_prod_bitreversed,
+        &coset_shift_inv,
+        pool,
+        stream,
+    )?;
 
     Ok(Poly::from_buffer(grand_prod_bitreversed))
 }

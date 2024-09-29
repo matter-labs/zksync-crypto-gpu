@@ -5,22 +5,44 @@ use fflonk::utils::*;
 pub(crate) fn commit_monomial<E: Engine>(
     monomial: &Poly<E::Fr, MonomialBasis>,
     domain_size: usize,
+    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<E::G1Affine> {
-    msm::msm::<E>(monomial.as_ref(), domain_size, stream)
+    msm::msm::<E>(monomial.as_ref(), domain_size, pool, stream)
+}
+
+pub(crate) fn commit_padded_monomial<E: Engine>(
+    monomial: &Poly<E::Fr, MonomialBasis>,
+    common_combined_degree: usize,
+    domain_size: usize,
+    pool: bc_mem_pool,
+    stream: bc_stream,
+) -> CudaResult<E::G1Affine> {
+    assert!(common_combined_degree <= monomial.size());
+    assert_eq!(
+        MAX_COMBINED_DEGREE_FACTOR * domain_size,
+        common_combined_degree
+    );
+    msm::msm::<E>(
+        &monomial.as_ref()[..common_combined_degree],
+        domain_size,
+        pool,
+        stream,
+    )
 }
 
 pub(crate) fn materialize_domain_elems_in_natural<F>(
+    into: &mut DVec<F>,
     domain_size: usize,
     stream: bc_stream,
-) -> CudaResult<DVec<F>>
+) -> CudaResult<()>
 where
     F: PrimeField,
 {
-    let mut evals = DVec::allocate_zeroed_on(domain_size, stream);
-    materialize_domain_elems(evals.as_mut(), domain_size, false, stream)?;
+    // let mut evals = DVec::allocate_zeroed_on(domain_size, pool, stream);
+    materialize_domain_elems(into.as_mut(), domain_size, false, stream)?;
 
-    Ok(evals)
+    Ok(())
 }
 
 pub fn bitreverse_idx(n: usize, l: usize) -> usize {
@@ -81,21 +103,21 @@ where
     poly.scale_on(&coset_factor_pow_minus_one_inv, stream)
 }
 pub(crate) fn materialize_domain_elems_bitreversed_for_coset<F>(
+    coset_domain_elems: &mut Poly<F, CosetEvals>,
     domain_size: usize,
     coset_idx: usize,
     lde_factor: usize,
     stream: bc_stream,
-) -> CudaResult<Poly<F, CosetEvals>>
+) -> CudaResult<()>
 where
     F: PrimeField,
 {
     let h_coset_factor = get_bitreversed_coset_factor(domain_size, coset_idx, lde_factor);
     let coset_factor = DScalar::from_host_value_on(&h_coset_factor, stream)?;
-    let mut coset_domain_elems = Poly::<F, CosetEvals>::zero(domain_size, stream);
     materialize_domain_elems(coset_domain_elems.as_mut(), domain_size, true, stream)?;
     coset_domain_elems.scale_on(&coset_factor, stream)?;
 
-    Ok(coset_domain_elems)
+    Ok(())
 }
 
 // TODO ExactSizeItarator
@@ -144,7 +166,7 @@ pub fn construct_set_difference_monomials<F: PrimeField>(
 }
 
 #[inline(always)]
-fn product_of_pairs<F: PrimeField>(pairs: &[(usize, F)], point: F) -> F {
+pub(crate) fn product_of_pairs<F: PrimeField>(pairs: &[(usize, F)], point: F) -> F {
     let mut product = F::one();
     for (degree, constant) in pairs {
         let mut pow = point.pow(&[*degree as u64]);
@@ -206,11 +228,13 @@ where
     Ok(all_sparse_polys_at_y)
 }
 
-pub(crate) fn multiply_monomial_with_multiple_sparse_polys<F>(
-    poly: Poly<F, MonomialBasis>,
+pub(crate) fn multiply_monomial_with_multiple_sparse_polys_inplace<F>(
+    poly: &mut Poly<F, MonomialBasis>,
     pairs_negated: Vec<(usize, F)>,
+    poly_degree: usize,
+    pool: bc_mem_pool,
     stream: bc_stream,
-) -> CudaResult<Poly<F, MonomialBasis>>
+) -> CudaResult<()>
 where
     F: PrimeField,
 {
@@ -225,6 +249,9 @@ where
         .cloned()
         .map(|(degree, _)| degree)
         .collect();
+    let total_degree: usize = degrees.iter().cloned().sum();
+    assert!(poly_degree + total_degree <= poly.size());
+
     let h_constants: Vec<_> = pairs_negated
         .into_iter()
         .map(|(_, constant)| constant)
@@ -232,35 +259,31 @@ where
 
     let constants = DScalars::from_host_scalars_on(&h_constants, stream)?;
 
-    let mut current_degree = poly.size();
-    let mut current_poly = poly;
+    let mut current_degree = poly_degree;
     for (degree, constant) in degrees.into_iter().zip(constants.iter()) {
-        let next_degree = current_degree + degree;
-        let mut next_poly = Poly::<F, MonomialBasis>::zero(next_degree, stream);
+        let mut tmp = poly.clone_on(pool, stream)?;
         // shift coeffs
         mem::d2d_on(
-            current_poly.as_ref(),
-            &mut next_poly.as_mut()[degree..(degree + current_degree)],
+            &tmp.as_ref()[..current_degree],
+            &mut poly.as_mut()[degree..(degree + current_degree)],
             stream,
         )?;
-        mem::set_zero(&mut next_poly.as_mut()[..degree], stream)?;
+        mem::set_zero(&mut poly.as_mut()[..degree], stream)?;
+        mem::set_zero(&mut poly.as_mut()[degree + current_degree..], stream)?;
 
-        current_poly.scale_on(constant, stream)?;
-        next_poly.add_assign_on(&current_poly, stream)?;
+        tmp.scale_on(constant, stream)?;
+        poly.add_assign_on(&tmp, stream)?;
 
-        current_poly = next_poly;
         current_degree += degree;
     }
 
-    Ok(current_poly)
+    Ok(())
 }
 
 pub(crate) fn compute_product_of_multiple_sparse_monomials<F>(pairs: &[(usize, F)]) -> Vec<F>
 where
     F: PrimeField,
 {
-    assert_eq!(pairs.len(), 4);
-
     let (degree, constant_term) = pairs[0].clone();
     let mut result = vec![F::zero(); degree + 1];
     result[0] = constant_term;
@@ -295,6 +318,7 @@ pub(crate) fn divide_in_values<F>(
     num_monomial: Poly<F, MonomialBasis>,
     denum_coeffs: Vec<F>,
     domain_size: usize,
+    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<Poly<F, MonomialBasis>>
 where
@@ -302,7 +326,7 @@ where
 {
     assert!(denum_coeffs.len() < num_monomial.size());
 
-    let mut padded_num = DVec::allocate_zeroed_on(16 * domain_size, stream);
+    let mut padded_num = DVec::allocate_zeroed_on(16 * domain_size, pool, stream);
     mem::d2d_on(
         num_monomial.as_ref(),
         &mut padded_num.as_mut()[..num_monomial.size()],
@@ -310,19 +334,19 @@ where
     )?;
     drop_on(num_monomial, stream);
 
-    let mut padded_denum = DVec::allocate_zeroed_on(16 * domain_size, stream);
+    let mut padded_denum = DVec::allocate_zeroed_on(16 * domain_size, pool, stream);
     mem::h2d_on(
         &denum_coeffs,
         &mut padded_denum.as_mut()[..denum_coeffs.len()],
         stream,
     )?;
 
-    ntt::inplace_fft_on(&mut padded_num, stream)?;
-    ntt::inplace_fft_on(&mut padded_denum, stream)?;
+    ntt::inplace_fft_on(&mut padded_num, pool, stream)?;
+    ntt::inplace_fft_on(&mut padded_denum, pool, stream)?;
     arithmetic::batch_inverse(&mut padded_denum, stream)?;
     arithmetic::mul_assign(&mut padded_denum, &padded_num, stream)?;
     ntt::bitreverse(&mut padded_denum, stream)?;
-    ntt::inplace_ifft_on(&mut padded_denum, stream)?;
+    ntt::inplace_ifft_on(&mut padded_denum, pool, stream)?;
 
     let quotient = Poly::from_buffer(padded_denum);
     let quotient_monomial = quotient.trim_to_degree(10 * domain_size, stream)?;

@@ -153,6 +153,15 @@ impl bc_mem_pool {
             handle: std::ptr::null_mut() as *mut c_void,
         }
     }
+    pub fn destroy(self) -> Result<(), GpuError> {
+        unsafe {
+            let result = bc_mem_pool_destroy(self);
+            if result != 0 {
+                panic!("first mempool creation failed");
+            }
+        }
+        Ok(())
+    }
 }
 
 impl bc_stream {

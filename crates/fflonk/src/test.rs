@@ -5,7 +5,6 @@ use bellman::{
     plonk::{
         better_better_cs::cs::{Circuit, SynthesisModeTesting},
         commitments::transcript::keccak_transcript::RollingKeccakTranscript,
-        polynomials::Polynomial,
     },
     worker::Worker,
 };
@@ -119,30 +118,63 @@ fn test_test_circuit_with_naive_main_gate() {
 }
 
 #[test]
-fn test_large_msm() {
+fn test_cuda_mempool() {
     unsafe {
-        use rand::Rand;
-        let mut rng = rand::thread_rng();
-        let worker = Worker::new();
-        let domain_size = 1 << 23;
-        let degree = 10 * domain_size;
+        use gpu_ffi::*;
 
-        let coeffs = (0..degree).map(|_| Fr::rand(&mut rng)).collect();
-        let this = Polynomial::from_coeffs_unpadded(coeffs).unwrap();
-
-        let context = DeviceContextWithSingleDevice::init(domain_size).unwrap();
+        let device_id = 0;
+        let domain_size = 1usize << 23;
         let stream = bc_stream::new().unwrap();
 
-        let other = DVec::from_host_slice_on(this.as_ref(), stream).unwrap();
-        let other = Poly::<Fr, MonomialBasis>::from_buffer(other);
+        let num_polys_for_commitment = 51 * domain_size;
+        let num_polys_for_commitment = num_polys_for_commitment * 32;
 
-        let actual = commit_monomial::<Bn256>(&other, domain_size, stream).unwrap();
-        stream.sync().unwrap();
+        let first_mempool = bc_mem_pool::new(device_id).unwrap();
+        let mut first_ptr = std::ptr::null_mut();
+        let result = gpu_ffi::bc_malloc_from_pool_async(
+            std::ptr::addr_of_mut!(first_ptr),
+            num_polys_for_commitment as u64,
+            first_mempool,
+            stream,
+        );
+        if result != 0 {
+            panic!("first mempool creation failed");
+        }
+        first_mempool.destroy().unwrap();
+        println!("First allocation on first mempool is done!");
 
-        let mon_crs = init_crs(&worker, domain_size);
+        let num_polys_for_opening = 75 * domain_size;
+        let num_bytes_for_opening = num_polys_for_opening * 32;
 
-        let expected =
-            bellman::kate_commitment::commit_using_monomials(&this, &mon_crs, &worker).unwrap();
-        assert_eq!(expected, actual);
+        let second_mempool = bc_mem_pool::new(device_id).unwrap();
+        let mut second_ptr = std::ptr::null_mut();
+        let result = gpu_ffi::bc_malloc_from_pool_async(
+            std::ptr::addr_of_mut!(second_ptr),
+            num_bytes_for_opening as u64,
+            second_mempool,
+            stream,
+        );
+        if result != 0 {
+            panic!("first mempool creation failed");
+        }
+        second_mempool.destroy().unwrap();
+        println!("Second allocation on second mempool is done!");
+        let chunk_size = 256;
+        let num_elems = (1 << 10) * chunk_size;
+        let num_bytes_for_small = num_elems * 32;
+
+        let small_mempool = bc_mem_pool::new(device_id).unwrap();
+        let mut third_ptr = std::ptr::null_mut();
+        let result = gpu_ffi::bc_malloc_from_pool_async(
+            std::ptr::addr_of_mut!(third_ptr),
+            num_bytes_for_small as u64,
+            small_mempool,
+            stream,
+        );
+        if result != 0 {
+            panic!("small mempool creation failed");
+        }
+        small_mempool.destroy().unwrap();
+        println!("Small allocation on small mempool is done!");
     }
 }

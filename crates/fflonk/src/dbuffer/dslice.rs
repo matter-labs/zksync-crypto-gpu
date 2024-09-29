@@ -1,4 +1,4 @@
-use gpu_ffi::bc_stream;
+use gpu_ffi::{bc_mem_pool, bc_stream};
 
 use super::{CudaResult, DChunks, DChunksMut, DIter, DIterMut, DVec, HostAllocator};
 
@@ -91,8 +91,8 @@ impl<T> DSlice<T> {
         Ok(dst)
     }
 
-    pub fn to_dvec_on(&self, stream: bc_stream) -> CudaResult<DVec<T>> {
-        let mut dst = DVec::allocate_zeroed_on(self.len(), stream);
+    pub fn to_dvec_on(&self, pool: bc_mem_pool, stream: bc_stream) -> CudaResult<DVec<T>> {
+        let mut dst = DVec::allocate_zeroed_on(self.len(), pool, stream);
         super::mem::d2d_on(self, &mut dst, stream)?;
 
         Ok(dst)

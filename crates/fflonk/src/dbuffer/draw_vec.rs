@@ -1,6 +1,6 @@
 use std::{alloc::Layout, ptr::NonNull};
 
-use gpu_ffi::bc_stream;
+use gpu_ffi::{bc_mem_pool, bc_stream};
 
 use super::{DeviceAllocator, DropOn, GlobalDevice};
 
@@ -16,7 +16,8 @@ enum AllocInit {
 pub(crate) struct RawDVec<T, A: DeviceAllocator = GlobalDevice> {
     ptr: std::ptr::NonNull<T>,
     len: usize,
-    pub(crate) stream: Option<A::Stream>,
+    pub(crate) pool: Option<bc_mem_pool>,
+    pub(crate) stream: Option<bc_stream>,
     alloc: A,
 }
 
@@ -25,6 +26,7 @@ impl<T> RawDVec<T> {
         Self {
             ptr: std::ptr::NonNull::dangling(),
             len: 0,
+            pool: None,
             stream: None,
             alloc: GlobalDevice,
         }
@@ -32,45 +34,62 @@ impl<T> RawDVec<T> {
 }
 
 impl<T, A: DeviceAllocator> RawDVec<T, A> {
-    pub fn allocate_zeroed_on(length: usize, alloc: A, stream: Option<A::Stream>) -> Self {
-        Self::inner_allocate_in(length, AllocInit::Zeroed, alloc, stream)
+    pub fn allocate_zeroed(length: usize, alloc: A) -> Self {
+        Self::inner_allocate_in(length, AllocInit::Zeroed, alloc, None, None)
+    }
+    pub fn allocate_zeroed_on(
+        length: usize,
+        alloc: A,
+        pool: bc_mem_pool,
+        stream: bc_stream,
+    ) -> Self {
+        Self::inner_allocate_in(length, AllocInit::Zeroed, alloc, Some(pool), Some(stream))
     }
 
-    pub fn allocate_on(length: usize, alloc: A, stream: Option<A::Stream>) -> Self {
-        Self::inner_allocate_in(length, AllocInit::Uninitialized, alloc, stream)
+    pub fn allocate_on(length: usize, alloc: A, pool: bc_mem_pool, stream: bc_stream) -> Self {
+        Self::inner_allocate_in(
+            length,
+            AllocInit::Uninitialized,
+            alloc,
+            Some(pool),
+            Some(stream),
+        )
     }
 
     fn inner_allocate_in(
         length: usize,
         init: AllocInit,
         alloc: A,
-        stream: Option<A::Stream>,
+        pool: Option<bc_mem_pool>,
+        stream: Option<bc_stream>,
     ) -> Self {
         let layout = match std::alloc::Layout::array::<T>(length) {
             Ok(layout) => layout,
             Err(_) => panic!("allocation error: length overflow"),
         };
 
-        let result = match stream {
-            Some(stream) => match init {
-                AllocInit::Uninitialized => alloc.allocate_async(layout, stream),
-                AllocInit::Zeroed => alloc.allocate_zeroed_async(layout, stream),
+        let result = match (pool, stream) {
+            (Some(pool), Some(stream)) => match init {
+                AllocInit::Uninitialized => alloc.allocate_async(layout, pool, stream),
+                AllocInit::Zeroed => alloc.allocate_zeroed_async(layout, pool, stream),
             },
-            None => match init {
+            (None, None) => match init {
                 AllocInit::Uninitialized => alloc.allocate(layout),
                 AllocInit::Zeroed => alloc.allocate_zeroed(layout),
             },
+            _ => unimplemented!(),
         };
 
         let ptr = match result {
             Ok(ptr) => ptr,
-            Err(err) => panic!("allocation error: {err}"),
+            Err(err) => panic!("allocation error: {:?}", err),
         };
 
         Self {
             ptr: ptr.cast(),
             len: length,
             stream,
+            pool,
             alloc,
         }
     }
@@ -83,21 +102,27 @@ impl<T, A: DeviceAllocator> RawDVec<T, A> {
         ptr: *mut T,
         len: usize,
         alloc: A,
-        stream: Option<A::Stream>,
+        pool: Option<bc_mem_pool>,
+        stream: Option<bc_stream>,
     ) -> Self {
         Self {
             ptr: unsafe { std::ptr::NonNull::new_unchecked(ptr) },
             len,
+            pool,
             stream,
             alloc,
         }
     }
 
-    pub(crate) fn ptr(&self) -> *mut T {
+    pub(crate) fn as_ptr(&self) -> *mut T {
         self.ptr.as_ptr()
     }
 
-    fn current_memory(&self) -> Option<(NonNull<u8>, Layout, Option<A::Stream>)> {
+    pub(crate) fn as_mut_ptr(&mut self) -> *mut T {
+        self.ptr.as_ptr().cast()
+    }
+
+    fn current_memory(&self) -> Option<(NonNull<u8>, Layout, Option<bc_stream>)> {
         if self.len == 0 {
             None
         } else {
@@ -123,7 +148,7 @@ impl<T, A: DeviceAllocator> Drop for RawDVec<T, A> {
     }
 }
 
-impl<T> DropOn for RawDVec<T> {
+impl<T, A: DeviceAllocator> DropOn for RawDVec<T, A> {
     fn drop_on(&mut self, stream: bc_stream) {
         if let Some((ptr, layout, inner_stream)) = self.current_memory() {
             assert!(inner_stream.is_some());

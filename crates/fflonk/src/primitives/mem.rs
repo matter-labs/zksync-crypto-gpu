@@ -24,13 +24,17 @@ pub(crate) fn dealloc(ptr: *mut c_void) -> CudaResult<()> {
     Ok(())
 }
 
-pub(crate) fn allocate_async(num_bytes: usize, stream: bc_stream) -> CudaResult<*mut c_void> {
+pub(crate) fn allocate_async_on(
+    num_bytes: usize,
+    pool: bc_mem_pool,
+    stream: bc_stream,
+) -> CudaResult<*mut c_void> {
     let mut ptr = std::ptr::null_mut();
     unsafe {
         let result = gpu_ffi::bc_malloc_from_pool_async(
             std::ptr::addr_of_mut!(ptr),
             num_bytes as u64,
-            _mem_pool(),
+            pool,
             stream,
         );
         if result != 0 {
@@ -38,6 +42,22 @@ pub(crate) fn allocate_async(num_bytes: usize, stream: bc_stream) -> CudaResult<
         }
     }
 
+    Ok(ptr)
+}
+
+pub(crate) fn allocate_zeroed_async_on(
+    num_bytes: usize,
+    pool: bc_mem_pool,
+    stream: bc_stream,
+) -> CudaResult<*mut c_void> {
+    let ptr = allocate_async_on(num_bytes, pool, stream)?;
+    unsafe {
+        // TODO set zero static
+        let result = gpu_ffi::bc_memset(ptr.cast(), 0, num_bytes as u64);
+        if result != 0 {
+            panic!("Couldn't allocate zeroed buffer")
+        }
+    }
     Ok(ptr)
 }
 

@@ -77,8 +77,8 @@ impl<'a, T> Iterator for DChunks<'a, T> {
         if self.buf.is_empty() {
             return None;
         }
-
-        let (this, rest) = self.buf.split_at(self.chunk_size);
+        let chunk_size = std::cmp::min(self.buf.len(), self.chunk_size);
+        let (this, rest) = self.buf.split_at(chunk_size);
         self.buf = rest;
 
         Some(this)
@@ -93,6 +93,7 @@ pub struct DChunksMut<'a, T> {
 
 impl<'a, T> DChunksMut<'a, T> {
     pub fn new(slice: &'a mut DSlice<T>, chunk_size: usize) -> Self {
+        assert!(chunk_size != 0, "chunk size must be non-zero");
         Self {
             buf: slice as *mut DSlice<T> as *mut [T],
             chunk_size,
@@ -110,9 +111,10 @@ impl<'a, T> Iterator for DChunksMut<'a, T> {
         }
 
         unsafe {
-            let (this, rest) = self.buf.split_at_mut(self.chunk_size);
+            let chunk_size = std::cmp::min(self.buf.len(), self.chunk_size);
+            let (this, rest) = self.buf.split_at_mut(chunk_size);
             self.buf = rest;
-            Some(DSlice::from_raw_parts_mut(this as *mut T, self.chunk_size))
+            Some(DSlice::from_raw_parts_mut(this as *mut T, chunk_size))
         }
     }
 }

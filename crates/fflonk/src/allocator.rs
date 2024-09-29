@@ -24,48 +24,37 @@ impl HostAllocator for GlobalHost {}
 impl HostAllocator for std::alloc::Global {}
 
 pub trait DeviceAllocator: Default {
-    type Stream: Copy;
-    fn allocate(
-        &self,
-        layout: std::alloc::Layout,
-    ) -> Result<std::ptr::NonNull<[u8]>, std::alloc::AllocError>;
-    fn allocate_zeroed(
-        &self,
-        layout: std::alloc::Layout,
-    ) -> Result<std::ptr::NonNull<[u8]>, std::alloc::AllocError>;
+    fn allocate(&self, layout: std::alloc::Layout) -> CudaResult<std::ptr::NonNull<[u8]>>;
+    fn allocate_zeroed(&self, layout: std::alloc::Layout) -> CudaResult<std::ptr::NonNull<[u8]>>;
     fn deallocate(&self, ptr: std::ptr::NonNull<u8>, layout: std::alloc::Layout);
     fn allocate_async(
         &self,
         layout: std::alloc::Layout,
-        stream: Self::Stream,
-    ) -> Result<std::ptr::NonNull<[u8]>, std::alloc::AllocError>;
+        pool: bc_mem_pool,
+        stream: bc_stream,
+    ) -> CudaResult<std::ptr::NonNull<[u8]>>;
     fn deallocate_async(
         &self,
         ptr: std::ptr::NonNull<u8>,
         layout: std::alloc::Layout,
-        stream: Self::Stream,
+        stream: bc_stream,
     );
     fn allocate_zeroed_async(
         &self,
         layout: std::alloc::Layout,
-        stream: Self::Stream,
-    ) -> Result<std::ptr::NonNull<[u8]>, std::alloc::AllocError>;
+        pool: bc_mem_pool,
+        stream: bc_stream,
+    ) -> CudaResult<std::ptr::NonNull<[u8]>>;
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GlobalDevice;
 
 impl DeviceAllocator for GlobalDevice {
-    type Stream = bc_stream;
-
-    fn allocate(
-        &self,
-        layout: std::alloc::Layout,
-    ) -> Result<std::ptr::NonNull<[u8]>, std::alloc::AllocError> {
+    fn allocate(&self, layout: std::alloc::Layout) -> CudaResult<std::ptr::NonNull<[u8]>> {
         allocate(layout.size())
             .map(|ptr| unsafe { std::ptr::NonNull::new_unchecked(ptr as _) })
             .map(|ptr| std::ptr::NonNull::slice_from_raw_parts(ptr, layout.size()))
-            .map_err(|_| std::alloc::AllocError)
     }
 
     fn deallocate(&self, ptr: std::ptr::NonNull<u8>, layout: std::alloc::Layout) {
@@ -75,54 +64,36 @@ impl DeviceAllocator for GlobalDevice {
     fn allocate_async(
         &self,
         layout: std::alloc::Layout,
-        stream: Self::Stream,
-    ) -> Result<std::ptr::NonNull<[u8]>, std::alloc::AllocError> {
-        assert!(is_context_initialized());
-        allocate_async(layout.size(), stream)
+        pool: bc_mem_pool,
+        stream: bc_stream,
+    ) -> CudaResult<std::ptr::NonNull<[u8]>> {
+        allocate_async_on(layout.size(), pool, stream)
             .map(|ptr| unsafe { std::ptr::NonNull::new_unchecked(ptr as _) })
             .map(|ptr| std::ptr::NonNull::slice_from_raw_parts(ptr, layout.size()))
-            .map_err(|_| std::alloc::AllocError)
     }
 
     fn deallocate_async(
         &self,
         ptr: std::ptr::NonNull<u8>,
         _layout: std::alloc::Layout,
-        stream: Self::Stream,
+        stream: bc_stream,
     ) {
-        assert!(is_context_initialized());
         dealloc_async(ptr.as_ptr().cast(), stream).expect("deallocate")
     }
 
-    fn allocate_zeroed(
-        &self,
-        layout: std::alloc::Layout,
-    ) -> Result<std::ptr::NonNull<[u8]>, std::alloc::AllocError> {
+    fn allocate_zeroed(&self, layout: std::alloc::Layout) -> CudaResult<std::ptr::NonNull<[u8]>> {
         let ptr = self.allocate(layout)?;
-        let stream = bc_stream::new().unwrap();
-        unsafe {
-            let result = gpu_ffi::bc_memset(ptr.as_ptr().cast(), 0, layout.size() as u64);
-            if result != 0 {
-                panic!("Couldn't allocate zeroed buffer")
-            }
-        }
-        stream.sync().unwrap();
         Ok(ptr)
     }
     fn allocate_zeroed_async(
         &self,
         layout: std::alloc::Layout,
-        stream: Self::Stream,
-    ) -> Result<std::ptr::NonNull<[u8]>, std::alloc::AllocError> {
-        let ptr = self.allocate_async(layout, stream)?;
-        unsafe {
-            let result =
-                gpu_ffi::bc_memset_async(ptr.as_ptr().cast(), 0, layout.size() as u64, stream);
-            if result != 0 {
-                panic!("Couldn't allocate zeroed buffer: Error {result}")
-            }
-        }
-        Ok(ptr)
+        pool: bc_mem_pool,
+        stream: bc_stream,
+    ) -> CudaResult<std::ptr::NonNull<[u8]>> {
+        allocate_zeroed_async_on(layout.size(), pool, stream)
+            .map(|ptr| unsafe { std::ptr::NonNull::new_unchecked(ptr as _) })
+            .map(|ptr| std::ptr::NonNull::slice_from_raw_parts(ptr, layout.size()))
     }
 }
 

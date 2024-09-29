@@ -13,7 +13,7 @@ impl PolyRepr for LDE {}
 
 #[derive(Debug)]
 pub struct Poly<F: PrimeField, P: PolyRepr> {
-    storage: DVec<F>,
+    pub(crate) storage: DVec<F>,
     _p: std::marker::PhantomData<P>,
 }
 
@@ -48,12 +48,20 @@ impl<F: PrimeField, P: PolyRepr> Poly<F, P> {
         self.storage
     }
 
-    pub fn zero(domain_size: usize, stream: bc_stream) -> Self {
-        Self::from_buffer(DVec::allocate_zeroed_on(domain_size, stream))
+    pub fn zero(domain_size: usize, pool: bc_mem_pool, stream: bc_stream) -> Self {
+        Self::from_buffer(DVec::allocate_zeroed_on(domain_size, pool, stream))
     }
 
-    pub fn allocate_on(domain_size: usize, stream: bc_stream) -> Self {
-        let storage = DVec::allocate_on(domain_size, stream);
+    pub fn allocate_on(domain_size: usize, pool: bc_mem_pool, stream: bc_stream) -> Self {
+        let storage = DVec::allocate_on(domain_size, pool, stream);
+        Self {
+            storage,
+            _p: std::marker::PhantomData,
+        }
+    }
+
+    pub fn allocate_on_pool(domain_size: usize, pool: bc_mem_pool, stream: bc_stream) -> Self {
+        let storage = DVec::allocate_on(domain_size, pool, stream);
         Self {
             storage,
             _p: std::marker::PhantomData,
@@ -119,12 +127,12 @@ impl<F: PrimeField, P: PolyRepr> Poly<F, P> {
         arithmetic::batch_inverse(self.as_mut(), stream)
     }
 
-    pub fn grand_product(&mut self, stream: bc_stream) -> CudaResult<()> {
+    pub fn grand_product(&mut self, pool: bc_mem_pool, stream: bc_stream) -> CudaResult<()> {
         let domain_size = self.size();
         assert!(domain_size.is_power_of_two());
         // rotate by one then set first value to 1 and compute grand product
         arithmetic::grand_product(self.as_mut(), stream)?;
-        let tmp = self.clone_on(stream)?;
+        let tmp = self.clone_on(pool, stream)?;
         mem::set_value(&mut self.as_mut()[0..1], &DScalar::one(stream)?, stream)?;
         mem::d2d_on(
             &tmp.as_ref()[..domain_size - 1],
@@ -139,9 +147,9 @@ impl<F: PrimeField, P: PolyRepr> Poly<F, P> {
         self.storage.len()
     }
 
-    pub fn clone_on(&self, stream: bc_stream) -> CudaResult<Self> {
+    pub fn clone_on(&self, pool: bc_mem_pool, stream: bc_stream) -> CudaResult<Self> {
         Ok(Self {
-            storage: self.storage.clone_on(stream)?,
+            storage: self.storage.clone_on(pool, stream)?,
             _p: std::marker::PhantomData,
         })
     }
@@ -153,8 +161,9 @@ impl<F: PrimeField> Poly<F, CosetEvals> {
     }
 
     pub fn coset_ifft_on(&self, stream: bc_stream) -> CudaResult<Poly<F, MonomialBasis>> {
-        let mut coeffs = Poly::<F, MonomialBasis>::zero(self.size(), stream);
-        ntt::coset_ifft_on(self.as_ref(), coeffs.as_mut(), stream)?;
+        let pool = self.storage.pool_unchecked();
+        let mut coeffs = Poly::<F, MonomialBasis>::zero(self.size(), pool, stream);
+        ntt::coset_ifft_on(self.as_ref(), coeffs.as_mut(), pool, stream)?;
 
         Ok(coeffs)
     }
@@ -166,7 +175,8 @@ impl<F: PrimeField> Poly<F, LagrangeBasis> {
     }
 
     pub fn ifft_on(mut self, stream: bc_stream) -> CudaResult<Poly<F, MonomialBasis>> {
-        ntt::inplace_ifft_on(self.as_mut(), stream)?;
+        let pool = self.storage.pool_unchecked();
+        ntt::inplace_ifft_on(self.as_mut(), pool, stream)?;
         let coeffs = unsafe { std::mem::transmute(self) };
         Ok(coeffs)
     }
@@ -181,17 +191,23 @@ impl<F: PrimeField> Poly<F, MonomialBasis> {
     ) -> CudaResult<()> {
         arithmetic::evaluate_at_into(self.as_ref(), point, into, stream)
     }
-
-    pub fn fft_on(&self, stream: bc_stream) -> CudaResult<Poly<F, LagrangeBasis>> {
-        let mut values = Poly::<F, LagrangeBasis>::zero(self.size(), stream);
-        ntt::fft_on(self.as_ref(), values.as_mut(), stream)?;
-
+    pub fn fft_on(mut self, stream: bc_stream) -> CudaResult<Poly<F, LagrangeBasis>> {
+        let pool = self.storage.pool_unchecked();
+        ntt::inplace_fft_on(self.as_mut(), pool, stream)?;
+        let values = unsafe { std::mem::transmute(self) };
         Ok(values)
     }
 
-    pub fn lde(&self, lde_factor: usize, stream: bc_stream) -> CudaResult<Poly<F, LDE>> {
+    // TODO: into dst
+    pub fn lde(
+        &self,
+        lde_factor: usize,
+        pool: bc_mem_pool,
+        stream: bc_stream,
+    ) -> CudaResult<Poly<F, LDE>> {
         assert_eq!(lde_factor, 16);
-        let mut lde = Poly::<F, LDE>::zero(lde_factor * self.size(), stream);
+        // TODO make sure same pool requirement
+        let mut lde = Poly::<F, LDE>::zero(lde_factor * self.size(), pool, stream);
         for (coset_idx, coset_evals) in lde.storage.chunks_mut(self.size()).enumerate() {
             let inverse = false;
             unsafe {
@@ -201,6 +217,7 @@ impl<F: PrimeField> Poly<F, MonomialBasis> {
                     inverse,
                     Some(coset_idx),
                     Some(lde_factor),
+                    pool,
                     stream,
                 )?;
             }
@@ -215,16 +232,26 @@ impl<F: PrimeField> Poly<F, MonomialBasis> {
         lde_factor: usize,
         stream: bc_stream,
     ) -> CudaResult<Poly<F, CosetEvals>> {
-        let mut evals = Poly::<F, CosetEvals>::zero(self.size(), stream);
-        ntt::coset_fft_on(self.as_ref(), evals.as_mut(), coset_idx, lde_factor, stream)?;
+        let pool = self.storage.pool_unchecked();
+        let mut evals = Poly::<F, CosetEvals>::zero(self.size(), pool, stream);
+        ntt::coset_fft_on(
+            self.as_ref(),
+            evals.as_mut(),
+            coset_idx,
+            lde_factor,
+            pool,
+            stream,
+        )?;
 
         Ok(evals)
     }
 
+    // TODO: into dst
     pub fn trim_to_degree(self, new_degree: usize, stream: bc_stream) -> CudaResult<Self> {
         assert!(new_degree < self.size());
         let (actual_coeffs, leading_coeffs) = self.as_ref().split_at(new_degree);
-        let new = actual_coeffs.to_dvec_on(stream)?;
+        let pool = self.storage.pool_unchecked();
+        let new = actual_coeffs.to_dvec_on(pool, stream)?;
         if SANITY_CHECK {
             let leading_coeffs = leading_coeffs.to_vec_on(stream)?;
             leading_coeffs
@@ -245,7 +272,8 @@ impl<F: PrimeField> Poly<F, LDE> {
 
     pub fn coset_ifft_on(mut self, stream: bc_stream) -> CudaResult<Poly<F, MonomialBasis>> {
         let gen_inv = DScalar::inv_multiplicative_generator(stream)?;
-        ntt::inplace_coset_ifft_for_gen_on(self.as_mut(), &gen_inv, stream)?;
+        let pool = self.storage.pool_unchecked();
+        ntt::inplace_coset_ifft_for_gen_on(self.as_mut(), &gen_inv, pool, stream)?;
         let monomial = self.into_buffer();
 
         Ok(Poly::from_buffer(monomial))

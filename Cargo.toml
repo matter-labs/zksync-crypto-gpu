@@ -32,7 +32,23 @@ proof-compression = { version = "=0.150.9", path = "crates/proof-compression", p
 
 
 # These dependencies should be shared by all the crates.
-circuit_definitions = { version = "=0.150.5" }
-zkevm_test_harness = { version = "=0.150.5" }
-boojum = "=0.30.1"
-franklin-crypto = "=0.30.1"
+# boojum = "=0.30.1"
+# franklin-crypto = "=0.30.1"
+# snark_wrapper = "=0.30.1"
+# circuit_definitions = "=0.150.5"
+# zkevm_test_harness = "=0.150.5"
+boojum = { git = "https://github.com/matter-labs/zksync-crypto", package = "boojum", branch = "si/fflonk" }
+franklin-crypto = { git = "http://github.com/matter-labs/zksync-crypto", package = "franklin-crypto", branch = "si/fflonk" }
+snark_wrapper = { git = "https://github.com/matter-labs/zksync-crypto", package = "snark-wrapper", branch = "si/fflonk" }
+fflonk-cpu = { git = "https://github.com/matter-labs/zksync-crypto", package = "fflonk", branch = "si/fflonk" }
+circuit_definitions = { git = "https://github.com/matter-labs/zksync-protocol", package = "circuit_definitions", branch = "si/fflonk" }
+zkevm_test_harness = { git = "https://github.com/matter-labs/zksync-protocol", package = "zkevm_test_harness", branch = "si/fflonk" }
+# boojum = { path = "../zksync-crypto/crates/boojum", package = "boojum" }
+# franklin-crypto = { path = "../zksync-crypto/crates/franklin-crypto", package = "franklin-crypto" }
+# snark_wrapper = { path = "../zksync-crypto/crates/snark-wrapper", package = "snark-wrapper" }
+# fflonk-cpu = { path = "../zksync-crypto/crates/fflonk", package = "fflonk" }
+# circuit_definitions = { path = "../zksync-protocol/crates/circuit_definitions", package = "circuit_definitions" }
+# zkevm_test_harness = { path = "../zksync-protocol/crates/zkevm_test_harness", package = "zkevm_test_harness" }
+
+[profile.release]
+debug = "line-tables-only"

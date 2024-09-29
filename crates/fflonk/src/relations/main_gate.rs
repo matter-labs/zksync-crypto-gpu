@@ -6,6 +6,7 @@ pub fn evaluate_main_gate_constraints<'a, F, ITrace, ISelectors>(
     mut trace: ITrace,
     mut main_gate_selectors: ISelectors,
     public_inputs: &DVec<F>,
+    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<Poly<F, CosetEvals>>
 where
@@ -57,7 +58,7 @@ where
     sum.add_assign_on(&qconst_evals, stream)?;
     drop_on(qconst_evals, stream);
 
-    let mut public_input_evals = Poly::<F, LagrangeBasis>::zero(domain_size, stream);
+    let mut public_input_evals = Poly::<F, LagrangeBasis>::zero(domain_size, pool, stream);
     mem::d2d_on(
         &public_inputs,
         &mut public_input_evals.as_mut()[..public_inputs.len()],

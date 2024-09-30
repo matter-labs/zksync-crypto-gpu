@@ -1,3 +1,5 @@
+use std::mem::ManuallyDrop;
+
 use super::*;
 use bellman::compact_bn256::Bn256 as CompactBn256;
 use gpu_ffi::bc_mem_pool;
@@ -14,6 +16,10 @@ pub(crate) fn init_msm_bases_mempool() {
 
 pub(crate) fn is_msm_bases_mempool_initialized() -> bool {
     unsafe { _MSM_BASES_MEMPOOL.is_some() }
+}
+
+pub(crate) fn is_msm_context_initialized() -> bool {
+    unsafe { _MSM_BASES.is_some() && is_msm_result_mempool_initialized() }
 }
 
 pub(crate) fn _msm_bases_mempool() -> bc_mem_pool {
@@ -33,8 +39,7 @@ pub(crate) fn init_tmp_mempool() {
     }
     let num_tmp_bytes = 1_100_000_000;
     let stream = bc_stream::new().unwrap();
-    let warmup_buf: DVec<u8> = DVec::allocate_on(num_tmp_bytes, _tmp_mempool(), stream);
-    drop(warmup_buf);
+    DVec::<u8, PoolAllocator>::allocate_on(num_tmp_bytes, _tmp_mempool(), stream);
 }
 
 pub(crate) fn is_tmp_mempool_initialized() -> bool {
@@ -46,7 +51,64 @@ pub(crate) fn _tmp_mempool() -> bc_mem_pool {
 }
 
 pub(crate) static mut _MEMPOOL: Option<bc_mem_pool> = None;
-pub(crate) static mut _MSM_BASES: Option<DVec<CompactG1Affine>> = None;
+pub(crate) static mut _MSM_BASES: Option<MSMBases> = None;
+
+// MSM bases are stored on a static buffer that is neither
+// default static allocator nor pool allocator.
+// Drop implementation releases its buffer.
+pub struct StaticBasesStorage(ManuallyDrop<DVec<CompactG1Affine, PoolAllocator>>);
+
+impl StaticBasesStorage {
+    pub fn allocate(num_bases: usize) -> CudaResult<Self> {
+        let num_bytes = num_bases * std::mem::size_of::<CompactG1Affine>();
+        let bases_ptr = allocate(num_bytes)?;
+
+        // TODO pool allocator is kind of marker allocator here
+        let d_bases = unsafe {
+            DVec::<CompactG1Affine, PoolAllocator>::from_raw_parts_in(
+                bases_ptr.cast(),
+                num_bases,
+                PoolAllocator,
+                None,
+                None,
+            )
+        };
+
+        Ok(Self(ManuallyDrop::new(d_bases)))
+    }
+}
+
+impl Drop for StaticBasesStorage {
+    fn drop(&mut self) {
+        let ptr = self.0.as_mut_ptr();
+        dealloc(ptr.cast()).expect("dellocate bases static allocation");
+    }
+}
+
+pub enum MSMBases {
+    Static(StaticBasesStorage),
+    Pool(DVec<CompactG1Affine, PoolAllocator>),
+}
+
+impl MSMBases {
+    pub fn as_ptr(&self) -> *const CompactG1Affine {
+        match self {
+            MSMBases::Static(storage) => storage.0.as_ptr(),
+            MSMBases::Pool(storage) => storage.as_ptr(),
+        }
+    }
+}
+
+impl std::ops::Deref for MSMBases {
+    type Target = DSlice<CompactG1Affine>;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            MSMBases::Static(ref storage) => &storage.0,
+            MSMBases::Pool(ref storage) => storage,
+        }
+    }
+}
 
 pub struct DeviceContext<const N: usize>;
 
@@ -57,8 +119,9 @@ pub type DeviceContextWithSingleDevice = DeviceContext<1>;
 
 impl<const N: usize> DeviceContext<N> {
     pub unsafe fn init(domain_size: usize) -> CudaResult<Self> {
-        Self::init_msm_on_pool(domain_size)?;
-
+        init_static_alloc(domain_size);
+        Self::init_msm_on_static_memory(domain_size)?;
+        // Self::init_msm_on_pool(domain_size)?;
         Self::init_no_msm()
     }
 
@@ -87,14 +150,12 @@ impl<const N: usize> DeviceContext<N> {
     }
 
     unsafe fn init_msm_on_static_memory(domain_size: usize) -> CudaResult<()> {
-        assert!(_MSM_BASES.is_none(), "MSM context is already initialized");
         Self::inner_init_msm(domain_size, None, None)?;
         Ok(())
     }
 
     // In reality we keep bases on a statically allocated buffer.
     unsafe fn init_msm_on_pool(domain_size: usize) -> CudaResult<()> {
-        init_msm_bases_mempool();
         let pool = _msm_bases_mempool();
         let stream = bc_stream::new().unwrap();
         Self::inner_init_msm(domain_size, Some(pool), Some(stream))?;
@@ -112,41 +173,26 @@ impl<const N: usize> DeviceContext<N> {
         // MSM impl requires bases to be located in a buffer that is
         // multiple of the domain_size
         let crs = init_compact_crs(&bellman::worker::Worker::new(), domain_size);
-        use bellman::CurveAffine;
         let num_bases = MAX_COMBINED_DEGREE_FACTOR * domain_size;
-        let d_bases = match (pool, stream) {
+        assert!(crs.g1_bases.len() >= num_bases);
+        let bases = match (pool, stream) {
             (Some(pool), Some(stream)) => {
                 println!("Transferring bases to the pool");
-                let mut d_bases = DVec::allocate_zeroed_on(num_bases, pool, stream);
-                let (actual_bases, remainder) = d_bases.split_at_mut(crs.g1_bases.len());
-                mem::h2d_on(&crs.g1_bases, actual_bases, stream)?;
-                if !remainder.is_empty() {
-                    mem::h2d_on(
-                        &vec![CompactG1Affine::zero(); remainder.len()],
-                        remainder,
-                        stream,
-                    )?;
-                }
+                let mut bases = DVec::allocate_zeroed_on(num_bases, pool, stream);
+                mem::h2d_on(&crs.g1_bases, &mut bases, stream)?;
                 stream.sync().unwrap();
-                d_bases
+                MSMBases::Pool(bases)
             }
             (None, None) => {
                 println!("Transferring bases to the static memory of device");
-                let mut d_bases = DVec::allocate_zeroed(num_bases);
-                let (actual_bases, remainder) = d_bases.split_at_mut(crs.g1_bases.len());
-                mem::memcopy_from_host(actual_bases, &crs.g1_bases)?;
-                if !remainder.is_empty() {
-                    mem::memcopy_from_host(
-                        remainder,
-                        &vec![CompactG1Affine::zero(); remainder.len()],
-                    )?;
-                }
-                d_bases
+                let mut bases = StaticBasesStorage::allocate(num_bases)?;
+                mem::memcopy_from_host(&mut bases.0, &crs.g1_bases[..num_bases])?;
+                MSMBases::Static(bases)
             }
             _ => unreachable!(),
         };
 
-        _MSM_BASES = Some(std::mem::transmute(d_bases));
+        _MSM_BASES = Some(std::mem::transmute(bases));
 
         println!("Configuring device for MSM");
         if gpu_ffi::msm_set_up() != 0 {
@@ -159,7 +205,6 @@ impl<const N: usize> DeviceContext<N> {
 
 impl<const N: usize> Drop for DeviceContext<N> {
     fn drop(&mut self) {
-        println!("Dropping device context");
         unsafe {
             if let Some(bases) = _MSM_BASES.take() {
                 let _ = bases;
@@ -168,10 +213,12 @@ impl<const N: usize> Drop for DeviceContext<N> {
                 if result != 0 {
                     println!("Couldn't tear down MSM");
                 }
-                let msm_bases_pool = _MSM_BASES_MEMPOOL.take().unwrap();
-                let result = gpu_ffi::bc_mem_pool_destroy(msm_bases_pool);
-                if result != 0 {
-                    println!("Couldn't destroy the mempool");
+
+                if let Some(msm_bases_pool) = _MSM_BASES_MEMPOOL.take() {
+                    let result = gpu_ffi::bc_mem_pool_destroy(msm_bases_pool);
+                    if result != 0 {
+                        println!("Couldn't destroy the mempool");
+                    }
                 }
             }
 
@@ -192,12 +239,12 @@ impl<const N: usize> Drop for DeviceContext<N> {
 }
 
 pub fn is_context_initialized() -> bool {
-    is_msm_bases_mempool_initialized()
-        && is_msm_result_mempool_initialized()
+    is_msm_context_initialized()
         && is_small_scalar_mempool_initialized()
+        && is_tmp_mempool_initialized()
 }
 
-pub(crate) fn _bases() -> &'static DVec<CompactG1Affine> {
+pub(crate) fn _bases() -> &'static DSlice<CompactG1Affine> {
     unsafe { _MSM_BASES.as_ref().expect("MSM bases on the device ") }
 }
 

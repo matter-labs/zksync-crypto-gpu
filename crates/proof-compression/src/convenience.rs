@@ -445,9 +445,9 @@ pub fn process_steps(
             println!("device setup of fflonk already exist, loading");
         }
 
-        // let (device_setup, final_vk) = load_device_setup_and_vk_of_fflonk_snark_circuit(path);
-        let (device_setup, final_vk) =
-            load_device_setup_in_memory_and_vk_of_fflonk_snark_circuit(path);
+        let (device_setup, final_vk) = load_device_setup_and_vk_of_fflonk_snark_circuit(path);
+        // let (device_setup, final_vk) =
+        //     load_device_setup_in_memory_and_vk_of_fflonk_snark_circuit(path);
         let final_proof = ::fflonk::gpu_prove_fflonk_snark_verifier_circuit_with_precomputation(
             &wrapper_circuit,
             &device_setup,

@@ -2,7 +2,7 @@ use std::{alloc::Layout, ptr::NonNull};
 
 use gpu_ffi::{bc_mem_pool, bc_stream};
 
-use super::{DeviceAllocator, DropOn, GlobalDevice};
+use super::{DeviceAllocator, GlobalDeviceStatic, _static_alloc};
 
 enum AllocInit {
     /// The contents of the new memory are uninitialized.
@@ -13,12 +13,12 @@ enum AllocInit {
 
 // A buffer doesn't have a `capacity` property
 // since it doesn't need to be shrinked/extended
-pub(crate) struct RawDVec<T, A: DeviceAllocator = GlobalDevice> {
+pub(crate) struct RawDVec<T, A: DeviceAllocator = GlobalDeviceStatic> {
     ptr: std::ptr::NonNull<T>,
     len: usize,
     pub(crate) pool: Option<bc_mem_pool>,
     pub(crate) stream: Option<bc_stream>,
-    alloc: A,
+    pub(crate) alloc: A,
 }
 
 impl<T> RawDVec<T> {
@@ -28,12 +28,16 @@ impl<T> RawDVec<T> {
             len: 0,
             pool: None,
             stream: None,
-            alloc: GlobalDevice,
+            alloc: _static_alloc(),
         }
     }
 }
 
 impl<T, A: DeviceAllocator> RawDVec<T, A> {
+    pub fn allocate(length: usize, alloc: A) -> Self {
+        Self::inner_allocate_in(length, AllocInit::Uninitialized, alloc, None, None)
+    }
+
     pub fn allocate_zeroed(length: usize, alloc: A) -> Self {
         Self::inner_allocate_in(length, AllocInit::Zeroed, alloc, None, None)
     }
@@ -144,15 +148,6 @@ impl<T, A: DeviceAllocator> Drop for RawDVec<T, A> {
                 Some(stream) => self.alloc.deallocate_async(ptr, layout, stream),
                 None => self.alloc.deallocate(ptr, layout),
             }
-        }
-    }
-}
-
-impl<T, A: DeviceAllocator> DropOn for RawDVec<T, A> {
-    fn drop_on(&mut self, stream: bc_stream) {
-        if let Some((ptr, layout, inner_stream)) = self.current_memory() {
-            assert!(inner_stream.is_some());
-            self.alloc.deallocate_async(ptr, layout, stream)
         }
     }
 }

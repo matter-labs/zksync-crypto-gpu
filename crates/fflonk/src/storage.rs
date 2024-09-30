@@ -27,19 +27,19 @@ where
     F: PrimeField,
     A: HostAllocator,
 {
-    pub fn allocate_on(device: &Device, domain_size: usize, stream: bc_stream) -> CudaResult<Self> {
+    pub fn allocate_on(device: &Device, domain_size: usize) -> CudaResult<Self> {
         match device {
-            Device::T4(_) => {
-                println!("Using Host based combined storage");
-                Ok(GenericCombinedStorage::HostBased(
-                    CombinedMonomialHostStorage::<_, A>::allocate_on(domain_size, stream)?,
-                ))
-            }
-            _ => {
+            Device::A100_40(_) | Device::A100_80(_) => {
                 // others
                 println!("Using Device based combined storage");
                 Ok(GenericCombinedStorage::DeviceBased(
-                    CombinedMonomialDeviceStorage::allocate_on(domain_size, stream)?,
+                    CombinedMonomialDeviceStorage::allocate_on(domain_size)?,
+                ))
+            }
+            _ => {
+                println!("Using Host based combined storage");
+                Ok(GenericCombinedStorage::HostBased(
+                    CombinedMonomialHostStorage::<_, A>::allocate_on(domain_size)?,
                 ))
             }
         }
@@ -82,7 +82,9 @@ impl<F> CombinedMonomialDeviceStorage<F>
 where
     F: PrimeField,
 {
-    fn allocate_on(_domain_size: usize, _stream: bc_stream) -> CudaResult<Self> {
+    fn allocate_on(domain_size: usize) -> CudaResult<Self> {
+        let _common_combined_degree = MAX_COMBINED_DEGREE_FACTOR * domain_size;
+
         Ok(Self {
             combined_monomials: [None, None, None],
         })
@@ -134,7 +136,7 @@ where
     F: PrimeField,
     A: HostAllocator,
 {
-    fn allocate_on(domain_size: usize, _stream: bc_stream) -> CudaResult<Self> {
+    fn allocate_on(domain_size: usize) -> CudaResult<Self> {
         let common_combined_degree = MAX_COMBINED_DEGREE_FACTOR * domain_size;
         let combined_monomials = std::array::from_fn(|_| {
             let mut buf = Vec::with_capacity_in(common_combined_degree, A::default());
@@ -174,8 +176,6 @@ where
         self.events[poly_idx]
             .record(stream)
             .map_err(|err| CudaError::Error(format!("EventRecordErr: {:?}", err)))?;
-
-        drop_on(src, stream);
         Ok(())
     }
 
@@ -200,7 +200,7 @@ where
 }
 
 pub(crate) trait PolyStorage<F, const N: usize>: Sized {
-    unsafe fn allocate_zeroed_on(domain_size: usize, pool: bc_mem_pool, stream: bc_stream) -> Self;
+    unsafe fn allocate_zeroed(domain_size: usize) -> Self;
     fn num_polys(&self) -> usize {
         N
     }
@@ -217,10 +217,9 @@ impl<F, const N: usize> PolyStorage<F, N> for MultiMonomialStorage<F, N>
 where
     F: PrimeField,
 {
-    unsafe fn allocate_zeroed_on(domain_size: usize, pool: bc_mem_pool, stream: bc_stream) -> Self {
+    unsafe fn allocate_zeroed(domain_size: usize) -> Self {
         // constructing permutation polys require storage to be adjacent
-        let mut chunks =
-            DVec::allocate_zeroed_on(domain_size * N, pool, stream).into_owned_chunks(domain_size);
+        let mut chunks = DVec::allocate_zeroed(domain_size * N).into_owned_chunks(domain_size);
         chunks.reverse();
         Self(std::array::from_fn(|_| {
             Poly::<F, MonomialBasis>::from_buffer(chunks.pop().unwrap())
@@ -259,9 +258,33 @@ where
             );
             polys.push(poly);
         }
-        let owner = polys.remove(0);
-        for poly in polys.into_iter() {
-            std::mem::forget(poly);
-        }
+        unsafe {
+            let _ = into_owned_poly(polys);
+        };
     }
+}
+
+unsafe fn into_owned_poly<F>(mut polys: Vec<Poly<F, MonomialBasis>>) -> Poly<F, MonomialBasis>
+where
+    F: PrimeField,
+{
+    let num_polys = polys.len();
+    let first_poly = polys.remove(0);
+    let mut current_ptr = first_poly.storage.as_ptr();
+    let chunk_size = first_poly.size();
+    for poly in polys.into_iter() {
+        assert_eq!(poly.size(), chunk_size);
+        assert_eq!(current_ptr.add(chunk_size), poly.storage.as_ptr());
+        current_ptr = current_ptr.add(chunk_size);
+        std::mem::forget(poly);
+    }
+
+    let (ptr, len, alloc, pool, stream) = DVec::into_raw_parts(first_poly.storage);
+    assert_eq!(len, chunk_size);
+    assert!(pool.is_none());
+    assert!(stream.is_none());
+    let original_size = chunk_size * num_polys;
+    let original_storage = DVec::from_raw_parts_in(ptr, original_size, alloc, pool, stream);
+
+    Poly::from_buffer(original_storage)
 }

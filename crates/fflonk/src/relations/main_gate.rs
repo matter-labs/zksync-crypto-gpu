@@ -5,8 +5,7 @@ pub fn evaluate_main_gate_constraints<'a, F, ITrace, ISelectors>(
     domain_size: usize,
     mut trace: ITrace,
     mut main_gate_selectors: ISelectors,
-    public_inputs: &DVec<F>,
-    pool: bc_mem_pool,
+    public_inputs: &DScalars<F>,
     stream: bc_stream,
 ) -> CudaResult<Poly<F, CosetEvals>>
 where
@@ -37,33 +36,35 @@ where
 
     let qa_evals = qa_mon.coset_fft_on(coset_idx, quotient_degree, stream)?;
     a_evals.mul_assign_on(&qa_evals, stream)?;
-    drop_on(qa_evals, stream);
+    drop(qa_evals);
     sum.add_assign_on(&a_evals, stream)?;
-    drop_on(a_evals, stream);
+    drop(a_evals);
 
     let qb_evals = qb_mon.coset_fft_on(coset_idx, quotient_degree, stream)?;
     b_evals.mul_assign_on(&qb_evals, stream)?;
-    drop_on(qb_evals, stream);
+    drop(qb_evals);
     sum.add_assign_on(&b_evals, stream)?;
-    drop_on(b_evals, stream);
+    drop(b_evals);
 
     let mut c_evals = c_mon.coset_fft_on(coset_idx, quotient_degree, stream)?;
     let qc_evals = qc_mon.coset_fft_on(coset_idx, quotient_degree, stream)?;
     c_evals.mul_assign_on(&qc_evals, stream)?;
-    drop_on(qc_evals, stream);
+    drop(qc_evals);
     sum.add_assign_on(&c_evals, stream)?;
-    drop_on(c_evals, stream);
+    drop(c_evals);
 
     let qconst_evals = qconst_mon.coset_fft_on(coset_idx, quotient_degree, stream)?;
     sum.add_assign_on(&qconst_evals, stream)?;
-    drop_on(qconst_evals, stream);
+    drop(qconst_evals);
 
-    let mut public_input_evals = Poly::<F, LagrangeBasis>::zero(domain_size, pool, stream);
-    mem::d2d_on(
-        &public_inputs,
-        &mut public_input_evals.as_mut()[..public_inputs.len()],
-        stream,
-    )?;
+    let mut public_input_evals = Poly::<F, LagrangeBasis>::zero(domain_size);
+    for (idx, input) in public_inputs.iter().enumerate() {
+        mem::set_value(
+            &mut public_input_evals.as_mut()[idx..idx + 1],
+            input,
+            stream,
+        )?;
+    }
     let public_input_monomial = public_input_evals.ifft_on(stream)?;
     let public_input_evals =
         public_input_monomial.coset_fft_on(coset_idx, quotient_degree, stream)?;

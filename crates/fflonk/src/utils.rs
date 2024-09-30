@@ -1,21 +1,19 @@
 use super::*;
-use bellman::{plonk::domains::Domain, PrimeFieldRepr};
+use bellman::plonk::domains::Domain;
 use fflonk::utils::*;
 
 pub(crate) fn commit_monomial<E: Engine>(
     monomial: &Poly<E::Fr, MonomialBasis>,
     domain_size: usize,
-    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<E::G1Affine> {
-    msm::msm::<E>(monomial.as_ref(), domain_size, pool, stream)
+    msm::msm::<E>(monomial.as_ref(), domain_size, stream)
 }
 
 pub(crate) fn commit_padded_monomial<E: Engine>(
     monomial: &Poly<E::Fr, MonomialBasis>,
     common_combined_degree: usize,
     domain_size: usize,
-    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<E::G1Affine> {
     assert!(common_combined_degree <= monomial.size());
@@ -26,7 +24,6 @@ pub(crate) fn commit_padded_monomial<E: Engine>(
     msm::msm::<E>(
         &monomial.as_ref()[..common_combined_degree],
         domain_size,
-        pool,
         stream,
     )
 }
@@ -232,7 +229,6 @@ pub(crate) fn multiply_monomial_with_multiple_sparse_polys_inplace<F>(
     poly: &mut Poly<F, MonomialBasis>,
     pairs_negated: Vec<(usize, F)>,
     poly_degree: usize,
-    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<()>
 where
@@ -240,6 +236,8 @@ where
 {
     // degree contrib from set difference monomials are [10, 14, 12] respectively
     // and our monomial already has space for product terms from pairs
+
+    // taking poly mutable indirectly prevents fragmentation
 
     // P(X)*(X^n-k)
     // multiplication with X^k term shifts monomial
@@ -261,7 +259,7 @@ where
 
     let mut current_degree = poly_degree;
     for (degree, constant) in degrees.into_iter().zip(constants.iter()) {
-        let mut tmp = poly.clone_on(pool, stream)?;
+        let mut tmp = poly.clone(stream)?;
         // shift coeffs
         mem::d2d_on(
             &tmp.as_ref()[..current_degree],
@@ -318,7 +316,6 @@ pub(crate) fn divide_in_values<F>(
     num_monomial: Poly<F, MonomialBasis>,
     denum_coeffs: Vec<F>,
     domain_size: usize,
-    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<Poly<F, MonomialBasis>>
 where
@@ -326,30 +323,30 @@ where
 {
     assert!(denum_coeffs.len() < num_monomial.size());
 
-    let mut padded_num = DVec::allocate_zeroed_on(16 * domain_size, pool, stream);
+    let mut padded_num = DVec::allocate_zeroed(16 * domain_size);
     mem::d2d_on(
         num_monomial.as_ref(),
         &mut padded_num.as_mut()[..num_monomial.size()],
         stream,
     )?;
-    drop_on(num_monomial, stream);
+    drop(num_monomial);
 
-    let mut padded_denum = DVec::allocate_zeroed_on(16 * domain_size, pool, stream);
+    let mut padded_denum = DVec::allocate_zeroed(16 * domain_size);
     mem::h2d_on(
         &denum_coeffs,
         &mut padded_denum.as_mut()[..denum_coeffs.len()],
         stream,
     )?;
 
-    ntt::inplace_fft_on(&mut padded_num, pool, stream)?;
-    ntt::inplace_fft_on(&mut padded_denum, pool, stream)?;
+    ntt::inplace_fft_on(&mut padded_num, stream)?;
+    ntt::inplace_fft_on(&mut padded_denum, stream)?;
     arithmetic::batch_inverse(&mut padded_denum, stream)?;
     arithmetic::mul_assign(&mut padded_denum, &padded_num, stream)?;
     ntt::bitreverse(&mut padded_denum, stream)?;
-    ntt::inplace_ifft_on(&mut padded_denum, pool, stream)?;
+    ntt::inplace_ifft_on(&mut padded_denum, stream)?;
 
     let quotient = Poly::from_buffer(padded_denum);
-    let quotient_monomial = quotient.trim_to_degree(10 * domain_size, stream)?;
+    let quotient_monomial = quotient.trim_to_degree(9 * domain_size, stream)?;
 
     Ok(quotient_monomial)
 }

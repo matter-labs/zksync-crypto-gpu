@@ -2,58 +2,38 @@ use super::*;
 
 #[derive(derivative::Derivative)]
 #[derivative(Debug)]
-pub struct DVec<T, A: DeviceAllocator = GlobalDevice> {
+pub struct DVec<T, A: DeviceAllocator = GlobalDeviceStatic> {
     #[derivative(Debug = "ignore")]
-    buf: RawDVec<T, A>,
+    pub(crate) buf: RawDVec<T, A>,
 }
 
-impl<T> DVec<T> {
-    pub fn dangling() -> Self {
-        Self {
-            buf: RawDVec::dangling(),
-        }
-    }
+impl<T, A: DeviceAllocator> DVec<T, A> {
     pub unsafe fn into_owned_chunks(self, chunk_size: usize) -> Vec<Self> {
         assert_eq!(self.len() % chunk_size, 0);
         let num_chunks = self.len() / chunk_size;
         let mut result = vec![];
-        let (ptr, len, pool, stream) = self.into_raw_parts();
+        let (ptr, len, alloc, pool, stream) = self.into_raw_parts();
         assert_eq!(len, chunk_size * num_chunks);
         for chunk_idx in 0..num_chunks {
             let ptr = ptr.add(chunk_idx * chunk_size);
-            let new = Self::from_raw_parts(ptr, chunk_size, pool, stream);
+            let new = Self::from_raw_parts_in(ptr, chunk_size, A::default(), pool, stream);
             result.push(new);
         }
         result
     }
 
-    pub fn allocate_on(length: usize, pool: bc_mem_pool, stream: bc_stream) -> Self {
-        Self {
-            buf: RawDVec::allocate_on(length, GlobalDevice, pool, stream),
-        }
-    }
+    pub unsafe fn split_into_owned_array(self, mid: usize) -> [Self; 2] {
+        assert!(mid < self.len());
+        let (ptr, len, _, pool, stream) = self.into_raw_parts();
 
-    pub fn allocate_zeroed_on(length: usize, pool: bc_mem_pool, stream: bc_stream) -> Self {
-        Self {
-            buf: RawDVec::allocate_zeroed_on(length, GlobalDevice, pool, stream),
-        }
-    }
+        let left = Self::from_raw_parts_in(ptr, mid, A::default(), pool, stream);
+        let right = Self::from_raw_parts_in(ptr.add(mid), len - mid, A::default(), pool, stream);
 
-    pub fn allocate_zeroed(length: usize) -> Self {
-        Self {
-            buf: RawDVec::allocate_zeroed(length, GlobalDevice),
-        }
+        [left, right]
     }
 
     pub fn len(&self) -> usize {
         self.buf.len()
-    }
-
-    pub fn from_host_slice_on(src: &[T], pool: bc_mem_pool, stream: bc_stream) -> CudaResult<Self> {
-        let mut dst = Self::allocate_on(src.len(), pool, stream);
-        mem::h2d_on(src, &mut dst, stream)?;
-
-        Ok(dst)
     }
 
     pub fn as_ptr(&self) -> *const T {
@@ -96,13 +76,6 @@ impl<T> DVec<T> {
         DChunksMut::new(self, chunk_size)
     }
 
-    pub fn clone_on(&self, pool: bc_mem_pool, stream: bc_stream) -> CudaResult<Self> {
-        let mut new = Self::allocate_on(self.len(), pool, stream);
-        mem::d2d_on(self, &mut new, stream)?;
-
-        Ok(new)
-    }
-
     pub fn to_vec_on(&self, stream: bc_stream) -> CudaResult<Vec<T>> {
         self.as_ref().to_vec_on(stream)
     }
@@ -111,37 +84,86 @@ impl<T> DVec<T> {
         self.len() == 0
     }
 
-    pub unsafe fn into_raw_parts(self) -> (*mut T, usize, Option<bc_mem_pool>, Option<bc_stream>) {
+    pub unsafe fn into_raw_parts(
+        self,
+    ) -> (*mut T, usize, A, Option<bc_mem_pool>, Option<bc_stream>) {
         let mut me = std::mem::ManuallyDrop::new(self);
         let len = me.buf.len();
         let ptr = me.as_mut_ptr();
-        (ptr, len, me.buf.pool, me.buf.stream)
+        (ptr, len, A::default(), me.buf.pool, me.buf.stream)
     }
 
-    pub fn pool(&self) -> Option<bc_mem_pool> {
-        self.buf.pool
-    }
-    pub fn pool_unchecked(&self) -> bc_mem_pool {
-        self.buf.pool.unwrap()
-    }
-
-    pub unsafe fn from_raw_parts(
+    pub unsafe fn from_raw_parts_in(
         ptr: *mut T,
         len: usize,
+        alloc: A,
         pool: Option<bc_mem_pool>,
         stream: Option<bc_stream>,
     ) -> Self {
         unsafe {
             DVec {
-                buf: RawDVec::<_, GlobalDevice>::from_raw_parts_in(
-                    ptr,
-                    len,
-                    GlobalDevice,
-                    pool,
-                    stream,
-                ),
+                buf: RawDVec::from_raw_parts_in(ptr, len, alloc, pool, stream),
             }
         }
+    }
+}
+
+impl<T> DVec<T, PoolAllocator> {
+    pub fn allocate_on(length: usize, pool: bc_mem_pool, stream: bc_stream) -> Self {
+        Self {
+            buf: RawDVec::allocate_on(length, PoolAllocator, pool, stream),
+        }
+    }
+
+    pub fn allocate_zeroed_on(length: usize, pool: bc_mem_pool, stream: bc_stream) -> Self {
+        Self {
+            buf: RawDVec::allocate_zeroed_on(length, PoolAllocator, pool, stream),
+        }
+    }
+}
+
+impl<T> DVec<T, GlobalDeviceStatic> {
+    pub fn dangling() -> Self {
+        Self {
+            buf: RawDVec::dangling(),
+        }
+    }
+
+    pub fn allocate(length: usize) -> Self {
+        Self {
+            buf: RawDVec::allocate(length, _static_alloc()),
+        }
+    }
+
+    pub fn allocate_zeroed(length: usize) -> Self {
+        Self {
+            buf: RawDVec::allocate_zeroed(length, _static_alloc()),
+        }
+    }
+
+    pub fn from_host_slice(src: &[T], stream: bc_stream) -> CudaResult<Self> {
+        let mut dst = Self::allocate(src.len());
+        mem::h2d_on(src, &mut dst, stream)?;
+
+        Ok(dst)
+    }
+}
+
+impl<T> CloneStatic for DVec<T, GlobalDeviceStatic> {
+    fn clone(&self, stream: bc_stream) -> CudaResult<Self> {
+        let mut new = Self::allocate(self.len());
+        mem::d2d_on(self, &mut new, stream)?;
+
+        Ok(new)
+    }
+}
+
+impl<T> CloneOnPool for DVec<T, PoolAllocator> {
+    fn clone_on(&self, pool: bc_mem_pool, stream: bc_stream) -> CudaResult<Self> {
+        let mut new = Self::allocate_on(self.len(), pool, stream);
+        mem::d2d_on(self, &mut new, stream)?;
+
+        Ok(new)
     }
 }
 
@@ -226,20 +248,5 @@ impl<T, A: DeviceAllocator> std::ops::Index<std::ops::RangeFrom<usize>> for DVec
 impl<T, A: DeviceAllocator> std::ops::IndexMut<std::ops::RangeFrom<usize>> for DVec<T, A> {
     fn index_mut(&mut self, index: std::ops::RangeFrom<usize>) -> &mut Self::Output {
         &mut self.as_mut()[index]
-    }
-}
-
-pub trait DropOn {
-    fn drop_on(&mut self, stream: bc_stream);
-}
-
-pub fn drop_on<T: DropOn>(data: T, stream: bc_stream) {
-    let mut data = std::mem::ManuallyDrop::new(data);
-    data.drop_on(stream)
-}
-
-impl<T, A: DeviceAllocator> DropOn for DVec<T, A> {
-    fn drop_on(&mut self, stream: bc_stream) {
-        self.buf.drop_on(stream)
     }
 }

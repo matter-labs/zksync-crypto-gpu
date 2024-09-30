@@ -12,12 +12,12 @@ pub struct LDE;
 impl PolyRepr for LDE {}
 
 #[derive(Debug)]
-pub struct Poly<F: PrimeField, P: PolyRepr> {
-    pub(crate) storage: DVec<F>,
-    _p: std::marker::PhantomData<P>,
+pub struct Poly<F: PrimeField, R: PolyRepr, A: DeviceAllocator = GlobalDeviceStatic> {
+    pub(crate) storage: DVec<F, A>,
+    _p: std::marker::PhantomData<R>,
 }
 
-impl<F, R> AsRef<DSlice<F>> for Poly<F, R>
+impl<F, R, A: DeviceAllocator> AsRef<DSlice<F>> for Poly<F, R, A>
 where
     F: PrimeField,
     R: PolyRepr,
@@ -26,7 +26,7 @@ where
         self.storage.as_ref()
     }
 }
-impl<F, R> AsMut<DSlice<F>> for Poly<F, R>
+impl<F, R, A: DeviceAllocator> AsMut<DSlice<F>> for Poly<F, R, A>
 where
     F: PrimeField,
     R: PolyRepr,
@@ -36,19 +36,12 @@ where
     }
 }
 
-impl<F: PrimeField, P: PolyRepr> Poly<F, P> {
-    pub fn from_buffer(buf: DVec<F>) -> Self {
-        Self {
-            storage: buf,
-            _p: std::marker::PhantomData,
-        }
-    }
-
-    pub fn into_buffer(self) -> DVec<F> {
-        self.storage
-    }
-
-    pub fn zero(domain_size: usize, pool: bc_mem_pool, stream: bc_stream) -> Self {
+impl<F, R> Poly<F, R, PoolAllocator>
+where
+    F: PrimeField,
+    R: PolyRepr,
+{
+    pub fn zero_on(domain_size: usize, pool: bc_mem_pool, stream: bc_stream) -> Self {
         Self::from_buffer(DVec::allocate_zeroed_on(domain_size, pool, stream))
     }
 
@@ -59,13 +52,36 @@ impl<F: PrimeField, P: PolyRepr> Poly<F, P> {
             _p: std::marker::PhantomData,
         }
     }
+}
 
-    pub fn allocate_on_pool(domain_size: usize, pool: bc_mem_pool, stream: bc_stream) -> Self {
-        let storage = DVec::allocate_on(domain_size, pool, stream);
+impl<F, R> Poly<F, R, GlobalDeviceStatic>
+where
+    F: PrimeField,
+    R: PolyRepr,
+{
+    pub fn zero(domain_size: usize) -> Self {
+        Self::from_buffer(DVec::allocate_zeroed(domain_size))
+    }
+
+    pub fn allocate(domain_size: usize) -> Self {
+        let storage = DVec::allocate(domain_size);
         Self {
             storage,
             _p: std::marker::PhantomData,
         }
+    }
+}
+
+impl<F: PrimeField, R: PolyRepr, A: DeviceAllocator> Poly<F, R, A> {
+    pub fn from_buffer(buf: DVec<F, A>) -> Self {
+        Self {
+            storage: buf,
+            _p: std::marker::PhantomData,
+        }
+    }
+
+    pub fn into_buffer(self) -> DVec<F, A> {
+        self.storage
     }
 
     pub fn add_assign_on(&mut self, other: &Self, stream: bc_stream) -> CudaResult<()> {
@@ -127,18 +143,16 @@ impl<F: PrimeField, P: PolyRepr> Poly<F, P> {
         arithmetic::batch_inverse(self.as_mut(), stream)
     }
 
-    pub fn grand_product(&mut self, pool: bc_mem_pool, stream: bc_stream) -> CudaResult<()> {
+    pub fn grand_product(&mut self, stream: bc_stream) -> CudaResult<()> {
         let domain_size = self.size();
         assert!(domain_size.is_power_of_two());
         // rotate by one then set first value to 1 and compute grand product
         arithmetic::grand_product(self.as_mut(), stream)?;
-        let tmp = self.clone_on(pool, stream)?;
+        // TODO
+        let mut tmp = DVec::allocate(self.size());
+        mem::d2d_on(self.as_ref(), &mut tmp, stream)?;
         mem::set_value(&mut self.as_mut()[0..1], &DScalar::one(stream)?, stream)?;
-        mem::d2d_on(
-            &tmp.as_ref()[..domain_size - 1],
-            &mut self.as_mut()[1..],
-            stream,
-        )?;
+        mem::d2d_on(&tmp[..domain_size - 1], &mut self.as_mut()[1..], stream)?;
 
         Ok(())
     }
@@ -146,43 +160,33 @@ impl<F: PrimeField, P: PolyRepr> Poly<F, P> {
     pub fn size(&self) -> usize {
         self.storage.len()
     }
-
-    pub fn clone_on(&self, pool: bc_mem_pool, stream: bc_stream) -> CudaResult<Self> {
-        Ok(Self {
-            storage: self.storage.clone_on(pool, stream)?,
-            _p: std::marker::PhantomData,
-        })
-    }
 }
 
-impl<F: PrimeField> Poly<F, CosetEvals> {
+impl<F: PrimeField, A: DeviceAllocator> Poly<F, CosetEvals, A> {
     pub fn mul_assign_on(&mut self, other: &Self, stream: bc_stream) -> CudaResult<()> {
         arithmetic::mul_assign(self.as_mut(), other.as_ref(), stream)
     }
 
     pub fn coset_ifft_on(&self, stream: bc_stream) -> CudaResult<Poly<F, MonomialBasis>> {
-        let pool = self.storage.pool_unchecked();
-        let mut coeffs = Poly::<F, MonomialBasis>::zero(self.size(), pool, stream);
-        ntt::coset_ifft_on(self.as_ref(), coeffs.as_mut(), pool, stream)?;
+        let mut coeffs = Poly::<F, MonomialBasis>::zero(self.size());
+        ntt::coset_ifft_on(self.as_ref(), coeffs.as_mut(), stream)?;
 
         Ok(coeffs)
     }
 }
 
-impl<F: PrimeField> Poly<F, LagrangeBasis> {
+impl<F: PrimeField, A: DeviceAllocator> Poly<F, LagrangeBasis, A> {
     pub fn mul_assign_on(&mut self, other: &Self, stream: bc_stream) -> CudaResult<()> {
         arithmetic::mul_assign(self.as_mut(), other.as_ref(), stream)
     }
 
-    pub fn ifft_on(mut self, stream: bc_stream) -> CudaResult<Poly<F, MonomialBasis>> {
-        let pool = self.storage.pool_unchecked();
-        ntt::inplace_ifft_on(self.as_mut(), pool, stream)?;
-        let coeffs = unsafe { std::mem::transmute(self) };
-        Ok(coeffs)
+    pub fn ifft_on(mut self, stream: bc_stream) -> CudaResult<Poly<F, MonomialBasis, A>> {
+        ntt::inplace_ifft_on(self.as_mut(), stream)?;
+        Ok(Poly::<F, MonomialBasis, A>::from_buffer(self.storage))
     }
 }
 
-impl<F: PrimeField> Poly<F, MonomialBasis> {
+impl<F: PrimeField, A: DeviceAllocator> Poly<F, MonomialBasis, A> {
     pub fn evaluate_at_into_on(
         &self,
         point: &DScalar<F>,
@@ -191,39 +195,9 @@ impl<F: PrimeField> Poly<F, MonomialBasis> {
     ) -> CudaResult<()> {
         arithmetic::evaluate_at_into(self.as_ref(), point, into, stream)
     }
-    pub fn fft_on(mut self, stream: bc_stream) -> CudaResult<Poly<F, LagrangeBasis>> {
-        let pool = self.storage.pool_unchecked();
-        ntt::inplace_fft_on(self.as_mut(), pool, stream)?;
-        let values = unsafe { std::mem::transmute(self) };
-        Ok(values)
-    }
-
-    // TODO: into dst
-    pub fn lde(
-        &self,
-        lde_factor: usize,
-        pool: bc_mem_pool,
-        stream: bc_stream,
-    ) -> CudaResult<Poly<F, LDE>> {
-        assert_eq!(lde_factor, 16);
-        // TODO make sure same pool requirement
-        let mut lde = Poly::<F, LDE>::zero(lde_factor * self.size(), pool, stream);
-        for (coset_idx, coset_evals) in lde.storage.chunks_mut(self.size()).enumerate() {
-            let inverse = false;
-            unsafe {
-                ntt::outplace_ntt(
-                    self.as_ref(),
-                    coset_evals,
-                    inverse,
-                    Some(coset_idx),
-                    Some(lde_factor),
-                    pool,
-                    stream,
-                )?;
-            }
-        }
-
-        Ok(lde)
+    pub fn fft_on(mut self, stream: bc_stream) -> CudaResult<Poly<F, LagrangeBasis, A>> {
+        ntt::inplace_fft_on(self.as_mut(), stream)?;
+        Ok(Poly::<F, LagrangeBasis, A>::from_buffer(self.storage))
     }
 
     pub fn coset_fft_on(
@@ -232,26 +206,16 @@ impl<F: PrimeField> Poly<F, MonomialBasis> {
         lde_factor: usize,
         stream: bc_stream,
     ) -> CudaResult<Poly<F, CosetEvals>> {
-        let pool = self.storage.pool_unchecked();
-        let mut evals = Poly::<F, CosetEvals>::zero(self.size(), pool, stream);
-        ntt::coset_fft_on(
-            self.as_ref(),
-            evals.as_mut(),
-            coset_idx,
-            lde_factor,
-            pool,
-            stream,
-        )?;
+        let mut evals = Poly::<F, CosetEvals>::zero(self.size());
+        ntt::coset_fft_on(self.as_ref(), evals.as_mut(), coset_idx, lde_factor, stream)?;
 
         Ok(evals)
     }
 
-    // TODO: into dst
     pub fn trim_to_degree(self, new_degree: usize, stream: bc_stream) -> CudaResult<Self> {
         assert!(new_degree < self.size());
-        let (actual_coeffs, leading_coeffs) = self.as_ref().split_at(new_degree);
-        let pool = self.storage.pool_unchecked();
-        let new = actual_coeffs.to_dvec_on(pool, stream)?;
+        let [new, leading_coeffs] = unsafe { self.storage.split_into_owned_array(new_degree) };
+
         if SANITY_CHECK {
             let leading_coeffs = leading_coeffs.to_vec_on(stream)?;
             leading_coeffs
@@ -265,27 +229,51 @@ impl<F: PrimeField> Poly<F, MonomialBasis> {
     }
 }
 
-impl<F: PrimeField> Poly<F, LDE> {
+impl<F: PrimeField, A: DeviceAllocator> Poly<F, LDE, A> {
     pub fn mul_assign_on(&mut self, other: &Self, stream: bc_stream) -> CudaResult<()> {
         arithmetic::mul_assign(self.as_mut(), other.as_ref(), stream)
     }
 
-    pub fn coset_ifft_on(mut self, stream: bc_stream) -> CudaResult<Poly<F, MonomialBasis>> {
+    pub fn coset_ifft_on(mut self, stream: bc_stream) -> CudaResult<Poly<F, MonomialBasis, A>> {
         let gen_inv = DScalar::inv_multiplicative_generator(stream)?;
-        let pool = self.storage.pool_unchecked();
-        ntt::inplace_coset_ifft_for_gen_on(self.as_mut(), &gen_inv, pool, stream)?;
+
+        ntt::inplace_coset_ifft_for_gen_on(self.as_mut(), &gen_inv, stream)?;
         let monomial = self.into_buffer();
 
         Ok(Poly::from_buffer(monomial))
     }
 }
 
-impl<F, R> DropOn for Poly<F, R>
+pub trait CloneStatic: Sized {
+    fn clone(&self, stream: bc_stream) -> CudaResult<Self>;
+}
+
+impl<F, R> CloneStatic for Poly<F, R, GlobalDeviceStatic>
 where
     F: PrimeField,
     R: PolyRepr,
 {
-    fn drop_on(&mut self, stream: bc_stream) {
-        self.storage.drop_on(stream)
+    fn clone(&self, stream: bc_stream) -> CudaResult<Self> {
+        Ok(Self {
+            storage: self.storage.clone(stream)?,
+            _p: std::marker::PhantomData,
+        })
+    }
+}
+
+pub trait CloneOnPool: Sized {
+    fn clone_on(&self, pool: bc_mem_pool, stream: bc_stream) -> CudaResult<Self>;
+}
+
+impl<F, R> CloneOnPool for Poly<F, R, PoolAllocator>
+where
+    F: PrimeField,
+    R: PolyRepr,
+{
+    fn clone_on(&self, pool: bc_mem_pool, stream: bc_stream) -> CudaResult<Self> {
+        Ok(Self {
+            storage: self.storage.clone_on(pool, stream)?,
+            _p: std::marker::PhantomData,
+        })
     }
 }

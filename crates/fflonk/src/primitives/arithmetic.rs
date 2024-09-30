@@ -350,7 +350,6 @@ where
 pub fn mul_assign_by_powers<F>(
     values: &mut DSlice<F>,
     el: &DScalar<F>,
-    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<()>
 where
@@ -361,9 +360,10 @@ where
     let output_ptr = values.as_mut_ptr();
     let size = values.len();
 
+    // TODO chunking
     unsafe {
         let cfg = gpu_ffi::ff_multiply_by_powers_configuration {
-            mem_pool: pool,
+            mem_pool: _tmp_mempool(),
             inputs: input_ptr.cast(),
             base: base_ptr.cast(),
             outputs: output_ptr.cast(),
@@ -373,7 +373,7 @@ where
         let result = gpu_ffi::ff_multiply_by_powers(cfg);
         if result != 0 {
             return Err(CudaError::Error(format!(
-                "Materialize omegas err: {result}"
+                "Mul assign by powers of element err: {result}"
             )));
         }
     }

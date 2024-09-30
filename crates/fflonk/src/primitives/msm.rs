@@ -30,7 +30,6 @@ fn previous_power_of_two(x: usize) -> usize {
 pub fn msm<E: Engine>(
     scalars: &DSlice<E::Fr>,
     domain_size: usize,
-    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<E::G1Affine> {
     assert_eq!(domain_size.is_power_of_two(), true);
@@ -38,31 +37,29 @@ pub fn msm<E: Engine>(
     assert!(scalars.len() <= bases.len());
     let result = if scalars.len().is_power_of_two() {
         let (bases, _) = bases.split_at(scalars.len());
-        let result = raw_msm::<E>(&scalars[..scalars.len()], &bases, pool, stream)?;
+        let result = raw_msm::<E>(&scalars[..scalars.len()], &bases, stream)?;
         result.into_affine()
     } else {
         let mut intermediate_sums = vec![];
         let mut scalars_ref = &scalars[..scalars.len()];
         let mut bases_ref = &bases[..scalars.len()];
         loop {
-            let num_sub_polys = scalars_ref.len() / domain_size;
-            let chunk_size = previous_power_of_two(num_sub_polys) * domain_size;
+            let chunk_size = std::cmp::min(domain_size, MSM_CHUNK_SIZE);
             let (input_scalars, remaining_scalars) = scalars_ref.split_at(chunk_size);
             let (input_bases, remaining_bases) = bases_ref.split_at(chunk_size);
-            let intermediate_sum = raw_msm::<E>(input_scalars, input_bases, pool, stream)?;
+            let intermediate_sum = raw_msm::<E>(input_scalars, input_bases, stream)?;
             intermediate_sums.push(intermediate_sum);
             if remaining_scalars.is_empty() {
                 break;
             }
             if remaining_scalars.len() <= domain_size {
-                let mut buf = DVec::allocate_zeroed_on(domain_size, pool, stream);
+                let mut buf = DVec::allocate_zeroed(domain_size);
                 mem::d2d_on(
                     remaining_scalars,
                     &mut buf[..remaining_scalars.len()],
                     stream,
                 )?;
-                let intermediate_sum =
-                    raw_msm::<E>(&buf, &remaining_bases[..domain_size], pool, stream)?;
+                let intermediate_sum = raw_msm::<E>(&buf, &remaining_bases[..domain_size], stream)?;
                 intermediate_sums.push(intermediate_sum);
                 break;
             }
@@ -84,7 +81,6 @@ pub fn msm<E: Engine>(
 fn raw_msm<E: Engine>(
     scalars: &DSlice<E::Fr>,
     bases: &DSlice<CompactG1Affine>,
-    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<E::G1> {
     assert!(is_msm_result_mempool_initialized());
@@ -98,11 +94,11 @@ fn raw_msm<E: Engine>(
 
     let bases_ptr = bases.as_ptr() as *mut CompactG1Affine;
     let scalars_ptr = scalars.as_ptr() as *mut E::Fr;
-    let mut result: DVec<E::G1> = DVec::allocate_on(NUM_BUCKETS, result_mempool, stream);
+    let mut result = DVec::allocate_on(NUM_BUCKETS, result_mempool, stream);
     let result_ptr = result.as_mut_ptr() as *mut E::G1;
 
     let cfg = msm_configuration {
-        mem_pool: pool,
+        mem_pool: _tmp_mempool(),
         stream: stream,
         bases: bases_ptr.cast(),
         scalars: scalars_ptr.cast(),

@@ -1,6 +1,6 @@
 use super::*;
 
-pub struct DScalar<F: PrimeField>(DVec<F>);
+pub struct DScalar<F: PrimeField>(DVec<F, PoolAllocator>);
 
 static mut _SMALL_SCALAR_MEMPOOL: Option<bc_mem_pool> = None;
 

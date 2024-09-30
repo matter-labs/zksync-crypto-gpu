@@ -1,28 +1,5 @@
 use super::*;
 
-pub trait HostAllocator: Allocator + Default + Clone + Send + Sync + 'static {}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct GlobalHost;
-unsafe impl Allocator for GlobalHost {
-    fn allocate(
-        &self,
-        layout: std::alloc::Layout,
-    ) -> Result<std::ptr::NonNull<[u8]>, std::alloc::AllocError> {
-        host_allocate(layout.size())
-            .map(|ptr| unsafe { std::ptr::NonNull::new_unchecked(ptr as _) })
-            .map(|ptr| std::ptr::NonNull::slice_from_raw_parts(ptr, layout.size()))
-            .map_err(|_| std::alloc::AllocError)
-    }
-
-    unsafe fn deallocate(&self, ptr: std::ptr::NonNull<u8>, layout: std::alloc::Layout) {
-        host_dealloc(ptr.as_ptr().cast()).expect("deallocate static buffer")
-    }
-}
-
-impl HostAllocator for GlobalHost {}
-impl HostAllocator for std::alloc::Global {}
-
 pub trait DeviceAllocator: Default {
     fn allocate(&self, layout: std::alloc::Layout) -> CudaResult<std::ptr::NonNull<[u8]>>;
     fn allocate_zeroed(&self, layout: std::alloc::Layout) -> CudaResult<std::ptr::NonNull<[u8]>>;
@@ -48,9 +25,9 @@ pub trait DeviceAllocator: Default {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct GlobalDevice;
+pub struct PoolAllocator;
 
-impl DeviceAllocator for GlobalDevice {
+impl DeviceAllocator for PoolAllocator {
     fn allocate(&self, layout: std::alloc::Layout) -> CudaResult<std::ptr::NonNull<[u8]>> {
         allocate(layout.size())
             .map(|ptr| unsafe { std::ptr::NonNull::new_unchecked(ptr as _) })
@@ -97,5 +74,5 @@ impl DeviceAllocator for GlobalDevice {
     }
 }
 
-unsafe impl Send for GlobalDevice {}
-unsafe impl Sync for GlobalDevice {}
+unsafe impl Send for PoolAllocator {}
+unsafe impl Sync for PoolAllocator {}

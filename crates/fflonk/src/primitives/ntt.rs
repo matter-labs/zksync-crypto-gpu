@@ -20,30 +20,20 @@ where
     Ok(())
 }
 
-pub fn fft_on<F>(
-    coeffs: &DSlice<F>,
-    values: &mut DSlice<F>,
-    pool: bc_mem_pool,
-    stream: bc_stream,
-) -> CudaResult<()>
+pub fn fft_on<F>(coeffs: &DSlice<F>, values: &mut DSlice<F>, stream: bc_stream) -> CudaResult<()>
 where
     F: PrimeField,
 {
     let inverse = false;
-    unsafe { outplace_ntt(coeffs, values, inverse, None, None, pool, stream) }
+    unsafe { outplace_ntt(coeffs, values, inverse, None, None, stream) }
 }
 
-pub fn ifft_on<F>(
-    values: &DSlice<F>,
-    coeffs: &mut DSlice<F>,
-    pool: bc_mem_pool,
-    stream: bc_stream,
-) -> CudaResult<()>
+pub fn ifft_on<F>(values: &DSlice<F>, coeffs: &mut DSlice<F>, stream: bc_stream) -> CudaResult<()>
 where
     F: PrimeField,
 {
     let inverse = true;
-    unsafe { outplace_ntt(values, coeffs, inverse, None, None, pool, stream) }
+    unsafe { outplace_ntt(values, coeffs, inverse, None, None, stream) }
 }
 
 pub fn coset_fft_on<F>(
@@ -51,7 +41,6 @@ pub fn coset_fft_on<F>(
     evals: &mut DSlice<F>,
     coset_idx: usize,
     lde_factor: usize,
-    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<()>
 where
@@ -65,7 +54,6 @@ where
             false,
             Some(coset_idx),
             Some(lde_factor),
-            pool,
             stream,
         )
     }
@@ -74,36 +62,33 @@ where
 pub fn inplace_coset_fft_for_gen_on<F>(
     coeffs: &mut DSlice<F>,
     coset_gen: &DScalar<F>,
-    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<()>
 where
     F: PrimeField,
 {
     let inverse = false;
-    mul_assign_by_powers(coeffs, coset_gen, pool, stream)?;
-    unsafe { inplace_ntt(coeffs, inverse, None, None, pool, stream) }
+    mul_assign_by_powers(coeffs, coset_gen, stream)?;
+    unsafe { inplace_ntt(coeffs, inverse, None, None, stream) }
 }
 
 pub fn inplace_coset_ifft_for_gen_on<F>(
     values: &mut DSlice<F>,
     coset_gen_inv: &DScalar<F>,
-    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<()>
 where
     F: PrimeField,
 {
     let inverse = true;
-    unsafe { inplace_ntt(values, inverse, None, None, pool, stream)? }
-    mul_assign_by_powers(values, coset_gen_inv, pool, stream)
+    unsafe { inplace_ntt(values, inverse, None, None, stream)? }
+    mul_assign_by_powers(values, coset_gen_inv, stream)
 }
 
 pub fn inplace_coset_fft_on<F>(
     coeffs: &mut DSlice<F>,
     coset_idx: usize,
     lde_factor: usize,
-    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<()>
 where
@@ -112,53 +97,35 @@ where
     assert!(coset_idx < lde_factor);
 
     let inverse = false;
-    unsafe {
-        inplace_ntt(
-            coeffs,
-            inverse,
-            Some(coset_idx),
-            Some(lde_factor),
-            pool,
-            stream,
-        )
-    }
+    unsafe { inplace_ntt(coeffs, inverse, Some(coset_idx), Some(lde_factor), stream) }
 }
 
-pub fn inplace_fft_on<F>(
-    values: &mut DSlice<F>,
-    pool: bc_mem_pool,
-    stream: bc_stream,
-) -> CudaResult<()>
+pub fn inplace_fft_on<F>(values: &mut DSlice<F>, stream: bc_stream) -> CudaResult<()>
 where
     F: PrimeField,
 {
     let inverse = false;
-    unsafe { inplace_ntt(values, inverse, None, None, pool, stream) }
+    unsafe { inplace_ntt(values, inverse, None, None, stream) }
 }
 
-pub fn inplace_ifft_on<F>(
-    values: &mut DSlice<F>,
-    pool: bc_mem_pool,
-    stream: bc_stream,
-) -> CudaResult<()>
+pub fn inplace_ifft_on<F>(values: &mut DSlice<F>, stream: bc_stream) -> CudaResult<()>
 where
     F: PrimeField,
 {
     let inverse = true;
-    unsafe { inplace_ntt(values, inverse, None, None, pool, stream) }
+    unsafe { inplace_ntt(values, inverse, None, None, stream) }
 }
 
 pub fn coset_ifft_on<F>(
     values: &DSlice<F>,
     coeffs: &mut DSlice<F>,
-    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<()>
 where
     F: PrimeField,
 {
     let inverse = true;
-    unsafe { outplace_ntt(values, coeffs, inverse, None, None, pool, stream) }
+    unsafe { outplace_ntt(values, coeffs, inverse, None, None, stream) }
 }
 
 unsafe fn inplace_ntt<F>(
@@ -166,7 +133,6 @@ unsafe fn inplace_ntt<F>(
     inverse: bool,
     coset_idx: Option<usize>,
     lde_factor: Option<usize>,
-    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<()>
 where
@@ -182,7 +148,6 @@ where
         inverse,
         coset_idx,
         lde_factor,
-        pool,
         stream,
     )
 }
@@ -193,7 +158,6 @@ pub(crate) unsafe fn outplace_ntt<F>(
     inverse: bool,
     coset_idx: Option<usize>,
     lde_factor: Option<usize>,
-    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<()>
 where
@@ -212,13 +176,10 @@ where
         inverse,
         coset_idx,
         lde_factor,
-        pool,
         stream,
     )
 }
 
-// TODO: should scalars be allocated on the given pool
-// or is it needed for internal computation?
 unsafe fn schedule_ntt<F>(
     input_ptr: *const F,
     output_ptr: *mut F,
@@ -227,7 +188,6 @@ unsafe fn schedule_ntt<F>(
     inverse: bool,
     coset_idx: Option<usize>,
     lde_factor: Option<usize>,
-    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<()>
 where
@@ -242,7 +202,7 @@ where
 
     let input_ptr = input_ptr as *mut F;
     let cfg = ntt_configuration {
-        mem_pool: pool,
+        mem_pool: _tmp_mempool(),
         stream,
         inputs: input_ptr.cast(),
         outputs: output_ptr.cast(),

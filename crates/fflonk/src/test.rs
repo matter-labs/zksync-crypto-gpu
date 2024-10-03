@@ -25,19 +25,6 @@ pub fn load_fflonk_test_vk() -> FflonkVerificationKey<Bn256, FflonkTestCircuit> 
     vk
 }
 
-pub fn load_fflonk_test_proof() -> FflonkProof<Bn256, FflonkTestCircuit> {
-    let proof_file_path = if let Ok(proof_file_path) = std::env::var("PROOF_FILE") {
-        proof_file_path
-    } else {
-        "./data/test_proof.json".to_string()
-    };
-    println!("reading fflonk test proof from file at {proof_file_path}");
-    let proof_file = std::fs::File::open(&proof_file_path).unwrap();
-    let proof = serde_json::from_reader(&proof_file).unwrap();
-
-    proof
-}
-
 #[test]
 #[ignore]
 fn test_fflonk_proof_verification() {
@@ -89,8 +76,6 @@ fn test_test_circuit_with_naive_main_gate() {
     assert!(domain_size <= 1 << L1_VERIFIER_DOMAIN_SIZE_LOG);
     println!("Trace log length {}", domain_size.trailing_zeros());
 
-    let mon_crs = init_crs(&worker, domain_size);
-
     let vk = load_fflonk_test_vk();
     dbg!(&vk.c0);
 
@@ -99,9 +84,9 @@ fn test_test_circuit_with_naive_main_gate() {
     let domain_size = vk.n + 1;
     assert!(domain_size.is_power_of_two());
 
-    let context = unsafe { DeviceContextWithSingleDevice::init(domain_size).unwrap() };
+    let _context = unsafe { DeviceContextWithSingleDevice::init(domain_size).unwrap() };
 
-    let setup = FflonkDeviceSetup::create_setup_on_host(&circuit, &mon_crs, &worker);
+    let setup = FflonkDeviceSetup::create_setup_on_host(&circuit, &worker);
 
     let proof = create_proof::<
         _,
@@ -115,4 +100,45 @@ fn test_test_circuit_with_naive_main_gate() {
 
     let valid = fflonk::verify::<_, _, RollingKeccakTranscript<Fr>>(&vk, &proof, None).unwrap();
     assert!(valid, "proof verification fails");
+}
+
+#[test]
+fn test_device_setup() {
+    let circuit = FflonkTestCircuit {};
+    let worker = Worker::new();
+
+    let start = std::time::Instant::now();
+    let device_setup_on_device =
+        FflonkDeviceSetup::<_, FflonkTestCircuit, std::alloc::Global>::create_setup_on_device(
+            &circuit, &worker,
+        )
+        .unwrap();
+    println!(
+        "Setup creation on device takes {} s",
+        start.elapsed().as_secs()
+    );
+
+    let start = std::time::Instant::now();
+    let device_setup_on_host =
+        FflonkDeviceSetup::<_, FflonkTestCircuit, std::alloc::Global>::create_setup_on_host(
+            &circuit, &worker,
+        );
+    println!(
+        "Setup creation on host takes {} s",
+        start.elapsed().as_secs()
+    );
+
+    assert_eq!(
+        device_setup_on_host.c0_commitment,
+        device_setup_on_device.c0_commitment
+    );
+    assert_eq!(
+        device_setup_on_host.main_gate_selector_monomials,
+        device_setup_on_device.main_gate_selector_monomials
+    );
+
+    assert_eq!(
+        device_setup_on_host.permutation_monomials,
+        device_setup_on_device.permutation_monomials
+    );
 }

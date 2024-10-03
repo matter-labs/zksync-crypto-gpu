@@ -60,13 +60,12 @@ fn load_scheduler_proof_and_vk(
 }
 
 #[test]
-fn download_crs() {
+fn make_compact_crs_from_original_crs() {
+    // This allocates two instances of the CRS in memory
+    // and it is around 10GB in total
     let degree = MAX_COMBINED_DEGREE_FACTOR << L1_VERIFIER_DOMAIN_SIZE_LOG;
     download_and_transform_ignition_transcripts(degree);
-}
 
-#[test]
-fn transform_crs() {
     use bellman::compact_bn256::Bn256 as CompactBn256;
     use bellman::compact_bn256::G1Affine as CompactG1Affine;
     use bellman::compact_bn256::G2Affine as CompactG2Affine;
@@ -84,13 +83,23 @@ fn transform_crs() {
     } = original_crs;
     let g1_bases = std::sync::Arc::try_unwrap(g1_bases).unwrap();
     let g2_bases = std::sync::Arc::try_unwrap(g2_monomial_bases).unwrap();
+
+    let worker = Worker::new();
     println!("Transforming G1 bases");
-    let mut transformed_g1 = vec![];
-    for p in g1_bases {
-        let (x, y) = p.as_xy();
-        let compact_point = CompactG1Affine::from_xy_unchecked(x.clone(), y.clone());
-        transformed_g1.push(compact_point);
-    }
+    let mut transformed_g1 = vec![CompactG1Affine::zero(); g1_bases.len()];
+    worker.scope(g1_bases.len(), |scope, chunk_size| {
+        for (src, dst) in g1_bases
+            .chunks(chunk_size)
+            .zip(transformed_g1.chunks_mut(chunk_size))
+        {
+            scope.spawn(|_| {
+                for (s, d) in src.iter().zip(dst.iter_mut()) {
+                    let (x, y) = s.as_xy();
+                    *d = CompactG1Affine::from_xy_unchecked(x.clone(), y.clone());
+                }
+            })
+        }
+    });
 
     println!("Transforming G2 bases");
     let mut transformed_g2 = vec![];
@@ -433,6 +442,8 @@ pub fn process_steps(
         );
 
         let worker = bellman::worker::Worker::new();
+        let domain_size = 1 << L1_VERIFIER_DOMAIN_SIZE_LOG;
+        let _context = DeviceContextWithSingleDevice::init(domain_size);
         let setup_file_path = format!("{}/final_snark_device_setup.bin", path);
         let setup_file_path = std::path::Path::new(&setup_file_path);
         if setup_file_path.exists() == false {

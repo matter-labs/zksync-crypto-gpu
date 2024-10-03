@@ -5,15 +5,14 @@ use bellman::{
     bn256::Bn256,
     kate_commitment::{Crs, CrsForMonomialForm},
     plonk::{
-        better_better_cs::cs::{Circuit, PolyIdentifier, Setup, SynthesisModeGenerateSetup},
-        better_cs::keys::{
-            read_curve_affine, read_fr, read_fr_vec, write_curve_affine, write_fr_vec,
-        },
+        better_better_cs::cs::{Circuit, GateInternal, Setup, SynthesisModeGenerateSetup},
+        better_cs::keys::{read_curve_affine, read_fr, write_curve_affine, write_fr_vec},
         cs::variable::{Index, Variable},
     },
     worker::Worker,
 };
-use fflonk::{FflonkAssembly, FflonkSetup, FflonkSnarkVerifierCircuit};
+use fflonk::{FflonkAssembly, FflonkSnarkVerifierCircuit};
+use fflonk_cpu::FflonkVerificationKey;
 
 pub type FflonkSnarkVerifierCircuitDeviceSetup =
     FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, Global>;
@@ -25,6 +24,7 @@ pub struct FflonkDeviceSetup<E: Engine, C: Circuit<E>, A: HostAllocator = Global
     // Transform 64-bit variable indexes into 32-bits
     // pub variable_indexes: [Vec<u32, A>; 3],
     pub c0_commitment: E::G1Affine,
+    pub g2_elems: [E::G2Affine; 2],
     _c: std::marker::PhantomData<C>,
 }
 
@@ -59,12 +59,15 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
             permutation_monomials.push(coeffs);
         }
 
-        let c0_commitment = read_curve_affine(reader)?;
+        let c0_commitment = read_curve_affine(&mut reader)?;
+        let g2_first = read_curve_affine(&mut reader)?;
+        let g2_second = read_curve_affine(&mut reader)?;
 
         Ok(Self {
             main_gate_selector_monomials: main_gate_selector_monomials.try_into().unwrap(),
             permutation_monomials: permutation_monomials.try_into().unwrap(),
             c0_commitment,
+            g2_elems: [g2_first, g2_second],
             _c: std::marker::PhantomData,
         })
     }
@@ -79,16 +82,14 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
         for mon in self.permutation_monomials.iter() {
             write_fr_vec(&mon, &mut writer)?;
         }
-        write_curve_affine(&self.c0_commitment, writer)
+        write_curve_affine(&self.c0_commitment, &mut writer)?;
+        write_curve_affine(&self.g2_elems[0], &mut writer)?;
+        write_curve_affine(&self.g2_elems[1], writer)
     }
 }
 
-impl<E: Engine, C: Circuit<E>> FflonkDeviceSetup<E, C> {
-    pub fn create_setup_on_host(
-        circuit: &C,
-        mon_crs: &Crs<E, CrsForMonomialForm>,
-        worker: &Worker,
-    ) -> FflonkDeviceSetup<E, C> {
+impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
+    pub fn create_setup_on_host(circuit: &C, worker: &Worker) -> FflonkDeviceSetup<E, C, A> {
         let mut setup_assembly = FflonkAssembly::<E, SynthesisModeGenerateSetup>::new();
         circuit
             .synthesize(&mut setup_assembly)
@@ -107,48 +108,161 @@ impl<E: Engine, C: Circuit<E>> FflonkDeviceSetup<E, C> {
 
         // comitment to the combined polynomial
         let c0_monomial = fflonk::compute_combined_setup_monomial(&setup, domain_size).unwrap();
+        let mon_crs = unsafe {
+            let crs = init_crs(&worker, domain_size);
+            let g1_bases = std::sync::Arc::try_unwrap(crs.g1_bases).unwrap();
+            let g2_bases = std::sync::Arc::try_unwrap(crs.g2_monomial_bases).unwrap();
+            let transmuted_g1: Vec<E::G1Affine> = std::mem::transmute(g1_bases);
+            let transmuted_g2: Vec<E::G2Affine> = std::mem::transmute(g2_bases);
+            Crs::<E, CrsForMonomialForm>::new(transmuted_g1, transmuted_g2)
+        };
         let c0_commitment =
             bellman::kate_commitment::commit_using_monomials(&c0_monomial, &mon_crs, worker)
                 .unwrap();
-        let host_setup = FflonkSetup {
-            original_setup: setup,
-            c0_commitment,
-        };
-        Self::from_host_setup(host_setup)
-    }
 
-    pub fn from_host_setup(host_setup: FflonkSetup<E, C>) -> Self {
-        let c0_commitment = host_setup.c0_commitment;
-        let Setup {
-            gate_setup_monomials,
-            permutation_monomials,
-            ..
-        } = host_setup.original_setup;
+        let mut main_gate_selectors = vec![];
+        for col in setup.gate_setup_monomials.into_iter() {
+            let mut new = Vec::with_capacity_in(col.size(), A::default());
+            new.extend(col.into_coeffs());
+            main_gate_selectors.push(new);
+        }
+        let mut permutations = vec![];
+        for col in setup.permutation_monomials.into_iter() {
+            let mut new = Vec::with_capacity_in(col.size(), A::default());
+            new.extend(col.into_coeffs());
+            permutations.push(new);
+        }
 
-        let main_gate_selector_monomials = gate_setup_monomials
-            .into_iter()
-            .map(|col| col.into_coeffs())
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
-
-        let permutation_monomials = permutation_monomials
-            .into_iter()
-            .map(|col| col.into_coeffs())
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
-
+        let g2_elems = [mon_crs.g2_monomial_bases[0], mon_crs.g2_monomial_bases[1]];
         Self {
-            main_gate_selector_monomials,
-            permutation_monomials,
+            main_gate_selector_monomials: main_gate_selectors.try_into().unwrap(),
+            permutation_monomials: permutations.try_into().unwrap(),
             c0_commitment,
+            g2_elems,
             _c: std::marker::PhantomData,
         }
     }
+
+    pub fn create_setup_on_device(circuit: &C, worker: &Worker) -> CudaResult<Self> {
+        let mut setup_assembly = FflonkAssembly::<E, SynthesisModeGenerateSetup>::new();
+        circuit
+            .synthesize(&mut setup_assembly)
+            .expect("synthesize circuit");
+        assert!(setup_assembly.num_inputs >= 1);
+        assert!(setup_assembly.inputs_storage.setup_map.len() >= 1);
+        setup_assembly.finalize();
+        let domain_size = setup_assembly.n() + 1;
+        assert!(domain_size.is_power_of_two());
+
+        let mut setup_polys = setup_assembly.make_setup_polynomials(false).unwrap();
+        let mut main_gate_selectors = vec![];
+        for col in GateInternal::<E>::setup_polynomials(&setup_assembly.main_gate) {
+            let unpadded_main_gate_selectors = setup_polys.remove(col).unwrap();
+            main_gate_selectors.push(unpadded_main_gate_selectors);
+        }
+        assert_eq!(main_gate_selectors.len(), 5);
+        let permutation_polys = setup_assembly.make_permutations(worker).unwrap();
+        assert_eq!(permutation_polys.len(), 3);
+
+        let mut _context = None;
+        if is_context_initialized() == false {
+            _context = Some(DeviceContextWithSingleDevice::init(domain_size)?)
+        }
+        assert!(is_context_initialized());
+
+        // move to device and compute values there
+        println!("Reading selector values from Assembly");
+        let stream = bc_stream::new().unwrap();
+        let substream = bc_stream::new().unwrap();
+        let mut selector_monomials = vec![];
+        for col in main_gate_selectors {
+            assert_eq!(col.size() + 1, domain_size);
+            let event = bc_event::new().unwrap();
+            let mut buf = DVec::allocate_zeroed(domain_size);
+            mem::h2d_on(col.as_ref(), &mut buf[..domain_size - 1], substream)?;
+            let values = Poly::from_buffer(buf);
+            event.sync().unwrap();
+            let monomial = values.ifft_on(stream)?;
+            selector_monomials.push(monomial);
+        }
+        println!("Reading permutation values from Assembly");
+        let mut permutation_monomials = vec![];
+        for col in permutation_polys {
+            assert_eq!(col.size(), domain_size);
+            let event = bc_event::new().unwrap();
+            let mut buf = DVec::allocate_zeroed(domain_size);
+            mem::h2d_on(col.as_ref(), &mut buf, substream)?;
+            let values = Poly::from_buffer(buf);
+            event.sync().unwrap();
+            let monomial = values.ifft_on(stream)?;
+            permutation_monomials.push(monomial);
+        }
+
+        println!("Computing combined monomial on the device");
+        let mut combined_monomial = Poly::zero(9 * domain_size);
+        combine_monomials(
+            selector_monomials
+                .iter()
+                .chain(permutation_monomials.iter()),
+            &mut combined_monomial,
+            8,
+            stream,
+        )?;
+
+        println!("Computing preprocessing combined commitment on the device");
+        let c0_commitment = msm::<E>(combined_monomial.as_ref(), domain_size, stream)?;
+
+        println!("Moving selector monomials back to the Host");
+        let mut main_gate_selectors = vec![];
+        for col in selector_monomials {
+            let mut h_monomial = Vec::with_capacity_in(domain_size, A::default());
+            unsafe {
+                h_monomial.set_len(domain_size);
+            }
+            mem::d2h_on(col.as_ref(), &mut h_monomial, stream).unwrap();
+            main_gate_selectors.push(h_monomial);
+        }
+        println!("Moving permutation monomials back to the Host");
+        let mut permutations = vec![];
+        for col in permutation_monomials {
+            let mut h_monomial = Vec::with_capacity_in(domain_size, A::default());
+            unsafe {
+                h_monomial.set_len(domain_size);
+            }
+            mem::d2h_on(col.as_ref(), &mut h_monomial, stream).unwrap();
+            permutations.push(h_monomial);
+        }
+        stream.sync().unwrap();
+        println!("Reading G2 elems from CRS file");
+        let g2_elems = get_g2_elems_from_compact_crs::<E>();
+        Ok(FflonkDeviceSetup {
+            main_gate_selector_monomials: main_gate_selectors.try_into().unwrap(),
+            permutation_monomials: permutations.try_into().unwrap(),
+            c0_commitment,
+            g2_elems,
+            _c: std::marker::PhantomData,
+        })
+    }
+
+    pub fn get_verification_key(&self) -> FflonkVerificationKey<E, C> {
+        let n = (1 << L1_VERIFIER_DOMAIN_SIZE_LOG) - 1;
+        let num_inputs = 1;
+        let num_state_polys = 3;
+        let num_witness_polys = 0;
+        let total_lookup_entries_length = 0;
+        FflonkVerificationKey::new(
+            n,
+            self.c0_commitment,
+            num_inputs,
+            num_state_polys,
+            num_witness_polys,
+            total_lookup_entries_length,
+            self.g2_elems,
+        )
+    }
 }
 
-unsafe fn transform_variables(
+unsafe fn _transform_variables(
     variables: &[Variable],
     result: &mut [u32],
     num_aux_variables: usize,
@@ -172,100 +286,4 @@ unsafe fn transform_variables(
             });
         }
     });
-}
-
-pub fn create_setup_on_host<E: Engine, C: Circuit<E>, A: HostAllocator>(
-    circuit: &C,
-    mon_crs: &Crs<E, CrsForMonomialForm>,
-    worker: &Worker,
-) -> FflonkDeviceSetup<E, C> {
-    let mut setup_assembly = FflonkAssembly::<E, SynthesisModeGenerateSetup>::new();
-    circuit
-        .synthesize(&mut setup_assembly)
-        .expect("synthesize circuit");
-    assert!(setup_assembly.num_inputs >= 1);
-    assert!(setup_assembly.inputs_storage.setup_map.len() >= 1);
-
-    // We want to keep only raw(unpadded) trace column indexes as
-    // permutation polynomials will be constructed during proof generation
-    let raw_trace_len = setup_assembly.n();
-
-    setup_assembly.finalize();
-
-    let setup: Setup<E, C> = setup_assembly.create_setup(worker).unwrap();
-    let domain_size = setup.n + 1;
-    assert!(domain_size.is_power_of_two());
-
-    // comitment to the combined polynomial
-    let c0_monomial = fflonk::compute_combined_setup_monomial(&setup, domain_size).unwrap();
-    let c0_commitment =
-        bellman::kate_commitment::commit_using_monomials(&c0_monomial, &mon_crs, worker).unwrap();
-
-    // now construct selector monomials
-    let Setup::<E, C> {
-        num_inputs,
-        gate_setup_monomials,
-        ..
-    } = setup;
-
-    let main_gate_selector_monomials: [Vec<E::Fr, A>; 5] = std::array::from_fn(|idx| {
-        let mut buf = Vec::with_capacity_in(raw_trace_len, A::default());
-        unsafe { buf.set_len(raw_trace_len) };
-        buf.copy_from_slice(&gate_setup_monomials[idx].as_ref()[..raw_trace_len]);
-
-        buf
-    });
-
-    assert_eq!(num_inputs, setup_assembly.num_inputs);
-    let FflonkAssembly {
-        inputs_storage,
-        aux_storage,
-        num_aux: num_aux_variables,
-        num_input_gates,
-        ..
-    } = setup_assembly;
-    assert_eq!(inputs_storage.setup_map.len(), 5);
-    assert_eq!(aux_storage.setup_map.len(), 5);
-
-    // Then construct unpadded 32bit column indexes from Variables
-    let mut column_indexes: [Vec<u32, A>; 3] = std::array::from_fn(|_| {
-        let mut buf = Vec::with_capacity_in(raw_trace_len, A::default());
-        unsafe { buf.set_len(raw_trace_len) };
-
-        buf
-    });
-
-    for row_idx in 0..raw_trace_len {
-        let (storage, current_row_idx) = if row_idx < num_input_gates {
-            (&inputs_storage, row_idx)
-        } else {
-            (&aux_storage, row_idx - 1)
-        };
-        for col_idx in 0..3 {
-            column_indexes[col_idx][row_idx] = match storage
-                .state_map
-                .get(&PolyIdentifier::VariablesPolynomial(col_idx))
-                .unwrap()
-                .get(current_row_idx)
-                .unwrap_or(&Variable::new_unchecked(Index::Aux(0)))
-                .get_unchecked()
-            {
-                bellman::plonk::cs::gates::Index::Input(0) => unreachable!(),
-                bellman::plonk::cs::gates::Index::Input(input_idx) => {
-                    (num_aux_variables + input_idx) as u32 - 1
-                }
-                bellman::plonk::cs::gates::Index::Aux(0) => 0,
-                bellman::plonk::cs::gates::Index::Aux(aux_idx) => aux_idx as u32,
-            }
-        }
-    }
-
-    // Self {
-    //     main_gate_selector_monomials,
-    //     variable_indexes: column_indexes,
-    //     c0_commitment,
-    //     _c: std::marker::PhantomData,
-    // }
-
-    todo!();
 }

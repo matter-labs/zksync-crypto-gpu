@@ -35,47 +35,39 @@ pub fn msm<E: Engine>(
     assert_eq!(domain_size.is_power_of_two(), true);
     let bases = _bases();
     assert!(scalars.len() <= bases.len());
-    let result = if scalars.len().is_power_of_two() {
-        let (bases, _) = bases.split_at(scalars.len());
-        let result = raw_msm::<E>(&scalars[..scalars.len()], &bases, stream)?;
-        result.into_affine()
-    } else {
-        let mut intermediate_sums = vec![];
-        let mut scalars_ref = &scalars[..scalars.len()];
-        let mut bases_ref = &bases[..scalars.len()];
-        loop {
-            let chunk_size = std::cmp::min(domain_size, MSM_CHUNK_SIZE);
-            let (input_scalars, remaining_scalars) = scalars_ref.split_at(chunk_size);
-            let (input_bases, remaining_bases) = bases_ref.split_at(chunk_size);
-            let intermediate_sum = raw_msm::<E>(input_scalars, input_bases, stream)?;
+    let mut intermediate_sums = vec![];
+    let mut scalars_ref = scalars;
+    let mut bases_ref = &bases[..scalars.len()];
+    loop {
+        let chunk_size = std::cmp::min(domain_size, MSM_CHUNK_SIZE);
+        let (input_scalars, remaining_scalars) = scalars_ref.split_at(chunk_size);
+        let (input_bases, remaining_bases) = bases_ref.split_at(chunk_size);
+        let intermediate_sum = raw_msm::<E>(input_scalars, input_bases, stream)?;
+        intermediate_sums.push(intermediate_sum);
+        if remaining_scalars.is_empty() {
+            break;
+        }
+        if remaining_scalars.len() <= domain_size {
+            let mut buf = DVec::allocate_zeroed(domain_size);
+            mem::d2d_on(
+                remaining_scalars,
+                &mut buf[..remaining_scalars.len()],
+                stream,
+            )?;
+            let intermediate_sum = raw_msm::<E>(&buf, &remaining_bases[..domain_size], stream)?;
             intermediate_sums.push(intermediate_sum);
-            if remaining_scalars.is_empty() {
-                break;
-            }
-            if remaining_scalars.len() <= domain_size {
-                let mut buf = DVec::allocate_zeroed(domain_size);
-                mem::d2d_on(
-                    remaining_scalars,
-                    &mut buf[..remaining_scalars.len()],
-                    stream,
-                )?;
-                let intermediate_sum = raw_msm::<E>(&buf, &remaining_bases[..domain_size], stream)?;
-                intermediate_sums.push(intermediate_sum);
-                break;
-            }
-            scalars_ref = remaining_scalars;
-            bases_ref = remaining_bases;
+            break;
         }
-        stream.sync().unwrap();
-        let mut final_sum = intermediate_sums.pop().unwrap();
-        for point in intermediate_sums.iter() {
-            final_sum.add_assign(point);
-        }
+        scalars_ref = remaining_scalars;
+        bases_ref = remaining_bases;
+    }
+    stream.sync().unwrap();
+    let mut final_sum = intermediate_sums.pop().unwrap();
+    for point in intermediate_sums.iter() {
+        final_sum.add_assign(point);
+    }
 
-        final_sum.into_affine()
-    };
-
-    Ok(result)
+    Ok(final_sum.into_affine())
 }
 
 fn raw_msm<E: Engine>(
@@ -83,9 +75,7 @@ fn raw_msm<E: Engine>(
     bases: &DSlice<CompactG1Affine>,
     stream: bc_stream,
 ) -> CudaResult<E::G1> {
-    assert!(is_msm_result_mempool_initialized());
-    assert!(is_tmp_mempool_initialized());
-    let result_mempool = _msm_result_mempool();
+    assert!(is_context_initialized());
     assert!(scalars.len().is_power_of_two());
     assert_eq!(scalars.len(), bases.len());
     assert_eq!(64, std::mem::size_of_val(&bases[0]));
@@ -94,7 +84,7 @@ fn raw_msm<E: Engine>(
 
     let bases_ptr = bases.as_ptr() as *mut CompactG1Affine;
     let scalars_ptr = scalars.as_ptr() as *mut E::Fr;
-    let mut result = DVec::allocate_on(NUM_BUCKETS, result_mempool, stream);
+    let mut result = DVec::allocate_on(NUM_BUCKETS, _msm_result_mempool(), stream);
     let result_ptr = result.as_mut_ptr() as *mut E::G1;
 
     let cfg = msm_configuration {

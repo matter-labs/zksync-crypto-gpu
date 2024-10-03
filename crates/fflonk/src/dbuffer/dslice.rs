@@ -81,7 +81,7 @@ impl<T> DSlice<T> {
         super::mem::d2d_on(other, self, stream)
     }
 
-    pub fn to_vec_on(&self, stream: bc_stream) -> CudaResult<Vec<T>> {
+    pub fn to_vec(&self, stream: bc_stream) -> CudaResult<Vec<T>> {
         self.to_vec_in_on::<std::alloc::Global>(stream)
     }
 

@@ -77,7 +77,7 @@ impl<T, A: DeviceAllocator> DVec<T, A> {
     }
 
     pub fn to_vec_on(&self, stream: bc_stream) -> CudaResult<Vec<T>> {
-        self.as_ref().to_vec_on(stream)
+        self.as_ref().to_vec(stream)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -119,6 +119,13 @@ impl<T> DVec<T, PoolAllocator> {
         Self {
             buf: RawDVec::allocate_zeroed_on(length, PoolAllocator, pool, stream),
         }
+    }
+
+    pub fn from_host_slice_on(src: &[T], pool: bc_mem_pool, stream: bc_stream) -> CudaResult<Self> {
+        let mut dst = Self::allocate_on(src.len(), pool, stream);
+        mem::h2d_on(src, &mut dst, stream)?;
+
+        Ok(dst)
     }
 }
 

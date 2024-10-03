@@ -453,3 +453,56 @@ where
 
     flattened
 }
+
+pub fn get_g2_elems_from_compact_crs<E: Engine>() -> [E::G2Affine; 2] {
+    assert!(std::mem::size_of::<E::Fqe>() == 64 || std::mem::size_of::<E::Fqe>() == 72);
+    use bellman::{CurveAffine, EncodedPoint};
+    let g2_bases = if let Ok(compact_crs_file_path) = std::env::var("COMPACT_CRS_FILE") {
+        use byteorder::ReadBytesExt;
+        let mut reader = std::fs::File::open(compact_crs_file_path).unwrap();
+        let num_g1 = reader.read_u64::<byteorder::BigEndian>().unwrap();
+
+        // skip num_g1 * 32 bytes
+        use std::io::Seek;
+
+        let num_bytes_to_skip = num_g1 * 64;
+        reader
+            .seek(std::io::SeekFrom::Current(num_bytes_to_skip as i64))
+            .unwrap();
+
+        let num_g2 = reader.read_u64::<byteorder::BigEndian>().unwrap();
+        assert!(num_g2 == 2u64);
+
+        let mut g2_bases = Vec::with_capacity(num_g2 as usize);
+        use bellman::compact_bn256::G2Affine;
+        let mut g2_repr = <G2Affine as CurveAffine>::Uncompressed::empty();
+        for _ in 0..num_g2 {
+            std::io::Read::read_exact(&mut reader, g2_repr.as_mut()).unwrap();
+            let p = g2_repr
+                .into_affine()
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+                .unwrap();
+            let (x, y) = p.as_xy();
+            let p = unsafe {
+                let x = *(x as *const bellman::bn256::Fq2 as *const E::Fqe);
+                let y = *(y as *const bellman::bn256::Fq2 as *const E::Fqe);
+                E::G2Affine::from_xy_checked(x.clone(), y.clone()).unwrap()
+            };
+
+            g2_bases.push(p);
+        }
+
+        g2_bases
+    } else {
+        // crs 42
+        let mut g2_bases = vec![E::G2Affine::one(); 2];
+
+        let gen = E::Fr::from_str("42").unwrap();
+
+        g2_bases[1] = g2_bases[1].mul(gen.into_repr()).into_affine();
+
+        g2_bases
+    };
+
+    [g2_bases[0], g2_bases[1]]
+}

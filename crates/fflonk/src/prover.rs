@@ -1,8 +1,12 @@
 use super::*;
 
-use bellman::plonk::{
-    better_better_cs::cs::{Circuit, SynthesisMode},
-    commitments::transcript::{keccak_transcript::RollingKeccakTranscript, Transcript},
+use bellman::{
+    plonk::{
+        better_better_cs::cs::{Circuit, SynthesisMode},
+        better_cs::generator::make_non_residues,
+        commitments::transcript::Transcript,
+    },
+    SqrtField,
 };
 use fflonk::{
     commit_point_as_xy, compute_generators, horner_evaluation, FflonkAssembly, FflonkProof,
@@ -30,9 +34,9 @@ where
         "Only trace length up to 2^23 is allowed"
     );
     dbg!(domain_size);
-    let mut context = None;
+    let mut _context = None;
     if is_context_initialized() == false {
-        context = Some(unsafe { DeviceContextWithSingleDevice::init(domain_size)? })
+        _context = Some(DeviceContextWithSingleDevice::init(domain_size)?)
     }
     assert!(is_context_initialized());
 
@@ -151,7 +155,7 @@ where
     if SANITY_CHECK {
         let leading_coeffs = main_gate_quotient_monomial.as_ref()
             [main_gate_quotient_degree * (domain_size - 1)..]
-            .to_vec_on(stream)?;
+            .to_vec(stream)?;
         leading_coeffs
             .iter()
             .rev()
@@ -250,7 +254,7 @@ where
     if SANITY_CHECK {
         let leading_coeffs = copy_perm_first_quotient_monomial.as_ref()
             [copy_perm_quotient_degree * (domain_size - 1)..]
-            .to_vec_on(stream)?;
+            .to_vec(stream)?;
         leading_coeffs
             .iter()
             .enumerate()
@@ -261,7 +265,7 @@ where
         prove_copy_perm_second_constraint(&copy_perm_grand_prod_monomial, domain_size, stream)?;
     if SANITY_CHECK {
         let leading_coeffs =
-            copy_perm_second_quotient_monomial.as_ref()[domain_size - 1..].to_vec_on(stream)?;
+            copy_perm_second_quotient_monomial.as_ref()[domain_size - 1..].to_vec(stream)?;
         leading_coeffs
             .iter()
             .enumerate()
@@ -630,7 +634,7 @@ pub unsafe fn load_trace_from_precomputations<E: Engine, S: SynthesisMode>(
             stream,
         )?;
 
-        let h_dst = dst.as_ref().to_vec_on(stream).unwrap();
+        let h_dst = dst.as_ref().to_vec(stream).unwrap();
         stream.sync().unwrap();
         assert_eq!(src.as_ref().as_ref(), &h_dst[..domain_size - 1]);
         assert_eq!(h_dst.last().unwrap(), &E::Fr::zero());
@@ -715,18 +719,19 @@ pub fn variable_assignment_for_single_col<F: PrimeField>(
     }
 }
 
-pub unsafe fn materialize_permutation_polys<F: PrimeField>(
-    indexes: &DVec<u32>,
-    non_residues: &DVec<F>,
+pub unsafe fn materialize_permutation_polys<F: PrimeField + SqrtField>(
+    indexes: &DSlice<u32>,
     domain_size: usize,
-    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<Permutations<F>> {
     use gpu_ffi::generate_permutation_polynomials_configuration;
     let mut permutations_monomial = Permutations::<F>::allocate_zeroed(domain_size);
     let num_cols = permutations_monomial.num_polys();
     assert_eq!(num_cols * domain_size, indexes.len());
-    assert_eq!(non_residues.len(), num_cols);
+
+    let mut h_non_residues = make_non_residues::<F>(num_cols - 1);
+    h_non_residues.insert(0, F::one());
+    let non_residues = DVec::from_host_slice_on(&h_non_residues, _small_scalar_mempool(), stream)?;
 
     let log_rows_count = domain_size.trailing_zeros();
 
@@ -735,7 +740,7 @@ pub unsafe fn materialize_permutation_polys<F: PrimeField>(
 
     let permutations_monomial_ptr = permutations_monomial.as_mut_ptr();
     let cfg = generate_permutation_polynomials_configuration {
-        mem_pool: pool, // TODO: make sure it is tmp pool
+        mem_pool: _tmp_mempool(),
         stream,
         indexes: indexes_ptr.cast(),
         scalars: non_residues_ptr.cast(),
@@ -930,7 +935,7 @@ where
     let result = result_values.ifft_on(stream)?;
 
     if SANITY_CHECK {
-        let leading_coeffs = result.as_ref()[common_combined_degree..].to_vec_on(stream)?;
+        let leading_coeffs = result.as_ref()[common_combined_degree..].to_vec(stream)?;
         leading_coeffs
             .iter()
             .rev()

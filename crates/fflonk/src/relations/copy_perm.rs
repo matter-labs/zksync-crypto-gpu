@@ -47,7 +47,7 @@ where
         if SANITY_CHECK {
             let mut tmp = col_evals_natural.clone(stream)?;
             ntt::bitreverse(tmp.as_mut(), stream)?;
-            let coeffs = tmp.as_ref()[domain_size - 1..].to_vec_on(stream)?;
+            let coeffs = tmp.as_ref()[domain_size - 1..].to_vec(stream)?;
             stream.sync().unwrap();
             assert_eq!(&coeffs, &vec![F::zero(); coeffs.len()]);
         }
@@ -68,7 +68,7 @@ where
     denum.mul_assign_on(&num, stream)?;
     denum.grand_product(stream)?;
     if SANITY_CHECK {
-        assert_eq!(denum.as_ref()[0..1].to_vec_on(stream).unwrap()[0], F::one())
+        assert_eq!(denum.as_ref()[0..1].to_vec(stream).unwrap()[0], F::one())
     }
 
     denum.ifft_on(stream)

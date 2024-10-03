@@ -113,6 +113,21 @@ where
             .collect())
     }
 
+    pub fn to_dvec(self, stream: bc_stream) -> CudaResult<DVec<F, PoolAllocator>> {
+        // Vec<DScalars> -> DSlice<F>
+        let mut new = DVec::<F, PoolAllocator>::allocate_zeroed_on(
+            self.len(),
+            _small_scalar_mempool(),
+            stream,
+        );
+
+        for idx in 0..self.len() {
+            mem::set_value(&mut new[idx..idx + 1], &self.0[idx], stream)?;
+        }
+
+        Ok(new)
+    }
+
     pub fn split_at_mut(
         &mut self,
         mid: usize,

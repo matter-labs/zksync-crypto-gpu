@@ -38,9 +38,10 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_single_shot(
     let host_setup = FflonkSetup::create_setup(&assembly, &worker, &mon_crs).expect("setup");
     let vk = FflonkVerificationKey::from_setup(&host_setup, &mon_crs).unwrap();
 
-    let context = unsafe { DeviceContextWithSingleDevice::init(domain_size).unwrap() };
-
-    let setup = FflonkDeviceSetup::<_, FflonkSnarkVerifierCircuit>::from_host_setup(host_setup);
+    let setup = FflonkDeviceSetup::<_, FflonkSnarkVerifierCircuit>::create_setup_on_device(
+        &circuit, &worker,
+    )
+    .unwrap();
 
     let start = std::time::Instant::now();
     let proof = create_proof::<
@@ -77,8 +78,6 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_with_precomputation(
     assert!(domain_size.is_power_of_two());
     assert!(domain_size <= 1 << L1_VERIFIER_DOMAIN_SIZE_LOG);
 
-    let context = unsafe { DeviceContextWithSingleDevice::init(domain_size).unwrap() };
-
     let start = std::time::Instant::now();
     let proof = create_proof::<
         _,
@@ -114,22 +113,17 @@ pub fn precompute_and_save_setup_and_vk_for_fflonk_snark_circuit(
     assert!(domain_size.is_power_of_two());
     assert!(domain_size <= 1 << L1_VERIFIER_DOMAIN_SIZE_LOG);
 
-    println!("Generating fflonk setup data");
-    let mon_crs = init_crs(&worker, domain_size);
-    let host_setup =
-        FflonkSnarkVerifierCircuitSetup::create_setup(&setup_assembly, &worker, &mon_crs).unwrap();
-    let vk = FflonkSnarkVerifierCircuitVK::from_setup(&host_setup, &mon_crs).unwrap();
-
-    let device_setup = FflonkSnarkVerifierCircuitDeviceSetup::from_host_setup(host_setup);
+    println!("Generating fflonk setup data on the device");
+    let device_setup =
+        FflonkSnarkVerifierCircuitDeviceSetup::create_setup_on_device(&circuit, &worker).unwrap();
     let setup_file_path = format!("{}/final_snark_device_setup.bin", path);
-
     let device_setup_file = std::fs::File::create(&setup_file_path).unwrap();
     device_setup.write(&device_setup_file).unwrap();
     println!("fflonk device setup saved into {}", setup_file_path);
 
     let vk_file_path = format!("{}/final_vk.json", path);
     let vk_file = std::fs::File::create(&vk_file_path).unwrap();
-    serde_json::to_writer(&vk_file, &vk).unwrap();
+    serde_json::to_writer(&vk_file, &device_setup.get_verification_key()).unwrap();
     println!("fflonk vk saved into {}", vk_file_path);
 }
 

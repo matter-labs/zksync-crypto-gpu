@@ -118,38 +118,40 @@ const POWERS_OF_COSET_OMEGA_COARSE_LOG_COUNT: u32 = 14;
 pub type DeviceContextWithSingleDevice = DeviceContext<1>;
 
 impl<const N: usize> DeviceContext<N> {
-    pub unsafe fn init(domain_size: usize) -> CudaResult<Self> {
+    pub fn init(domain_size: usize) -> CudaResult<Self> {
         init_static_alloc(domain_size);
         Self::init_msm_on_static_memory(domain_size)?;
         // Self::init_msm_on_pool(domain_size)?;
         Self::init_no_msm()
     }
 
-    pub unsafe fn init_no_msm() -> CudaResult<Self> {
+    pub fn init_no_msm() -> CudaResult<Self> {
         init_small_scalar_mempool();
         init_tmp_mempool();
-        let result = gpu_ffi::ff_set_up(
-            POWERS_OF_OMEGA_COARSE_LOG_COUNT,
-            POWERS_OF_COSET_OMEGA_COARSE_LOG_COUNT,
-        );
-        if result != 0 {
-            return Err(CudaError::Error(format!("FF Setup Error: {}", result)));
-        }
+        unsafe {
+            let result = gpu_ffi::ff_set_up(
+                POWERS_OF_OMEGA_COARSE_LOG_COUNT,
+                POWERS_OF_COSET_OMEGA_COARSE_LOG_COUNT,
+            );
+            if result != 0 {
+                return Err(CudaError::Error(format!("FF Setup Error: {}", result)));
+            }
 
-        let result = gpu_ffi::ntt_set_up();
-        if result != 0 {
-            return Err(CudaError::Error(format!("NTT Setup Error: {}", result)));
-        }
+            let result = gpu_ffi::ntt_set_up();
+            if result != 0 {
+                return Err(CudaError::Error(format!("NTT Setup Error: {}", result)));
+            }
 
-        let result = gpu_ffi::pn_set_up();
-        if result != 0 {
-            return Err(CudaError::Error(format!("PN Setup Error: {}", result)));
+            let result = gpu_ffi::pn_set_up();
+            if result != 0 {
+                return Err(CudaError::Error(format!("PN Setup Error: {}", result)));
+            }
         }
 
         Ok(DeviceContext)
     }
 
-    unsafe fn init_msm_on_static_memory(domain_size: usize) -> CudaResult<()> {
+    fn init_msm_on_static_memory(domain_size: usize) -> CudaResult<()> {
         Self::inner_init_msm(domain_size, None, None)?;
         Ok(())
     }
@@ -163,13 +165,16 @@ impl<const N: usize> DeviceContext<N> {
         Ok(())
     }
 
-    unsafe fn inner_init_msm(
+    fn inner_init_msm(
         domain_size: usize,
         pool: Option<bc_mem_pool>,
         stream: Option<bc_stream>,
     ) -> CudaResult<()> {
+        assert!(
+            is_msm_context_initialized() == false,
+            "MSM context is already initialized"
+        );
         init_msm_result_mempool();
-        assert!(_MSM_BASES.is_none(), "MSM context is already initialized");
         // MSM impl requires bases to be located in a buffer that is
         // multiple of the domain_size
         let crs = init_compact_crs(&bellman::worker::Worker::new(), domain_size);
@@ -191,12 +196,13 @@ impl<const N: usize> DeviceContext<N> {
             }
             _ => unreachable!(),
         };
+        unsafe {
+            _MSM_BASES = Some(std::mem::transmute(bases));
 
-        _MSM_BASES = Some(std::mem::transmute(bases));
-
-        println!("Configuring device for MSM");
-        if gpu_ffi::msm_set_up() != 0 {
-            return Err(CudaError::SetupError("MSM configuration error".to_string()));
+            println!("Configuring device for MSM");
+            if gpu_ffi::msm_set_up() != 0 {
+                return Err(CudaError::SetupError("MSM configuration error".to_string()));
+            }
         }
 
         Ok(())
@@ -258,7 +264,7 @@ pub fn init_compact_crs(
     let num_points = MAX_COMBINED_DEGREE_FACTOR * domain_size;
     let mon_crs = if let Ok(socket_path) = std::env::var("TEST_SOCK_FILE") {
         read_crs_over_socket(&socket_path).unwrap()
-    } else if let Ok(crs_file_path) = std::env::var("CRS_FILE") {
+    } else if let Ok(crs_file_path) = std::env::var("COMPACT_CRS_FILE") {
         println!("using crs file at {crs_file_path}");
         let crs_file =
             std::fs::File::open(&crs_file_path).expect(&format!("crs file at {}", crs_file_path));

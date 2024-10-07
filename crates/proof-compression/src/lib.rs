@@ -2,4 +2,4 @@
 #![feature(generic_const_exprs)]
 #![feature(allocator_api)]
 mod convenience;
-use convenience::*;
+pub use convenience::*;

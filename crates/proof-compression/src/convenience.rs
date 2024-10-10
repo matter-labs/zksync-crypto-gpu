@@ -142,7 +142,7 @@ impl CompressionMode {
 
 #[derive(Debug)]
 pub struct CompressionSchedule {
-    name: &'static str,
+    pub name: &'static str,
     pub compression_steps: Vec<CompressionMode>,
 }
 

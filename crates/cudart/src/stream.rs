@@ -21,8 +21,8 @@ pub struct CudaStream {
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct CudaStreamCreateFlags: u32 {
-        const DEFAULT = era_cudart_sys::cudaStreamDefault;
-        const NON_BLOCKING = era_cudart_sys::cudaStreamNonBlocking;
+        const DEFAULT = cudaStreamDefault;
+        const NON_BLOCKING = cudaStreamNonBlocking;
     }
 }
 
@@ -35,8 +35,8 @@ impl Default for CudaStreamCreateFlags {
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct CudaStreamWaitEventFlags: u32 {
-        const DEFAULT = era_cudart_sys::cudaEventWaitDefault;
-        const WAIT_EXTERNAL = era_cudart_sys::cudaEventWaitExternal;
+        const DEFAULT = cudaEventWaitDefault;
+        const WAIT_EXTERNAL = cudaEventWaitExternal;
     }
 }
 
@@ -47,7 +47,9 @@ impl Default for CudaStreamWaitEventFlags {
 }
 
 impl CudaStream {
-    fn from_handle(handle: cudaStream_t) -> Self {
+    pub const DEFAULT: CudaStream = Self::from_handle(null_mut());
+
+    const fn from_handle(handle: cudaStream_t) -> Self {
         Self { handle }
     }
 
@@ -113,7 +115,7 @@ impl CudaStream {
 
 impl Default for CudaStream {
     fn default() -> Self {
-        Self { handle: null_mut() }
+        Self::DEFAULT
     }
 }
 
@@ -126,6 +128,8 @@ impl Drop for CudaStream {
         unsafe { cudaStreamDestroy(handle).eprint_error_and_backtrace() };
     }
 }
+
+unsafe impl Sync for CudaStream {}
 
 impl From<&CudaStream> for cudaStream_t {
     fn from(stream: &CudaStream) -> Self {

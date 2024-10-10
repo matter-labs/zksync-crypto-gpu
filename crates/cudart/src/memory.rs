@@ -1,14 +1,12 @@
 // memory management
 // https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__MEMORY.html
 
+use bitflags::bitflags;
+use era_cudart_sys::*;
 use std::alloc::Layout;
 use std::mem::{self, MaybeUninit};
 use std::ops::{Deref, DerefMut};
-use std::os::raw::c_void;
-
-use bitflags::bitflags;
-
-use era_cudart_sys::*;
+use std::ptr::NonNull;
 
 use crate::result::{CudaResult, CudaResultWrap};
 use crate::slice::{AllocationData, CudaSlice, CudaSliceMut, DeviceSlice};
@@ -21,22 +19,17 @@ pub struct DeviceAllocation<T>(AllocationData<T>);
 impl<T> DeviceAllocation<T> {
     pub fn alloc(length: usize) -> CudaResult<Self> {
         let layout = Layout::array::<T>(length).unwrap();
-        let mut dev_ptr = MaybeUninit::<*mut c_void>::uninit();
+        let mut dev_ptr = MaybeUninit::uninit();
         unsafe {
             cudaMalloc(dev_ptr.as_mut_ptr(), layout.size())
                 .wrap_maybe_uninit(dev_ptr)
-                .map(|ptr| {
-                    Self(AllocationData {
-                        ptr: ptr as *mut T,
-                        len: length,
-                    })
-                })
+                .map(|ptr| Self(AllocationData::new_unchecked(ptr as _, length)))
         }
     }
 
     pub fn free(self) -> CudaResult<()> {
         unsafe {
-            let ptr = self.0.ptr as *mut c_void;
+            let ptr = self.0.ptr.as_ptr() as _;
             mem::forget(self);
             cudaFree(ptr).wrap()
         }
@@ -45,11 +38,11 @@ impl<T> DeviceAllocation<T> {
     /// # Safety
     ///
     /// The caller must ensure that the inputs are valid.
-    pub unsafe fn from_raw_parts(ptr: *mut T, len: usize) -> Self {
-        Self(AllocationData { ptr, len })
+    pub unsafe fn from_raw_parts(ptr: NonNull<T>, len: usize) -> Self {
+        Self(AllocationData::new(ptr, len))
     }
 
-    pub fn into_raw_parts(self) -> (*mut T, usize) {
+    pub fn into_raw_parts(self) -> (NonNull<T>, usize) {
         let result = (self.0.ptr, self.0.len);
         mem::forget(self);
         result
@@ -58,7 +51,7 @@ impl<T> DeviceAllocation<T> {
 
 impl<T> Drop for DeviceAllocation<T> {
     fn drop(&mut self) {
-        unsafe { cudaFree(self.as_mut_c_void_ptr()).eprint_error_and_backtrace() };
+        unsafe { cudaFree(self.0.ptr.as_ptr() as _).eprint_error_and_backtrace() };
     }
 }
 
@@ -103,10 +96,10 @@ impl<T> CudaSliceMut<T> for DeviceAllocation<T> {
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct CudaHostAllocFlags: u32 {
-        const DEFAULT = era_cudart_sys::cudaHostAllocDefault;
-        const PORTABLE = era_cudart_sys::cudaHostAllocPortable;
-        const MAPPED = era_cudart_sys::cudaHostAllocMapped;
-        const WRITE_COMBINED = era_cudart_sys::cudaHostAllocWriteCombined;
+        const DEFAULT = cudaHostAllocDefault;
+        const PORTABLE = cudaHostAllocPortable;
+        const MAPPED = cudaHostAllocMapped;
+        const WRITE_COMBINED = cudaHostAllocWriteCombined;
     }
 }
 
@@ -123,22 +116,17 @@ pub struct HostAllocation<T>(AllocationData<T>);
 impl<T> HostAllocation<T> {
     pub fn alloc(length: usize, flags: CudaHostAllocFlags) -> CudaResult<Self> {
         let layout = Layout::array::<T>(length).unwrap();
-        let mut ptr = MaybeUninit::<*mut c_void>::uninit();
+        let mut ptr = MaybeUninit::uninit();
         unsafe {
             cudaHostAlloc(ptr.as_mut_ptr(), layout.size(), flags.bits())
                 .wrap_maybe_uninit(ptr)
-                .map(|ptr| {
-                    Self(AllocationData {
-                        ptr: ptr as *mut T,
-                        len: length,
-                    })
-                })
+                .map(|ptr| Self(AllocationData::new_unchecked(ptr as _, length)))
         }
     }
 
     pub fn free(self) -> CudaResult<()> {
         unsafe {
-            let ptr = self.0.ptr as *mut c_void;
+            let ptr = self.0.ptr.as_ptr() as _;
             mem::forget(self);
             cudaFreeHost(ptr).wrap()
         }
@@ -147,11 +135,11 @@ impl<T> HostAllocation<T> {
     /// # Safety
     ///
     /// The caller must ensure that the inputs are valid.
-    pub unsafe fn from_raw_parts(ptr: *mut T, len: usize) -> Self {
-        Self(AllocationData { ptr, len })
+    pub unsafe fn from_raw_parts(ptr: NonNull<T>, len: usize) -> Self {
+        Self(AllocationData::new(ptr, len))
     }
 
-    pub fn into_raw_parts(self) -> (*mut T, usize) {
+    pub fn into_raw_parts(self) -> (NonNull<T>, usize) {
         let result = (self.0.ptr, self.0.len);
         mem::forget(self);
         result
@@ -160,7 +148,12 @@ impl<T> HostAllocation<T> {
 
 impl<T> Drop for HostAllocation<T> {
     fn drop(&mut self) {
-        unsafe { cudaFreeHost(self.0.ptr as *mut c_void).eprint_error_and_backtrace() };
+        let ptr = self.0.ptr.as_ptr();
+        let len = self.0.len;
+        unsafe {
+            std::ptr::drop_in_place(std::slice::from_raw_parts_mut(ptr, len));
+            cudaFreeHost(ptr as _).eprint_error_and_backtrace()
+        };
     }
 }
 
@@ -192,11 +185,11 @@ impl<T> AsMut<[T]> for HostAllocation<T> {
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct CudaHostRegisterFlags: u32 {
-        const DEFAULT = era_cudart_sys::cudaHostRegisterDefault;
-        const PORTABLE = era_cudart_sys::cudaHostRegisterPortable;
-        const MAPPED = era_cudart_sys::cudaHostRegisterMapped;
-        const IO_MEMORY = era_cudart_sys::cudaHostRegisterIoMemory;
-        const READ_ONLY = era_cudart_sys::cudaHostRegisterReadOnly;
+        const DEFAULT = cudaHostRegisterDefault;
+        const PORTABLE = cudaHostRegisterPortable;
+        const MAPPED = cudaHostRegisterMapped;
+        const IO_MEMORY = cudaHostRegisterIoMemory;
+        const READ_ONLY = cudaHostRegisterReadOnly;
     }
 }
 
@@ -215,25 +208,19 @@ impl<'a, T> HostRegistration<'a, T> {
         let length = slice.len();
         let layout = Layout::array::<T>(length).unwrap();
         unsafe {
-            cudaHostRegister(
-                slice.as_c_void_ptr() as *mut c_void,
-                layout.size(),
-                flags.bits(),
-            )
-            .wrap_value(Self(slice))
+            cudaHostRegister(slice.as_c_void_ptr() as _, layout.size(), flags.bits())
+                .wrap_value(Self(slice))
         }
     }
 
     pub fn unregister(self) -> CudaResult<()> {
-        unsafe { cudaHostUnregister(self.0.as_c_void_ptr() as *mut c_void).wrap() }
+        unsafe { cudaHostUnregister(self.0.as_c_void_ptr() as _).wrap() }
     }
 }
 
 impl<T> Drop for HostRegistration<'_, T> {
     fn drop(&mut self) {
-        unsafe {
-            cudaHostUnregister(self.0.as_c_void_ptr() as *mut c_void).eprint_error_and_backtrace()
-        };
+        unsafe { cudaHostUnregister(self.0.as_c_void_ptr() as _).eprint_error_and_backtrace() };
     }
 }
 
@@ -388,8 +375,8 @@ pub fn memory_set_async(
 }
 
 pub fn memory_get_info() -> CudaResult<(usize, usize)> {
-    let mut free = MaybeUninit::<usize>::uninit();
-    let mut total = MaybeUninit::<usize>::uninit();
+    let mut free = MaybeUninit::uninit();
+    let mut total = MaybeUninit::uninit();
     unsafe {
         let error = cudaMemGetInfo(free.as_mut_ptr(), total.as_mut_ptr());
         if error == CudaError::Success {
@@ -397,17 +384,6 @@ pub fn memory_get_info() -> CudaResult<(usize, usize)> {
         } else {
             Err(error)
         }
-    }
-}
-
-#[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
-pub struct HostAllocator {
-    flags: CudaHostAllocFlags,
-}
-
-impl HostAllocator {
-    pub fn new(flags: CudaHostAllocFlags) -> Self {
-        Self { flags }
     }
 }
 

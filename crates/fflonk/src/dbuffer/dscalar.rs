@@ -19,6 +19,16 @@ pub(crate) fn is_small_scalar_mempool_initialized() -> bool {
     unsafe { _SMALL_SCALAR_MEMPOOL.is_some() }
 }
 
+pub(crate) fn destroy_small_scalar_mempool() {
+    unsafe {
+        let pool = _SMALL_SCALAR_MEMPOOL.take().unwrap();
+        let result = gpu_ffi::bc_mem_pool_destroy(pool);
+        if result != 0 {
+            panic!("Couldn't destroy small scalar pool");
+        }
+    }
+}
+
 impl<F: PrimeField> DScalar<F> {
     pub fn zero(stream: bc_stream) -> CudaResult<DScalar<F>> {
         assert!(is_small_scalar_mempool_initialized());

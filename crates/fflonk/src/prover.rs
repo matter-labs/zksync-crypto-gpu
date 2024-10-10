@@ -659,7 +659,8 @@ pub unsafe fn load_witnesses_and_assign_values<F: PrimeField, A: Allocator>(
     let num_aux_variables = h_aux_assignments.len();
     // assignments should have dummy value as first element
     let total_num_variables = num_aux_variables + h_input_assignments.len() + 1;
-    let mut full_assignments = DVec::allocate_zeroed(total_num_variables);
+    let mut full_assignments =
+        DVec::allocate_zeroed_on(total_num_variables, _tmp_mempool(), stream);
     let (aux_assignments, input_assignments) =
         full_assignments[1..].split_at_mut(num_aux_variables);
     mem::h2d_on(&h_aux_assignments, aux_assignments, stream)?;
@@ -722,6 +723,7 @@ pub fn variable_assignment_for_single_col<F: PrimeField>(
 pub unsafe fn materialize_permutation_polys<F: PrimeField + SqrtField>(
     indexes: &DSlice<u32>,
     domain_size: usize,
+    pool: bc_mem_pool,
     stream: bc_stream,
 ) -> CudaResult<Permutations<F>> {
     use gpu_ffi::generate_permutation_polynomials_configuration;
@@ -740,7 +742,7 @@ pub unsafe fn materialize_permutation_polys<F: PrimeField + SqrtField>(
 
     let permutations_monomial_ptr = permutations_monomial.as_mut_ptr();
     let cfg = generate_permutation_polynomials_configuration {
-        mem_pool: _tmp_mempool(),
+        mem_pool: pool,
         stream,
         indexes: indexes_ptr.cast(),
         scalars: non_residues_ptr.cast(),

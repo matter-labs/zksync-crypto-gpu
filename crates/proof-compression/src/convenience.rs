@@ -442,27 +442,8 @@ pub fn process_steps(
         );
 
         let worker = bellman::worker::Worker::new();
-        let domain_size = 1 << L1_VERIFIER_DOMAIN_SIZE_LOG;
-        let _context = DeviceContextWithSingleDevice::init(domain_size);
-        let setup_file_path = format!("{}/final_snark_device_setup.bin", path);
-        let setup_file_path = std::path::Path::new(&setup_file_path);
-        if setup_file_path.exists() == false {
-            precompute_and_save_setup_and_vk_for_fflonk_snark_circuit(
-                &wrapper_circuit,
-                &worker,
-                path,
-            );
-        } else {
-            println!("device setup of fflonk already exist, loading");
-        }
-
-        let (device_setup, final_vk) = load_device_setup_and_vk_of_fflonk_snark_circuit(path);
-        // let (device_setup, final_vk) =
-        //     load_device_setup_in_memory_and_vk_of_fflonk_snark_circuit(path);
-        let final_proof = ::fflonk::gpu_prove_fflonk_snark_verifier_circuit_with_precomputation(
+        let final_proof = ::fflonk::gpu_prove_fflonk_snark_verifier_circuit_single_shot(
             &wrapper_circuit,
-            &device_setup,
-            &final_vk,
             &worker,
         );
         let final_proof_file = std::fs::File::create(final_proof_file_path).unwrap();

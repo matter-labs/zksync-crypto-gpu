@@ -5,7 +5,9 @@ use bellman::{
     bn256::Bn256,
     kate_commitment::{Crs, CrsForMonomialForm},
     plonk::{
-        better_better_cs::cs::{Circuit, GateInternal, Setup, SynthesisModeGenerateSetup},
+        better_better_cs::cs::{
+            Circuit, GateInternal, Setup, SynthesisMode, SynthesisModeGenerateSetup,
+        },
         better_cs::keys::{read_curve_affine, read_fr, write_curve_affine, write_fr_vec},
         cs::variable::{Index, Variable},
     },
@@ -17,7 +19,7 @@ use fflonk_cpu::FflonkVerificationKey;
 pub type FflonkSnarkVerifierCircuitDeviceSetup =
     FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, Global>;
 
-pub struct FflonkDeviceSetup<E: Engine, C: Circuit<E>, A: HostAllocator = Global> {
+pub struct FflonkDeviceSetup<E: Engine, C: Circuit<E>, A: HostAllocator = GlobalHost> {
     // We could use bit representation but elems in lagrange basis are also fine
     pub main_gate_selector_monomials: [Vec<E::Fr, A>; 5],
     pub permutation_monomials: [Vec<E::Fr, A>; 3],
@@ -143,7 +145,10 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
         }
     }
 
-    pub fn create_setup_on_device(circuit: &C, worker: &Worker) -> CudaResult<Self> {
+    pub fn create_setup_on_device(
+        circuit: &C,
+        worker: &Worker,
+    ) -> CudaResult<FflonkDeviceSetup<E, C, A>> {
         let mut setup_assembly = FflonkAssembly::<E, SynthesisModeGenerateSetup>::new();
         circuit
             .synthesize(&mut setup_assembly)
@@ -154,14 +159,43 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
         let domain_size = setup_assembly.n() + 1;
         assert!(domain_size.is_power_of_two());
 
-        let mut setup_polys = setup_assembly.make_setup_polynomials(false).unwrap();
+        Self::create_setup_from_assembly_on_device(&setup_assembly, worker)
+    }
+
+    pub fn get_verification_key(&self) -> FflonkVerificationKey<E, C> {
+        let n = (1 << L1_VERIFIER_DOMAIN_SIZE_LOG) - 1;
+        let num_inputs = 1;
+        let num_state_polys = 3;
+        let num_witness_polys = 0;
+        let total_lookup_entries_length = 0;
+        FflonkVerificationKey::new(
+            n,
+            self.c0_commitment,
+            num_inputs,
+            num_state_polys,
+            num_witness_polys,
+            total_lookup_entries_length,
+            self.g2_elems,
+        )
+    }
+
+    pub fn create_setup_from_assembly_on_device<S: SynthesisMode>(
+        assembly: &FflonkAssembly<E, S>,
+        worker: &Worker,
+    ) -> CudaResult<FflonkDeviceSetup<E, C, A>> {
+        assert!(assembly.is_finalized);
+        assert!(S::PRODUCE_SETUP, "Assembly should hold setup values");
+
+        let domain_size = assembly.n() + 1;
+        assert!(domain_size.is_power_of_two());
+        let mut setup_polys = assembly.make_setup_polynomials(false).unwrap();
         let mut main_gate_selectors = vec![];
-        for col in GateInternal::<E>::setup_polynomials(&setup_assembly.main_gate) {
+        for col in GateInternal::<E>::setup_polynomials(&assembly.main_gate) {
             let unpadded_main_gate_selectors = setup_polys.remove(col).unwrap();
             main_gate_selectors.push(unpadded_main_gate_selectors);
         }
         assert_eq!(main_gate_selectors.len(), 5);
-        let permutation_polys = setup_assembly.make_permutations(worker).unwrap();
+        let permutation_polys = assembly.make_permutations(worker).unwrap();
         assert_eq!(permutation_polys.len(), 3);
 
         let mut _context = None;
@@ -242,23 +276,6 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
             g2_elems,
             _c: std::marker::PhantomData,
         })
-    }
-
-    pub fn get_verification_key(&self) -> FflonkVerificationKey<E, C> {
-        let n = (1 << L1_VERIFIER_DOMAIN_SIZE_LOG) - 1;
-        let num_inputs = 1;
-        let num_state_polys = 3;
-        let num_witness_polys = 0;
-        let total_lookup_entries_length = 0;
-        FflonkVerificationKey::new(
-            n,
-            self.c0_commitment,
-            num_inputs,
-            num_state_polys,
-            num_witness_polys,
-            total_lookup_entries_length,
-            self.g2_elems,
-        )
     }
 }
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.151.0](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.150.9...v0.151.0) (2024-10-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* fflonk ([#28](https://github.com/matter-labs/zksync-crypto-gpu/issues/28))
+
+### Features
+
+* enable compilation without Bellman CUDA ([#31](https://github.com/matter-labs/zksync-crypto-gpu/issues/31)) ([39860f5](https://github.com/matter-labs/zksync-crypto-gpu/commit/39860f574def8fdb547099afb341019afe8bdf47))
+* fflonk ([#28](https://github.com/matter-labs/zksync-crypto-gpu/issues/28)) ([acd71d8](https://github.com/matter-labs/zksync-crypto-gpu/commit/acd71d80584fa6099180ed4257811783e5dc46f1))
+
 ## [0.150.9](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.150.8...v0.150.9) (2024-09-24)
 
 

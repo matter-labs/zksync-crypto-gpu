@@ -20,6 +20,16 @@ pub(crate) fn is_msm_result_mempool_initialized() -> bool {
     unsafe { _MSM_RESULT_MEMPOOL.is_some() }
 }
 
+pub(crate) fn destroy_msm_result_mempool() {
+    unsafe {
+        let pool = _MSM_RESULT_MEMPOOL.take().unwrap();
+        let result = gpu_ffi::bc_mem_pool_destroy(pool);
+        if result != 0 {
+            panic!("Couldn't destroy msm result pool");
+        }
+    }
+}
+
 fn previous_power_of_two(x: usize) -> usize {
     if x == 0 {
         return 0;
@@ -38,6 +48,7 @@ pub fn msm<E: Engine>(
     let mut intermediate_sums = vec![];
     let mut scalars_ref = scalars;
     let mut bases_ref = &bases[..scalars.len()];
+    println!("Scheduling MSM kernels on device");
     loop {
         let chunk_size = std::cmp::min(domain_size, MSM_CHUNK_SIZE);
         let (input_scalars, remaining_scalars) = scalars_ref.split_at(chunk_size);
@@ -101,7 +112,6 @@ fn raw_msm<E: Engine>(
         d2h_copy_finished_callback: None,
         d2h_copy_finished_callback_data: std::ptr::null_mut() as *mut _,
     };
-    println!("Scheduling MSM kernel on device");
     unsafe {
         let result = msm_execute_async(cfg);
 

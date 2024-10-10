@@ -34,15 +34,15 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_single_shot(
     assert!(domain_size.is_power_of_two());
     assert!(domain_size <= 1 << L1_VERIFIER_DOMAIN_SIZE_LOG);
 
-    let mon_crs = init_crs(&worker, domain_size);
-    let host_setup = FflonkSetup::create_setup(&assembly, &worker, &mon_crs).expect("setup");
-    let vk = FflonkVerificationKey::from_setup(&host_setup, &mon_crs).unwrap();
+    let _context = DeviceContextWithSingleDevice::init(domain_size)
+        .expect("Couldn't create fflonk GPU Context");
 
-    let setup = FflonkDeviceSetup::<_, FflonkSnarkVerifierCircuit>::create_setup_on_device(
-        &circuit, &worker,
-    )
-    .unwrap();
-
+    let setup =
+        FflonkDeviceSetup::<_, FflonkSnarkVerifierCircuit>::create_setup_from_assembly_on_device(
+            &assembly, &worker,
+        )
+        .unwrap();
+    let vk = setup.get_verification_key();
     let start = std::time::Instant::now();
     let proof = create_proof::<
         _,
@@ -117,6 +117,7 @@ pub fn precompute_and_save_setup_and_vk_for_fflonk_snark_circuit(
     let device_setup =
         FflonkSnarkVerifierCircuitDeviceSetup::create_setup_on_device(&circuit, &worker).unwrap();
     let setup_file_path = format!("{}/final_snark_device_setup.bin", path);
+    println!("Saving setup into file {setup_file_path}");
     let device_setup_file = std::fs::File::create(&setup_file_path).unwrap();
     device_setup.write(&device_setup_file).unwrap();
     println!("fflonk device setup saved into {}", setup_file_path);

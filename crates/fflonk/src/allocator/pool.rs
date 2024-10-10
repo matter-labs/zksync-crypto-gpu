@@ -29,13 +29,11 @@ pub struct PoolAllocator;
 
 impl DeviceAllocator for PoolAllocator {
     fn allocate(&self, layout: std::alloc::Layout) -> CudaResult<std::ptr::NonNull<[u8]>> {
-        allocate(layout.size())
-            .map(|ptr| unsafe { std::ptr::NonNull::new_unchecked(ptr as _) })
-            .map(|ptr| std::ptr::NonNull::slice_from_raw_parts(ptr, layout.size()))
+       unimplemented!("Pool allocator can't do static allocation/deallocation")
     }
 
     fn deallocate(&self, ptr: std::ptr::NonNull<u8>, layout: std::alloc::Layout) {
-        dealloc(ptr.as_ptr().cast()).expect("deallocate static buffer")
+        unimplemented!("Pool allocator can't do static allocation/deallocation")
     }
 
     fn allocate_async(

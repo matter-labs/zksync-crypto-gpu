@@ -22,6 +22,24 @@ pub(crate) fn is_msm_context_initialized() -> bool {
     unsafe { _MSM_BASES.is_some() && is_msm_result_mempool_initialized() }
 }
 
+pub(crate) fn drop_msm_context() {
+    unsafe {
+        let _ = _MSM_BASES.take();
+        if let Some(msm_bases_pool) = _MSM_BASES_MEMPOOL.take() {
+            let result = gpu_ffi::bc_mem_pool_destroy(msm_bases_pool);
+            if result != 0 {
+                panic!("Couldn't destroy the bases mempool");
+            }
+        }
+
+        let result = gpu_ffi::msm_tear_down();
+        if result != 0 {
+            panic!("Couldn't tear down MSM");
+        }
+        destroy_msm_result_mempool();
+    }
+}
+
 pub(crate) fn _msm_bases_mempool() -> bc_mem_pool {
     unsafe { _MSM_BASES_MEMPOOL.expect("msm bases mempool intialized") }
 }
@@ -48,6 +66,16 @@ pub(crate) fn is_tmp_mempool_initialized() -> bool {
 
 pub(crate) fn _tmp_mempool() -> bc_mem_pool {
     unsafe { _TMP_MEMPOOL.expect("tmp mempool intialized") }
+}
+
+pub(crate) fn destroy_tmp_mempool() {
+    unsafe {
+        let pool = _TMP_MEMPOOL.take().unwrap();
+        let result = gpu_ffi::bc_mem_pool_destroy(pool);
+        if result != 0 {
+            panic!("Couldn't destry tmp mempool");
+        }
+    }
 }
 
 pub(crate) static mut _MEMPOOL: Option<bc_mem_pool> = None;
@@ -119,15 +147,15 @@ pub type DeviceContextWithSingleDevice = DeviceContext<1>;
 
 impl<const N: usize> DeviceContext<N> {
     pub fn init(domain_size: usize) -> CudaResult<Self> {
-        init_static_alloc(domain_size);
+        let context = Self::init_no_msm(domain_size)?;
         Self::init_msm_on_static_memory(domain_size)?;
         // Self::init_msm_on_pool(domain_size)?;
-        Self::init_no_msm()
+
+        Ok(context)
     }
 
-    pub fn init_no_msm() -> CudaResult<Self> {
-        init_small_scalar_mempool();
-        init_tmp_mempool();
+    pub fn init_no_msm(domain_size: usize) -> CudaResult<Self> {
+        init_allocations(domain_size);
         unsafe {
             let result = gpu_ffi::ff_set_up(
                 POWERS_OF_OMEGA_COARSE_LOG_COUNT,
@@ -209,36 +237,35 @@ impl<const N: usize> DeviceContext<N> {
     }
 }
 
+pub fn init_allocations(domain_size: usize) {
+    init_static_alloc(domain_size);
+    init_small_scalar_mempool();
+    init_tmp_mempool();
+}
+
+pub fn free_allocations() {
+    free_static_alloc();
+    destroy_small_scalar_mempool();
+    destroy_tmp_mempool();
+}
+
 impl<const N: usize> Drop for DeviceContext<N> {
     fn drop(&mut self) {
         unsafe {
-            if let Some(bases) = _MSM_BASES.take() {
-                let _ = bases;
-
-                let result = gpu_ffi::msm_tear_down();
-                if result != 0 {
-                    println!("Couldn't tear down MSM");
-                }
-
-                if let Some(msm_bases_pool) = _MSM_BASES_MEMPOOL.take() {
-                    let result = gpu_ffi::bc_mem_pool_destroy(msm_bases_pool);
-                    if result != 0 {
-                        println!("Couldn't destroy the mempool");
-                    }
-                }
-            }
+            drop_msm_context();
+            free_allocations();
 
             let result = gpu_ffi::pn_tear_down();
             if result != 0 {
-                println!("Couldn't tear down the permutation precomputations");
+                panic!("Couldn't tear down the permutation precomputations");
             }
             let result = gpu_ffi::ntt_tear_down();
             if result != 0 {
-                println!("Couldn't tear down the permutation precomputations");
+                panic!("Couldn't tear down the permutation precomputations");
             }
             let result = gpu_ffi::ff_tear_down();
             if result != 0 {
-                println!("Couldn't tear down the permutation precomputations");
+                panic!("Couldn't tear down the permutation precomputations");
             }
         }
     }

@@ -252,7 +252,9 @@ pub fn free_allocations() {
 impl<const N: usize> Drop for DeviceContext<N> {
     fn drop(&mut self) {
         unsafe {
-            drop_msm_context();
+            if is_msm_context_initialized() {
+                drop_msm_context();
+            }
             free_allocations();
 
             let result = gpu_ffi::pn_tear_down();

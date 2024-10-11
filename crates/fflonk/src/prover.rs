@@ -13,7 +13,7 @@ use fflonk::{
 };
 
 pub fn create_proof<E, C, S, T, CM, A>(
-    assembly: &FflonkAssembly<E, S>,
+    assembly: &FflonkAssembly<E, S, A>,
     setup: &FflonkDeviceSetup<E, C, A>,
     worker: &bellman::worker::Worker,
 ) -> CudaResult<FflonkProof<E, C>>
@@ -100,7 +100,7 @@ where
 }
 
 pub fn prove_statements<E, C, S, T, CM, A>(
-    assembly: &FflonkAssembly<E, S>,
+    assembly: &FflonkAssembly<E, S, A>,
     setup: &FflonkDeviceSetup<E, C, A>,
     combined_monomial_stoarge: &mut CM,
     transcript: &mut T,
@@ -608,8 +608,8 @@ pub unsafe fn load_permutation_monomials<F: PrimeField, A: HostAllocator>(
     Ok(permutation_monomials)
 }
 
-pub unsafe fn load_trace_from_precomputations<E: Engine, S: SynthesisMode>(
-    assembly: &FflonkAssembly<E, S>,
+pub unsafe fn load_trace_from_precomputations<E: Engine, S: SynthesisMode, A: HostAllocator>(
+    assembly: &FflonkAssembly<E, S, A>,
     worker: &bellman::worker::Worker,
     domain_size: usize,
     stream: bc_stream,
@@ -720,15 +720,17 @@ pub fn variable_assignment_for_single_col<F: PrimeField>(
     }
 }
 
-pub unsafe fn materialize_permutation_polys<F: PrimeField + SqrtField>(
+pub fn materialize_permutation_polys<F: PrimeField + SqrtField, const N: usize>(
     indexes: &DSlice<u32>,
     domain_size: usize,
     pool: bc_mem_pool,
     stream: bc_stream,
-) -> CudaResult<Permutations<F>> {
+) -> CudaResult<MultiMonomialStorage<F, N>> {
     use gpu_ffi::generate_permutation_polynomials_configuration;
-    let mut permutations_monomial = Permutations::<F>::allocate_zeroed(domain_size);
+    let mut permutations_monomial =
+        unsafe { MultiMonomialStorage::<F, N>::allocate_zeroed(domain_size) };
     let num_cols = permutations_monomial.num_polys();
+    assert_eq!(num_cols, N);
     assert_eq!(num_cols * domain_size, indexes.len());
 
     let mut h_non_residues = make_non_residues::<F>(num_cols - 1);

@@ -9,9 +9,8 @@ use bellman::{
     worker::Worker,
 };
 use fflonk::{
-    init_crs, FflonkAssembly, FflonkSetup, FflonkSnarkVerifierCircuit,
-    FflonkSnarkVerifierCircuitProof, FflonkSnarkVerifierCircuitVK, FflonkVerificationKey,
-    L1_VERIFIER_DOMAIN_SIZE_LOG,
+    FflonkAssembly, FflonkSnarkVerifierCircuit, FflonkSnarkVerifierCircuitProof,
+    FflonkSnarkVerifierCircuitVK, L1_VERIFIER_DOMAIN_SIZE_LOG,
 };
 
 pub type FflonkSnarkVerifierCircuitDeviceSetup =
@@ -26,7 +25,7 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_single_shot(
     FflonkSnarkVerifierCircuitProof,
     FflonkSnarkVerifierCircuitVK,
 ) {
-    let mut assembly = FflonkAssembly::<Bn256, SynthesisModeTesting>::new();
+    let mut assembly = FflonkAssembly::<Bn256, SynthesisModeTesting, GlobalHost>::new();
     circuit.synthesize(&mut assembly).expect("must work");
     assert!(assembly.is_satisfied());
     assembly.finalize();
@@ -38,7 +37,7 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_single_shot(
         .expect("Couldn't create fflonk GPU Context");
 
     let setup =
-        FflonkDeviceSetup::<_, FflonkSnarkVerifierCircuit>::create_setup_from_assembly_on_device(
+        FflonkDeviceSetup::<_, FflonkSnarkVerifierCircuit, GlobalHost>::create_setup_from_assembly_on_device(
             &assembly, &worker,
         )
         .unwrap();
@@ -68,7 +67,7 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_with_precomputation(
     worker: &Worker,
 ) -> FflonkSnarkVerifierCircuitProof {
     println!("Synthesizing for fflonk proving");
-    let mut proving_assembly = FflonkAssembly::<Bn256, SynthesisModeProve>::new();
+    let mut proving_assembly = FflonkAssembly::<Bn256, SynthesisModeProve, GlobalHost>::new();
     circuit
         .synthesize(&mut proving_assembly)
         .expect("must work");

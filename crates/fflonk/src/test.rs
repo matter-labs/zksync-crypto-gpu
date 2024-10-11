@@ -1,9 +1,11 @@
-use std::alloc::Global;
-
 use bellman::{
     bn256::{Bn256, Fr},
     plonk::{
-        better_better_cs::cs::{Circuit, SynthesisModeTesting},
+        better_better_cs::cs::{
+            Assembly, Circuit, GateInternal, MainGate, PlonkConstraintSystemParams,
+            PlonkCsWidth4WithNextStepParams, SynthesisModeGenerateSetup, SynthesisModeTesting,
+            Width4MainGateWithDNext,
+        },
         commitments::transcript::keccak_transcript::RollingKeccakTranscript,
     },
     worker::Worker,
@@ -67,7 +69,7 @@ fn test_test_circuit_with_naive_main_gate() {
     let circuit = FflonkTestCircuit {};
     let worker = Worker::new();
 
-    let mut assembly = FflonkAssembly::<Bn256, SynthesisModeTesting>::new();
+    let mut assembly = FflonkAssembly::<Bn256, SynthesisModeTesting, GlobalHost>::new();
     circuit.synthesize(&mut assembly).expect("must work");
     assert!(assembly.is_satisfied());
     assembly.finalize();
@@ -84,7 +86,7 @@ fn test_test_circuit_with_naive_main_gate() {
     let domain_size = vk.n + 1;
     assert!(domain_size.is_power_of_two());
 
-    let _context = unsafe { DeviceContextWithSingleDevice::init(domain_size).unwrap() };
+    let _context = DeviceContextWithSingleDevice::init(domain_size).unwrap();
 
     let setup = FflonkDeviceSetup::create_setup_on_host(&circuit, &worker);
 
@@ -94,7 +96,7 @@ fn test_test_circuit_with_naive_main_gate() {
         _,
         RollingKeccakTranscript<Fr>,
         CombinedMonomialDeviceStorage<Fr>,
-        Global,
+        GlobalHost,
     >(&assembly, &setup, &worker)
     .expect("proof");
 
@@ -141,4 +143,161 @@ fn test_device_setup() {
         device_setup_on_host.permutation_monomials,
         device_setup_on_device.permutation_monomials
     );
+}
+
+type SimpleCircuitWidth4 = FflonkTestCircuit;
+struct SimpleCircuitWidth3;
+
+impl Circuit<Bn256> for SimpleCircuitWidth3 {
+    type MainGate = Width4MainGateWithDNext;
+
+    fn synthesize<CS: bellman::plonk::better_better_cs::cs::ConstraintSystem<Bn256> + 'static>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<(), bellman::SynthesisError> {
+        let rng = &mut rand::thread_rng();
+        use rand::Rand;
+
+        for _ in 0..8 {
+            use circuit_definitions::snark_wrapper::franklin_crypto::bellman::Field;
+            use circuit_definitions::snark_wrapper::franklin_crypto::plonk::circuit::allocated_num::Num;
+            use circuit_definitions::snark_wrapper::franklin_crypto::plonk::circuit::linear_combination::LinearCombination;
+            let a = Fr::rand(rng);
+            let b = Fr::rand(rng);
+            let mut c = a;
+            c.add_assign(&b);
+
+            let a_var = Num::alloc(cs, Some(a))?;
+            let b_var = Num::alloc(cs, Some(b))?;
+            let c_var = Num::alloc(cs, Some(c))?;
+
+            let mut lc = LinearCombination::zero();
+            lc.add_assign_number_with_coeff(&a_var, Fr::one());
+            lc.add_assign_number_with_coeff(&b_var, Fr::one());
+            let mut minus_one = Fr::one();
+            minus_one.negate();
+            lc.add_assign_number_with_coeff(&c_var, minus_one);
+
+            let _ = lc.into_num(cs)?;
+        }
+
+        let _input = cs.alloc_input(|| Ok(Fr::one()))?;
+
+        Ok(())
+    }
+}
+
+#[test]
+fn test_permutation_materalization() {
+    let mut assembly = Assembly::<
+        Bn256,
+        PlonkCsWidth4WithNextStepParams,
+        Width4MainGateWithDNext,
+        SynthesisModeGenerateSetup,
+        GlobalHost,
+    >::new();
+    let circuit = SimpleCircuitWidth4 {};
+    circuit.synthesize(&mut assembly).unwrap();
+    run_permutation_materalization(assembly);
+
+    // width 3 assembly
+    let mut assembly_3cols = FflonkAssembly::<Bn256, SynthesisModeGenerateSetup, GlobalHost>::new();
+    let circuit = SimpleCircuitWidth3 {};
+    circuit.synthesize(&mut assembly_3cols).unwrap();
+    run_permutation_materalization(assembly_3cols);
+}
+
+fn run_permutation_materalization<P: PlonkConstraintSystemParams<Bn256>, M: MainGate<Bn256>>(
+    mut assembly: Assembly<Bn256, P, M, SynthesisModeGenerateSetup, GlobalHost>,
+) {
+    let worker = Worker::new();
+    let raw_trace_len = assembly.n();
+    let num_input_variables = assembly.num_inputs;
+    assert_eq!(num_input_variables, 1);
+
+    let num_input_gates = assembly.num_input_gates;
+    assert_eq!(num_input_gates, 1);
+    let num_aux_gates = assembly.num_aux_gates;
+    assert_eq!(num_input_gates + num_aux_gates, raw_trace_len);
+
+    assert!(assembly.is_satisfied());
+    println!("Raw Trace length {}", assembly.n());
+    assembly.finalize();
+
+    let domain_size = assembly.n() + 1;
+    assert!(domain_size.is_power_of_two());
+    assert!(domain_size <= 1 << L1_VERIFIER_DOMAIN_SIZE_LOG);
+    println!("Trace log length {}", domain_size.trailing_zeros());
+
+    let expected_permutation_monomials = assembly.make_permutations(&worker).unwrap();
+
+    let num_cols = GateInternal::<Bn256>::variable_polynomials(&assembly.main_gate).len();
+    let mut h_transformed_variables = Vec::with_capacity(num_cols * raw_trace_len);
+
+    let _context = DeviceContextWithSingleDevice::init_no_msm(domain_size).unwrap();
+    let pool = bc_mem_pool::new(DEFAULT_DEVICE_ID).unwrap();
+    let stream = bc_stream::new().unwrap();
+    let mut transformed_variables = DVec::allocate_zeroed_on(num_cols * domain_size, pool, stream);
+
+    for ((((_, src_aux), (_, src_input)), h_dst), dst) in assembly
+        .aux_storage
+        .state_map
+        .iter()
+        .zip(assembly.inputs_storage.state_map.iter())
+        .zip(h_transformed_variables.chunks_mut(raw_trace_len))
+        .zip(transformed_variables.chunks_mut(domain_size))
+    {
+        assert_eq!(src_input.len(), num_input_gates);
+        assert_eq!(src_aux.len(), num_aux_gates);
+        _transform_variables(
+            &src_input,
+            &mut h_dst[..num_input_gates],
+            num_input_variables,
+            &worker,
+        );
+        _transform_variables(
+            &src_aux,
+            &mut h_dst[num_input_gates..],
+            num_input_variables,
+            &worker,
+        );
+        mem::h2d_on(h_dst, dst, stream).unwrap();
+    }
+
+    let h_actual_permutations = match num_cols {
+        3 => compute_actual_permutations::<3>(&transformed_variables, domain_size),
+        4 => compute_actual_permutations::<4>(&transformed_variables, domain_size),
+        _ => unimplemented!(),
+    };
+
+    assert_eq!(
+        expected_permutation_monomials.len(),
+        h_actual_permutations.len()
+    );
+    for (this, other) in expected_permutation_monomials
+        .iter()
+        .zip(h_actual_permutations.iter())
+    {
+        assert_eq!(this.size(), other.len());
+        assert_eq!(this.as_ref(), other);
+    }
+}
+
+fn compute_actual_permutations<const N: usize>(
+    transformed_variables: &DSlice<u32>,
+    domain_size: usize,
+) -> Vec<Vec<Fr>> {
+    let stream = bc_stream::new().unwrap();
+    let pool = bc_mem_pool::new(DEFAULT_DEVICE_ID).unwrap();
+    let actual_permutations =
+        materialize_permutation_polys::<Fr, 3>(&transformed_variables, domain_size, pool, stream)
+            .unwrap();
+
+    let h_actual_permutations: Vec<_> = actual_permutations
+        .iter()
+        .map(|p| p.as_ref().to_vec(stream).unwrap())
+        .collect();
+    stream.sync().unwrap();
+
+    h_actual_permutations
 }

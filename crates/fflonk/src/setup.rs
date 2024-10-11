@@ -92,7 +92,7 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
 
 impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
     pub fn create_setup_on_host(circuit: &C, worker: &Worker) -> FflonkDeviceSetup<E, C, A> {
-        let mut setup_assembly = FflonkAssembly::<E, SynthesisModeGenerateSetup>::new();
+        let mut setup_assembly = FflonkAssembly::<E, SynthesisModeGenerateSetup, A>::new();
         circuit
             .synthesize(&mut setup_assembly)
             .expect("synthesize circuit");
@@ -149,7 +149,7 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
         circuit: &C,
         worker: &Worker,
     ) -> CudaResult<FflonkDeviceSetup<E, C, A>> {
-        let mut setup_assembly = FflonkAssembly::<E, SynthesisModeGenerateSetup>::new();
+        let mut setup_assembly = FflonkAssembly::<E, SynthesisModeGenerateSetup, A>::new();
         circuit
             .synthesize(&mut setup_assembly)
             .expect("synthesize circuit");
@@ -180,7 +180,7 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
     }
 
     pub fn create_setup_from_assembly_on_device<S: SynthesisMode>(
-        assembly: &FflonkAssembly<E, S>,
+        assembly: &FflonkAssembly<E, S, A>,
         worker: &Worker,
     ) -> CudaResult<FflonkDeviceSetup<E, C, A>> {
         assert!(assembly.is_finalized);
@@ -279,10 +279,10 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
     }
 }
 
-unsafe fn _transform_variables(
+pub(crate) fn _transform_variables(
     variables: &[Variable],
     result: &mut [u32],
-    num_aux_variables: usize,
+    num_input_variables: usize,
     worker: &Worker,
 ) {
     assert_eq!(variables.len(), result.len());
@@ -295,9 +295,12 @@ unsafe fn _transform_variables(
                 for (a, b) in src.iter().zip(dst.iter_mut()) {
                     *b = match a.get_unchecked() {
                         Index::Input(0) => unreachable!(),
-                        Index::Input(idx) => (num_aux_variables + idx) as u32,
                         Index::Aux(0) => 0,
-                        Index::Aux(idx) => idx as u32,
+                        // Index::Input(idx) => (num_aux_variables + idx) as u32,
+                        // Index::Aux(idx) => idx as u32,
+                        Index::Input(idx) => idx as u32,
+                        // Shift aux variables by num_inputs
+                        Index::Aux(idx) => (num_input_variables + idx) as u32,
                     };
                 }
             });

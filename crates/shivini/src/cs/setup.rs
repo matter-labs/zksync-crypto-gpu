@@ -1,5 +1,3 @@
-use boojum::cs::implementations::setup::FinalizationHintsForProver;
-use boojum::cs::implementations::verifier::VerificationKey;
 use boojum::{
     cs::{
         implementations::{
@@ -15,13 +13,12 @@ use boojum::{
 };
 use boojum_cuda::ops_complex::pack_variable_indexes;
 use era_cudart::slice::{CudaSlice, DeviceSlice};
-use serde::{Deserialize, Serialize};
 
 use super::*;
 pub(crate) const PACKED_PLACEHOLDER_BITMASK: u32 = 1 << 31;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct GpuSetup<H: GpuTreeHasher, A: GoodAllocator> {
+pub struct GpuSetup<A: GoodAllocator> {
     #[serde(serialize_with = "boojum::utils::serialize_vec_vec_with_allocators")]
     #[serde(deserialize_with = "boojum::utils::deserialize_vec_vec_with_allocators")]
     pub constant_columns: Vec<Vec<F, A>>,
@@ -36,9 +33,7 @@ pub struct GpuSetup<H: GpuTreeHasher, A: GoodAllocator> {
     pub witnesses_hint: Vec<Vec<u32, A>>,
     pub table_ids_column_idxes: Vec<usize>,
     pub selectors_placement: TreeNode,
-    #[serde(serialize_with = "boojum::utils::serialize_vec_vec_with_allocators")]
-    #[serde(deserialize_with = "boojum::utils::deserialize_vec_vec_with_allocators")]
-    pub tree: Vec<Vec<H::Output, A>>,
+    pub setup_tree: MerkleTreeWithCap<F, DefaultTreeHasher>,
     pub layout: SetupLayout,
 }
 
@@ -50,12 +45,12 @@ pub fn transform_indexes_on_device<A: GoodAllocator, T>(
     }
     // we want to keep size of the hints as small as possible
     // that's why we expect them to be "unpadded" and padding will be
-    // applied during materialization of the corresponding values
-    // e.g. permutation cols, variable cols etc.
+    // applied during materializiation of the corresponding values
+    // e.g permutation cols, variable cols etc.
     let num_cols = variables_hint.len();
     let total_size = variables_hint.iter().map(|col| col.len()).sum();
 
-    assert_eq!(size_of::<T>(), size_of::<u64>());
+    assert_eq!(std::mem::size_of::<T>(), std::mem::size_of::<u64>());
 
     let mut transformed_hints = Vec::with_capacity(num_cols);
     for col in variables_hint.iter() {
@@ -120,7 +115,7 @@ pub fn transform_variable_indexes<A: GoodAllocator>(
         }
         transformed_hints.push(new);
     }
-    assert_eq!(size_of::<Variable>(), size_of::<u64>());
+    assert_eq!(std::mem::size_of::<Variable>(), std::mem::size_of::<u64>());
 
     worker.scope(hints.len(), |scope, chunk_size| {
         for (src_cols_chunk, dst_cols_chunk) in hints
@@ -164,7 +159,7 @@ pub fn transform_witness_indexes<A: GoodAllocator>(
         }
         transformed_hints.push(new);
     }
-    assert_eq!(size_of::<Variable>(), size_of::<u64>());
+    assert_eq!(std::mem::size_of::<Variable>(), std::mem::size_of::<u64>());
 
     worker.scope(hints.len(), |scope, chunk_size| {
         for (src_cols_chunk, dst_cols_chunk) in hints
@@ -190,12 +185,12 @@ pub fn transform_witness_indexes<A: GoodAllocator>(
     transformed_hints
 }
 
-impl<H: GpuTreeHasher, A: GoodAllocator> GpuSetup<H, A> {
+impl<A: GoodAllocator> GpuSetup<A> {
     pub fn from_setup_and_hints<
         P: boojum::field::traits::field_like::PrimeFieldLikeVectorized<Base = F>,
     >(
         base_setup: SetupBaseStorage<F, P, Global, Global>,
-        setup_tree: MerkleTreeWithCap<F, H>,
+        setup_tree: MerkleTreeWithCap<F, DefaultTreeHasher>,
         variables_hint: DenseVariablesCopyHint,
         witnesses_hint: DenseWitnessCopyHint,
         worker: &Worker,
@@ -204,7 +199,7 @@ impl<H: GpuTreeHasher, A: GoodAllocator> GpuSetup<H, A> {
             variables_hint.maps.len(),
             base_setup.copy_permutation_polys.len()
         );
-        let domain_size = base_setup.copy_permutation_polys[0].domain_size();
+        let _domain_size = base_setup.copy_permutation_polys[0].domain_size();
         let layout = SetupLayout::from_base_setup_and_hints(&base_setup);
 
         let SetupBaseStorage {
@@ -231,35 +226,7 @@ impl<H: GpuTreeHasher, A: GoodAllocator> GpuSetup<H, A> {
             new.extend_from_slice(P::slice_into_base_slice(&src.storage));
             lookup_tables_columns_in.push(new);
         }
-        assert!(domain_size.is_power_of_two());
-        let leaf_hashes_len = setup_tree.leaf_hashes.len();
-        assert!(leaf_hashes_len.is_power_of_two());
-        assert_eq!(leaf_hashes_len % domain_size, 0);
-        let lde_degree = leaf_hashes_len / domain_size;
-        assert!(lde_degree.is_power_of_two());
-        let cap_size = setup_tree.cap_size;
-        assert!(cap_size.is_power_of_two());
-        let node_hashes = &setup_tree.node_hashes_enumerated_from_leafs;
-        let (layer, nodes_layer_offset) = if domain_size == 1 || cap_size == leaf_hashes_len {
-            (&setup_tree.leaf_hashes, 0)
-        } else if lde_degree > cap_size {
-            let index = (leaf_hashes_len / lde_degree).trailing_zeros() as usize - 1;
-            (&node_hashes[index], index + 1)
-        } else {
-            (node_hashes.last().unwrap(), node_hashes.len())
-        };
-        fn clone_in<T: Clone, A: GoodAllocator>(src: &[T]) -> Vec<T, A> {
-            let mut new = Vec::with_capacity_in(src.len(), A::default());
-            new.extend_from_slice(src);
-            new
-        }
-        let mut tree = vec![clone_in(layer)];
-        tree.extend(
-            node_hashes
-                .iter()
-                .skip(nodes_layer_offset)
-                .map(|l| clone_in(l)),
-        );
+
         Ok(Self {
             constant_columns: constant_cols_in,
             lookup_tables_columns: lookup_tables_columns_in,
@@ -267,7 +234,7 @@ impl<H: GpuTreeHasher, A: GoodAllocator> GpuSetup<H, A> {
             selectors_placement,
             variables_hint: transformed_variables_hints,
             witnesses_hint: transformed_witnesses_hints,
-            tree,
+            setup_tree,
             layout,
         })
     }
@@ -343,16 +310,4 @@ pub fn materialize_permutation_cols_from_indexes_into(
             get_stream(),
         )
     }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(bound = "F: serde::Serialize + serde::de::DeserializeOwned")]
-pub struct GpuProverSetupData<H: GpuTreeHasher> {
-    pub setup: GpuSetup<H, Global>,
-    #[serde(bound(
-        serialize = "H::Output: serde::Serialize",
-        deserialize = "H::Output: serde::de::DeserializeOwned"
-    ))]
-    pub vk: VerificationKey<F, H>,
-    pub finalization_hint: FinalizationHintsForProver,
 }

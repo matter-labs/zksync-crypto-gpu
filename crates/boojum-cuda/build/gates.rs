@@ -55,8 +55,8 @@ pub(super) fn generate() {
 }
 
 fn generate_cuda(descriptions: &[Description]) {
-    const TEMPLATE_PATH: &str = "native/gate_kernels.cuh.template";
-    const RESULT_PATH: &str = "generated/gate_kernels.cuh";
+    const TEMPLATE_PATH: &str = "native/gate_kernels_template.cuh";
+    const RESULT_PATH: &str = "gate_kernels.cuh";
     let mut code = String::new();
     let s = &mut code;
     new_line(s);
@@ -179,8 +179,8 @@ fn generate_cuda(descriptions: &[Description]) {
 }
 
 fn generate_rust(descriptions: &[Description]) {
-    const TEMPLATE_PATH: &str = "src/gates_data.rs.template";
-    const RESULT_PATH: &str = "generated/gates_data.rs";
+    const TEMPLATE_PATH: &str = "src/gates_data_template.rs";
+    const RESULT_PATH: &str = "gates_data.rs";
     let mut hash_map = String::new();
     let mut bindings = String::new();
     let mut mappings = String::new();
@@ -341,18 +341,9 @@ fn get_indexes(relations: &Vec<(GpuSynthesizerFieldLike<F>, Relation<F>)>) -> Ha
     indexes
 }
 
-fn poseidon2_flattened_gate_description(num_var_cols: usize, num_wit_cols: usize) -> Description {
-    assert_eq!(num_var_cols + num_wit_cols, 130);
-    Description::new::<Poseidon2FlattenedGate<F, 8, 12, 4, Poseidon2Goldilocks>>(
-        (num_var_cols, num_wit_cols),
-        GateType::Poseidon2(num_var_cols, num_wit_cols),
-    )
-}
-
 fn get_descriptions() -> Vec<Description> {
     vec![
         Description::new::<BooleanConstraintGate>((), Generic),
-        Description::new::<BoundedBooleanConstraintGate>(10, Generic),
         Description::new::<ConditionalSwapGate<1>>((), Generic),
         Description::new::<ConditionalSwapGate<4>>((), Generic),
         Description::new::<ConstantsAllocatorGate<F>>((), Generic),
@@ -368,11 +359,14 @@ fn get_descriptions() -> Vec<Description> {
             GateType::Poseidon2InternalMatrix,
         ),
         Description::new::<ParallelSelectionGate<4>>((), Generic),
-        poseidon2_flattened_gate_description(52, 78),
-        poseidon2_flattened_gate_description(56, 74),
-        poseidon2_flattened_gate_description(68, 62),
-        poseidon2_flattened_gate_description(100, 30),
-        poseidon2_flattened_gate_description(130, 0),
+        Description::new::<Poseidon2FlattenedGate<F, 8, 12, 4, Poseidon2Goldilocks>>(
+            (130, 0),
+            GateType::Poseidon2(130, 0),
+        ),
+        Description::new::<Poseidon2FlattenedGate<F, 8, 12, 4, Poseidon2Goldilocks>>(
+            (100, 30),
+            GateType::Poseidon2(100, 30),
+        ),
         Description::new::<QuadraticCombinationGate<4>>((), Generic),
         Description::new::<ReductionByPowersGate<F, 4>>((), Generic),
         Description::new::<ReductionGate<F, 4>>((), Generic),

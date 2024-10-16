@@ -1,4 +1,3 @@
-use super::*;
 use boojum::{
     cs::{implementations::witness::WitnessVec, traits::GoodAllocator, LookupParameters},
     field::U64Representable,
@@ -7,9 +6,12 @@ use boojum::{
 use era_cudart::slice::CudaSlice;
 use std::ops::Range;
 
+use super::*;
+
 use crate::cs::variable_assignment;
 use crate::data_structures::cache::StorageCache;
 
+#[allow(dead_code)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum TracePolyType {
     Variable,
@@ -24,7 +26,7 @@ pub struct TraceLayout {
     pub num_multiplicity_cols: usize,
 }
 
-impl GenericPolynomialStorageLayout for TraceLayout {
+impl GenericStorageLayout for TraceLayout {
     type PolyType = TracePolyType;
 
     fn num_polys(&self) -> usize {
@@ -62,6 +64,44 @@ impl GenericPolynomialStorageLayout for TraceLayout {
 }
 
 pub type GenericTraceStorage<P> = GenericStorage<P, TraceLayout>;
+
+impl<'a> LeafSourceQuery for TracePolynomials<'a, CosetEvaluations> {
+    fn get_leaf_sources(
+        &self,
+        _coset_idx: usize,
+        _lde_degree: usize,
+        _domain_size: usize,
+        row_idx: usize,
+        _: usize,
+    ) -> CudaResult<Vec<F>> {
+        let TracePolynomials {
+            variable_cols,
+            witness_cols,
+            multiplicity_cols,
+        } = self;
+
+        let num_polys = variable_cols.len() + witness_cols.len() + multiplicity_cols.len();
+
+        let mut leaf_sources = Vec::with_capacity(num_polys);
+        for col in variable_cols.iter() {
+            let el = col.storage.clone_el_to_host(row_idx)?;
+            leaf_sources.push(el);
+        }
+
+        for col in witness_cols.iter() {
+            let el = col.storage.clone_el_to_host(row_idx)?;
+            leaf_sources.push(el);
+        }
+
+        for col in multiplicity_cols.iter() {
+            let el = col.storage.clone_el_to_host(row_idx)?;
+            leaf_sources.push(el);
+        }
+        assert_eq!(leaf_sources.len(), num_polys);
+
+        Ok(leaf_sources)
+    }
+}
 
 pub struct TracePolynomials<'a, P: PolyForm> {
     pub variable_cols: Vec<Poly<'a, P>>,
@@ -113,7 +153,7 @@ impl GenericTraceStorage<LagrangeBasis> {
         worker: &Worker,
         mut storage: GenericTraceStorage<Undefined>,
     ) -> CudaResult<Self> {
-        let trace_layout = storage.layout;
+        let trace_layout = storage.layout.clone();
         let num_polys = storage.num_polys();
         let domain_size = storage.domain_size();
         let TraceLayout {
@@ -131,7 +171,7 @@ impl GenericTraceStorage<LagrangeBasis> {
         } = witness_data;
         let mut d_variable_values = dvec!(all_values.len());
         let pending_callbacks =
-            mem::h2d_buffered(all_values, &mut d_variable_values, domain_size / 2, worker)?;
+            mem::h2d_buffered(&all_values, &mut d_variable_values, domain_size / 2, worker)?;
         get_h2d_stream().synchronize()?;
         drop(pending_callbacks);
         let remaining_raw_storage = storage.as_single_slice_mut();
@@ -157,7 +197,7 @@ impl GenericTraceStorage<LagrangeBasis> {
             );
             let num_actual_multiplicities = multiplicities.len();
             // we receive witness data from network so that they are minimal in size
-            // and may need padding
+            // and may needs padding
             assert!(num_actual_multiplicities <= multiplicities_raw_storage.len());
             let mut transformed_multiplicities = vec![F::ZERO; num_actual_multiplicities];
             if !is_dry_run()? {
@@ -204,4 +244,4 @@ impl GenericTraceStorage<CosetEvaluations> {
     }
 }
 
-pub type TraceCache<H> = StorageCache<TraceLayout, H>;
+pub type TraceCache = StorageCache<TraceLayout, ()>;

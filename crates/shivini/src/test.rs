@@ -3,11 +3,7 @@ use crate::cs::{materialize_permutation_cols_from_indexes_into, GpuSetup};
 use super::*;
 use std::{path::Path, sync::Arc};
 
-use crate::gpu_proof_config::GpuProofConfig;
-use boojum::cs::implementations::transcript::GoldilocksPoisedon2Transcript;
-use boojum::cs::oracle::TreeHasher;
 use boojum::cs::{implementations::polynomial_storage::SetupBaseStorage, Variable};
-use boojum::field::traits::field_like::PrimeFieldLikeVectorized;
 use boojum::{
     config::{CSConfig, CSSetupConfig, DevCSConfig, ProvingCSConfig, SetupCSConfig},
     cs::{
@@ -41,17 +37,14 @@ use boojum::{
     implementations::poseidon2::Poseidon2Goldilocks,
     worker::Worker,
 };
-use boojum_cuda::poseidon2::GLHasher;
-use serial_test::serial;
 
-#[cfg(test)]
-type DefaultTranscript = GoldilocksPoisedon2Transcript;
-
-#[cfg(test)]
-type DefaultTreeHasher = GLHasher;
+use boojum::field::traits::field_like::PrimeFieldLikeVectorized;
 
 #[allow(dead_code)]
 pub type DefaultDevCS = CSReferenceAssembly<F, F, DevCSConfig>;
+type P = F;
+use crate::gpu_proof_config::GpuProofConfig;
+use serial_test::serial;
 
 #[serial]
 #[test]
@@ -71,7 +64,7 @@ fn test_proof_comparison_for_poseidon_gate_with_private_witnesses() {
         ProverContextConfig::default().with_smallest_supported_domain_size(domain_size),
     )
     .expect("init gpu prover context");
-    let gpu_setup = GpuSetup::<DefaultTreeHasher, Global>::from_setup_and_hints(
+    let gpu_setup = GpuSetup::<Global>::from_setup_and_hints(
         setup_base.clone(),
         clone_reference_tree(&setup_tree),
         vars_hint.clone(),
@@ -92,8 +85,12 @@ fn test_proof_comparison_for_poseidon_gate_with_private_witnesses() {
             false,
         >(finalization_hint.as_ref());
         let config = GpuProofConfig::from_assembly(&reusable_cs);
-
-        gpu_prove_from_external_witness_data::<DefaultTranscript, DefaultTreeHasher, NoPow, Global>(
+        let proof = gpu_prove_from_external_witness_data::<
+            DefaultTranscript,
+            DefaultTreeHasher,
+            NoPow,
+            Global,
+        >(
             &config,
             &witness,
             prover_config.clone(),
@@ -102,7 +99,9 @@ fn test_proof_comparison_for_poseidon_gate_with_private_witnesses() {
             (),
             &worker,
         )
-        .expect("gpu proof")
+        .expect("gpu proof");
+
+        proof
     };
 
     let expected_proof = {
@@ -233,7 +232,7 @@ fn test_permutation_polys() {
     let _ctx = ProverContext::create_with_config(cfg).expect("init gpu prover context");
 
     let num_copy_permutation_polys = variables_hint.maps.len();
-    let gpu_setup = GpuSetup::<DefaultTreeHasher, Global>::from_setup_and_hints(
+    let gpu_setup = GpuSetup::<Global>::from_setup_and_hints(
         setup_base,
         setup_tree,
         variables_hint,
@@ -262,7 +261,7 @@ fn test_permutation_polys() {
         .into_iter()
         .map(|p| Arc::try_unwrap(p).unwrap())
         .map(|p| p.storage)
-        .map(F::vec_into_base_vec)
+        .map(|p| P::vec_into_base_vec(p))
         .zip(
             actual_copy_permutation_polys
                 .into_poly_storage()
@@ -299,7 +298,7 @@ fn test_setup_comparison() {
 
     let expected_setup = GenericSetupStorage::from_host_values(&setup_base).unwrap();
 
-    let gpu_setup = GpuSetup::<DefaultTreeHasher, Global>::from_setup_and_hints(
+    let gpu_setup = GpuSetup::<Global>::from_setup_and_hints(
         setup_base, setup_tree, vars_hint, wits_hint, &worker,
     )
     .expect("gpu setup");
@@ -320,9 +319,9 @@ fn test_setup_comparison() {
     );
 }
 
-fn clone_reference_tree<H: TreeHasher<F>>(
-    input: &MerkleTreeWithCap<F, H>,
-) -> MerkleTreeWithCap<F, H> {
+fn clone_reference_tree(
+    input: &MerkleTreeWithCap<F, DefaultTreeHasher>,
+) -> MerkleTreeWithCap<F, DefaultTreeHasher> {
     MerkleTreeWithCap {
         cap_size: input.cap_size,
         leaf_hashes: input.leaf_hashes.clone(),
@@ -351,9 +350,8 @@ fn test_dry_runs() {
         prover_config.merkle_tree_cap_size,
     );
     let domain_size = setup_cs.max_trace_len;
-    let cfg = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
-    let _ctx = ProverContext::create_with_config(cfg).expect("init gpu prover context");
-    let gpu_setup = GpuSetup::<DefaultTreeHasher, Global>::from_setup_and_hints(
+    let _ctx = ProverContext::dev(domain_size).expect("init gpu prover context");
+    let gpu_setup = GpuSetup::<Global>::from_setup_and_hints(
         setup_base.clone(),
         clone_reference_tree(&setup_tree),
         vars_hint.clone(),
@@ -371,7 +369,7 @@ fn test_dry_runs() {
     );
     for (_, strategy) in candidates.iter().copied() {
         let proof = || {
-            let _ = prover::gpu_prove_from_external_witness_data_with_cache_strategy::<
+            let _ = crate::prover::gpu_prove_from_external_witness_data_with_cache_strategy::<
                 DefaultTranscript,
                 DefaultTreeHasher,
                 NoPow,
@@ -433,7 +431,7 @@ fn test_proof_comparison_for_sha256() {
     let domain_size = setup_cs.max_trace_len;
     let cfg = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
     let _ctx = ProverContext::create_with_config(cfg).expect("init gpu prover context");
-    let gpu_setup = GpuSetup::<DefaultTreeHasher, Global>::from_setup_and_hints(
+    let gpu_setup = GpuSetup::<Global>::from_setup_and_hints(
         setup_base.clone(),
         clone_reference_tree(&setup_tree),
         vars_hint.clone(),
@@ -453,7 +451,12 @@ fn test_proof_comparison_for_sha256() {
         );
         let config = GpuProofConfig::from_assembly(&reusable_cs);
 
-        gpu_prove_from_external_witness_data::<DefaultTranscript, DefaultTreeHasher, NoPow, Global>(
+        let proof = gpu_prove_from_external_witness_data::<
+            DefaultTranscript,
+            DefaultTreeHasher,
+            NoPow,
+            Global,
+        >(
             &config,
             &witness,
             prover_config.clone(),
@@ -462,7 +465,9 @@ fn test_proof_comparison_for_sha256() {
             (),
             &worker,
         )
-        .expect("gpu proof")
+        .expect("gpu proof");
+
+        proof
     };
 
     let expected_proof = {
@@ -590,7 +595,7 @@ fn init_or_synth_cs_for_sha256<CFG: CSConfig, A: GoodAllocator, const DO_SYNTH: 
         //     cs.place_variable(var.get_variable(), next_available_row, column);
         //     cs.set_public(column, next_available_row);
         // }
-        let output = hex::encode(output.witness_hook(&*cs)().unwrap());
+        let output = hex::encode(&output.witness_hook(&*cs)().unwrap());
         let reference_output = hex::encode(reference_output.as_slice());
         assert_eq!(output, reference_output);
     }
@@ -612,9 +617,9 @@ fn init_or_synth_cs_for_sha256<CFG: CSConfig, A: GoodAllocator, const DO_SYNTH: 
     }
 }
 
-fn compare_proofs<H: TreeHasher<F>>(
-    expected_proof: &Proof<F, H, EXT>,
-    actual_proof: &Proof<F, H, EXT>,
+fn compare_proofs(
+    expected_proof: &Proof<F, DefaultTreeHasher, EXT>,
+    actual_proof: &Proof<F, DefaultTreeHasher, EXT>,
 ) {
     assert_eq!(expected_proof.public_inputs, actual_proof.public_inputs);
     assert_eq!(
@@ -654,10 +659,11 @@ fn compare_proofs<H: TreeHasher<F>>(
         actual_proof.queries_per_fri_repetition.len(),
     );
 
-    for (expected_fri_query, actual_fri_query) in expected_proof
+    for (_query_idx, (expected_fri_query, actual_fri_query)) in expected_proof
         .queries_per_fri_repetition
         .iter()
         .zip(actual_proof.queries_per_fri_repetition.iter())
+        .enumerate()
     {
         // leaf elems
         assert_eq!(
@@ -700,10 +706,11 @@ fn compare_proofs<H: TreeHasher<F>>(
             actual_fri_query.fri_queries.len(),
         );
 
-        for (expected, actual) in expected_fri_query
+        for (_layer_idx, (expected, actual)) in expected_fri_query
             .fri_queries
             .iter()
             .zip(actual_fri_query.fri_queries.iter())
+            .enumerate()
         {
             assert_eq!(expected.leaf_elements.len(), actual.leaf_elements.len());
             assert_eq!(expected.leaf_elements, actual.leaf_elements);
@@ -737,10 +744,11 @@ fn compare_proofs<H: TreeHasher<F>>(
             actual_fri_query.setup_query.proof,
         );
 
-        for (expected, actual) in expected_fri_query
+        for (_layer_idx, (expected, actual)) in expected_fri_query
             .fri_queries
             .iter()
             .zip(actual_fri_query.fri_queries.iter())
+            .enumerate()
         {
             assert_eq!(expected.proof.len(), actual.proof.len());
             assert_eq!(expected.proof, actual.proof);
@@ -776,48 +784,28 @@ fn test_reference_proof_for_sha256() {
 }
 
 pub fn init_proof_cfg() -> ProofConfig {
-    ProofConfig {
-        fri_lde_factor: 2,
-        pow_bits: 0,
-        merkle_tree_cap_size: 32,
-        ..Default::default()
-    }
+    let mut prover_config = ProofConfig::default();
+    prover_config.fri_lde_factor = 2;
+    prover_config.pow_bits = 0;
+    prover_config.merkle_tree_cap_size = 32;
+
+    prover_config
 }
 
 #[cfg(test)]
 #[cfg(feature = "zksync")]
 mod zksync {
-    use super::*;
-    use std::fs;
     use std::path::PathBuf;
 
-    use crate::cs::{GpuProverSetupData, PACKED_PLACEHOLDER_BITMASK};
-    use crate::prover::gpu_prove_from_external_witness_data_with_cache_strategy;
-    use boojum::cs::implementations::{
-        fast_serialization::MemcopySerializable, transcript::GoldilocksPoisedon2Transcript,
-        verifier::Verifier,
-    };
-    use circuit_definitions::circuit_definitions::{
-        aux_layer::{
-            compression::{CompressionLayerCircuit, ProofCompressionFunction},
-            compression_modes::{CompressionTranscriptForWrapper, CompressionTreeHasherForWrapper},
-            CompressionProofsTreeHasher, CompressionProofsTreeHasherForWrapper,
-            ZkSyncCompressionForWrapperCircuit, ZkSyncCompressionLayerCircuit,
-            ZkSyncCompressionProof, ZkSyncCompressionProofForWrapper,
-            ZkSyncCompressionVerificationKey, ZkSyncCompressionVerificationKeyForWrapper,
-        },
-        base_layer::ZkSyncBaseLayerCircuit,
-        recursion_layer::{
-            ZkSyncRecursionLayerProof, ZkSyncRecursionLayerVerificationKey, ZkSyncRecursionProof,
-            ZkSyncRecursionVerificationKey,
-        },
-    };
+    use super::*;
+
+    use crate::cs::PACKED_PLACEHOLDER_BITMASK;
+    use boojum::cs::implementations::fast_serialization::MemcopySerializable;
+    use circuit_definitions::circuit_definitions::base_layer::ZkSyncBaseLayerCircuit;
     use era_cudart::memory::memory_get_info;
     use era_cudart_sys::CudaError;
-    use synthesis_utils::synthesize_compression_circuit;
 
     pub type ZksyncProof = Proof<F, DefaultTreeHasher, GoldilocksExt2>;
-    type CompressionProofsTranscript = GoldilocksPoisedon2Transcript;
 
     const TEST_DATA_ROOT_DIR: &str = "./crates/shivini/test_data";
     const DEFAULT_CIRCUIT_INPUT: &str = "default.circuit";
@@ -832,14 +820,14 @@ mod zksync {
 
     fn scan_directory<P: AsRef<Path>>(dir: P) -> Vec<PathBuf> {
         let mut file_paths = vec![];
-        for entry in fs::read_dir(dir).unwrap() {
+        for entry in std::fs::read_dir(dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
             if path.is_file() {
                 file_paths.push(path);
             }
         }
-        file_paths.sort();
+        file_paths.sort_by(|a, b| a.cmp(b));
 
         file_paths
     }
@@ -850,7 +838,7 @@ mod zksync {
         for path in file_paths {
             let file_extension = path.extension().unwrap().to_string_lossy().to_string();
             if file_extension.contains("circuit") {
-                let file = fs::File::open(path).unwrap();
+                let file = std::fs::File::open(path).unwrap();
                 let circuit: CircuitWrapper = bincode::deserialize_from(file).expect("deserialize");
                 circuits.push(circuit);
             }
@@ -866,7 +854,7 @@ mod zksync {
         for path in file_paths {
             let file_extension = path.extension().unwrap().to_string_lossy().to_string();
             if file_extension.contains("setup") {
-                let file = fs::File::open(path).unwrap();
+                let file = std::fs::File::open(path).unwrap();
                 let circuit: SetupBaseStorage<F, F> =
                     bincode::deserialize_from(file).expect("deserialize");
                 circuits.push(circuit);
@@ -882,7 +870,7 @@ mod zksync {
         for path in file_paths {
             let file_extension = path.extension().unwrap().to_string_lossy().to_string();
             if file_extension.contains("proof") {
-                let file = fs::File::open(path).unwrap();
+                let file = std::fs::File::open(path).unwrap();
                 let proof: ZksyncProof = bincode::deserialize_from(file).expect("deserialize");
                 proofs.push(proof);
             }
@@ -919,7 +907,7 @@ mod zksync {
 
         let expected_setup = GenericSetupStorage::from_host_values(&setup_base).unwrap();
 
-        let gpu_setup = GpuSetup::<DefaultTreeHasher, Global>::from_setup_and_hints(
+        let gpu_setup = GpuSetup::<Global>::from_setup_and_hints(
             setup_base, setup_tree, vars_hint, wits_hint, &worker,
         )
         .expect("gpu setup");
@@ -985,12 +973,12 @@ mod zksync {
                         proof_config.merkle_tree_cap_size,
                     );
 
-                let gpu_setup = GpuSetup::<DefaultTreeHasher, Global>::from_setup_and_hints(
+                let gpu_setup = GpuSetup::<Global>::from_setup_and_hints(
                     setup_base.clone(),
                     setup_tree,
                     vars_hint.clone(),
                     wits_hint.clone(),
-                    worker,
+                    &worker,
                 )?;
 
                 println!("gpu proving");
@@ -999,7 +987,7 @@ mod zksync {
                     let proving_cs = synth_circuit_for_proving(circuit.clone(), &finalization_hint);
                     let witness = proving_cs.witness.unwrap();
                     let config = GpuProofConfig::from_circuit_wrapper(&circuit);
-                    gpu_prove_from_external_witness_data::<
+                    let proof = gpu_prove_from_external_witness_data::<
                         DefaultTranscript,
                         DefaultTreeHasher,
                         NoPow,
@@ -1013,21 +1001,16 @@ mod zksync {
                         (),
                         worker,
                     )
-                    .expect("gpu proof")
+                    .expect("gpu proof");
+                    proof
                 };
 
-                let reference_proof_file = fs::File::open(reference_proof_path).unwrap();
+                let reference_proof_file = std::fs::File::open(reference_proof_path).unwrap();
                 let reference_proof = bincode::deserialize_from(&reference_proof_file).unwrap();
                 let actual_proof = gpu_proof.into();
                 compare_proofs(&reference_proof, &actual_proof);
-                assert!(
-                    circuit.verify_proof::<DefaultTranscript, DefaultTreeHasher>(
-                        (),
-                        &vk,
-                        &actual_proof
-                    )
-                );
-                let proof_file = fs::File::create(gpu_proof_path).unwrap();
+                assert!(circuit.verify_proof(&vk, &actual_proof));
+                let proof_file = std::fs::File::create(gpu_proof_path).unwrap();
 
                 bincode::serialize_into(proof_file, &actual_proof).expect("write proof into file");
             }
@@ -1094,14 +1077,8 @@ mod zksync {
                         worker,
                     )
                 };
-                assert!(
-                    circuit.verify_proof::<DefaultTranscript, DefaultTreeHasher>(
-                        (),
-                        &vk,
-                        &reference_proof
-                    )
-                );
-                let proof_file = fs::File::create(format!(
+                assert!(circuit.verify_proof(&vk, &reference_proof));
+                let proof_file = std::fs::File::create(format!(
                     "{}/{}.cpu.proof",
                     data_dir,
                     circuit.numeric_circuit_type()
@@ -1112,781 +1089,6 @@ mod zksync {
                     .expect("write proof into file");
             }
         }
-    }
-
-    fn load_scheduler_proof_and_vk() -> (ZkSyncRecursionProof, ZkSyncRecursionVerificationKey) {
-        let scheduler_vk_file =
-            fs::File::open("./test_data/compression/scheduler_recursive_vk.json").unwrap();
-        let scheduler_vk: ZkSyncRecursionLayerVerificationKey =
-            serde_json::from_reader(&scheduler_vk_file).unwrap();
-        let scheduler_proof_file =
-            fs::File::open("./test_data/compression/scheduler_recursive_proof.json").unwrap();
-        let scheduler_proof: ZkSyncRecursionLayerProof =
-            serde_json::from_reader(&scheduler_proof_file).unwrap();
-
-        (scheduler_proof.into_inner(), scheduler_vk.into_inner())
-    }
-
-    #[test]
-    #[ignore]
-    fn run_make_compression_circuit_input() {
-        let compression_wrapper_mode = 1;
-        let (scheduler_proof, scheduler_vk) = load_scheduler_proof_and_vk();
-        let circuit = CircuitWrapper::CompressionWrapper(
-            ZkSyncCompressionForWrapperCircuit::from_witness_and_vk(
-                Some(scheduler_proof),
-                scheduler_vk,
-                compression_wrapper_mode,
-            ),
-        );
-
-        let circuit_file_path = format!(
-            "./test_data/compression/compression_{}_wrapper.circuit",
-            compression_wrapper_mode
-        );
-        let circuit_file = fs::File::create(&circuit_file_path).unwrap();
-        bincode::serialize_into(&circuit_file, &circuit).unwrap();
-        println!(
-            "Compression wrapper {} circuit saved into {}",
-            compression_wrapper_mode, circuit_file_path
-        );
-    }
-
-    #[test]
-    #[ignore]
-    fn run_prove_compression_wrapper_circuit() {
-        // Some Compression wrapper modes benefit from PoW
-        // and underlying PoW function is defined as assoc type of the trait
-
-        // type H = BNHasher;
-        type H = CompressionTreeHasherForWrapper;
-        type T = CompressionTranscriptForWrapper;
-
-        let circuit = get_circuit_from_env();
-
-        println!(
-            "{} {}",
-            circuit.numeric_circuit_type(),
-            circuit.short_description()
-        );
-        let worker = &Worker::new();
-        let proof_cfg = circuit.proof_config();
-        println!("gpu proving");
-        let (actual_proof, _) = prove_compression_wrapper_circuit(
-            circuit.clone().into_compression_wrapper(),
-            &mut None,
-            worker,
-        );
-
-        println!("cpu proving");
-        let reference_proof = {
-            let (setup_cs, finalization_hint) = synth_circuit_for_setup(circuit.clone());
-            let (setup_base, setup, vk, setup_tree, vars_hint, wits_hint) = setup_cs
-                .get_full_setup(
-                    worker,
-                    proof_cfg.fri_lde_factor,
-                    proof_cfg.merkle_tree_cap_size,
-                );
-            let proving_cs = synth_circuit_for_proving(circuit.clone(), &finalization_hint);
-            let proof = proving_cs.prove_from_precomputations::<EXT, T, H, NoPow>(
-                proof_cfg.clone(),
-                &setup_base,
-                &setup,
-                &setup_tree,
-                &vk,
-                &vars_hint,
-                &wits_hint,
-                (),
-                worker,
-            );
-            let is_valid = circuit.verify_proof::<T, H>((), &vk, &proof);
-            assert!(is_valid, "proof is invalid");
-            proof
-        };
-        compare_proofs(&reference_proof, &actual_proof);
-    }
-
-    #[derive(Copy, Clone, Debug)]
-    pub enum CompressionMode {
-        One = 1,
-        Two = 2,
-        Three = 3,
-        Four = 4,
-        Five = 5,
-    }
-
-    impl CompressionMode {
-        pub fn from_compression_mode(compression_mode: u8) -> Self {
-            match compression_mode {
-                1 => CompressionMode::One,
-                2 => CompressionMode::Two,
-                3 => CompressionMode::Three,
-                4 => CompressionMode::Four,
-                5 => CompressionMode::Five,
-                _ => unreachable!(),
-            }
-        }
-    }
-
-    #[derive(Debug)]
-    pub struct CompressionSchedule {
-        name: &'static str,
-        pub compression_steps: Vec<CompressionMode>,
-    }
-
-    impl CompressionSchedule {
-        pub fn name(&self) -> &'static str {
-            self.name
-        }
-        pub fn hard() -> Self {
-            CompressionSchedule {
-                name: "hard",
-                compression_steps: vec![
-                    CompressionMode::One,
-                    CompressionMode::Two,
-                    CompressionMode::Three,
-                    CompressionMode::Four,
-                ],
-            }
-        }
-    }
-
-    pub enum CompressionInput {
-        Recursion(
-            Option<ZkSyncRecursionProof>,
-            ZkSyncRecursionVerificationKey,
-            CompressionMode,
-        ),
-        Compression(
-            Option<ZkSyncCompressionProof>,
-            ZkSyncCompressionVerificationKey,
-            CompressionMode,
-        ),
-        CompressionWrapper(
-            Option<ZkSyncCompressionProof>,
-            ZkSyncCompressionVerificationKey,
-            CompressionMode,
-        ),
-    }
-
-    impl CompressionInput {
-        pub fn into_compression_circuit(self) -> ZkSyncCompressionLayerCircuit {
-            match self {
-                CompressionInput::Recursion(proof, vk, compression_mode) => {
-                    assert_eq!(compression_mode as u8, 1);
-                    ZkSyncCompressionLayerCircuit::from_witness_and_vk(proof, vk, 1)
-                }
-                CompressionInput::Compression(proof, vk, compression_mode) => {
-                    ZkSyncCompressionLayerCircuit::from_witness_and_vk(
-                        proof,
-                        vk,
-                        compression_mode as u8,
-                    )
-                }
-                CompressionInput::CompressionWrapper(_, _, _) => {
-                    unreachable!()
-                }
-            }
-        }
-
-        pub fn into_compression_wrapper_circuit(self) -> ZkSyncCompressionForWrapperCircuit {
-            match self {
-                CompressionInput::Recursion(_, _, _) => {
-                    unreachable!()
-                }
-                CompressionInput::Compression(_, _, _) => {
-                    unreachable!()
-                }
-                CompressionInput::CompressionWrapper(proof, vk, compression_mode) => {
-                    ZkSyncCompressionForWrapperCircuit::from_witness_and_vk(
-                        proof,
-                        vk,
-                        compression_mode as u8,
-                    )
-                }
-            }
-        }
-    }
-
-    #[test]
-    #[ignore]
-    fn run_proof_compression_by_schedule() {
-        let (scheduler_proof, scheduler_vk) = load_scheduler_proof_and_vk();
-        compress_proof(scheduler_proof, scheduler_vk, CompressionSchedule::hard());
-    }
-
-    pub fn compress_proof(
-        proof: ZkSyncRecursionProof,
-        vk: ZkSyncRecursionVerificationKey,
-        schedule: CompressionSchedule,
-    ) {
-        let worker = Worker::new();
-        let mut input = CompressionInput::Recursion(Some(proof), vk, CompressionMode::One);
-
-        dbg!(&schedule);
-        let CompressionSchedule {
-            name: compression_schedule_name,
-            compression_steps,
-        } = schedule;
-
-        let last_compression_wrapping_mode =
-            CompressionMode::from_compression_mode(*compression_steps.last().unwrap() as u8 + 1);
-        dbg!(&last_compression_wrapping_mode);
-
-        /*
-            This illustrates how compression enforced for the "hardest" strategy
-
-               input                       compression     verifier          output        compression wrapper
-           _____________________________   ____________    ___________     __________      ___________________
-           scheduler       proof   vk          1           scheduler   ->  compressed1         compressed2
-           compressed1     proof   vk          2           compressed1 ->  compressed2         compressed3
-           compressed2     proof   vk          3           compressed2 ->  compressed3         compressed4
-           compressed3     proof   vk          4           compressed3 ->  compressed4         compressed5
-
-
-           compressed5     proof   vk          -       compression wrapper5       ->  fflonk proof
-        */
-
-        let num_compression_steps = compression_steps.len();
-        let mut compression_modes_iter = compression_steps.into_iter();
-        for step_idx in 0..num_compression_steps {
-            let compression_mode = compression_modes_iter.next().unwrap();
-            let proof_file_path = format!(
-                "./test_data/compression/compression_{}_proof.json",
-                compression_mode as u8
-            );
-            let proof_file_path = Path::new(&proof_file_path);
-            let vk_file_path = format!(
-                "./test_data/compression/compression_{}_vk.json",
-                compression_mode as u8
-            );
-            let vk_file_path = Path::new(&vk_file_path);
-            let setup_data_file_path = format!(
-                "./test_data/compression/compression_{}_setup_data.bin",
-                compression_mode as u8
-            );
-            let setup_data_file_path = Path::new(&setup_data_file_path);
-            if proof_file_path.exists() && vk_file_path.exists() {
-                println!("Compression {compression_schedule_name}/{} proof and vk already exist ignoring", compression_mode as u8);
-                let proof_file = fs::File::open(proof_file_path).unwrap();
-                let input_proof = serde_json::from_reader(&proof_file).unwrap();
-                let vk_file = fs::File::open(vk_file_path).unwrap();
-                let input_vk = serde_json::from_reader(&vk_file).unwrap();
-                if step_idx + 1 == num_compression_steps {
-                    input = CompressionInput::CompressionWrapper(
-                        input_proof,
-                        input_vk,
-                        last_compression_wrapping_mode,
-                    )
-                } else {
-                    input = CompressionInput::Compression(
-                        input_proof,
-                        input_vk,
-                        CompressionMode::from_compression_mode(compression_mode as u8 + 1),
-                    )
-                }
-
-                continue;
-            }
-            let mut setup_data = if setup_data_file_path.exists() {
-                let bytes = fs::read(setup_data_file_path).unwrap();
-                println!(
-                    "Compression wrapper setup data for {compression_schedule_name}/{} loaded",
-                    compression_mode as u8
-                );
-                Some(bincode::deserialize(&bytes).unwrap())
-            } else {
-                None
-            };
-
-            let compression_circuit = input.into_compression_circuit();
-            let circuit_type = compression_circuit.numeric_circuit_type();
-            println!(
-                "Proving compression {compression_schedule_name}/{}",
-                compression_mode as u8
-            );
-            let (output_proof, output_vk) = prove_compression_layer_circuit(
-                compression_circuit.clone(),
-                &mut setup_data,
-                &worker,
-            );
-            println!(
-                "Proof for compression {compression_schedule_name}/{} is generated!",
-                compression_mode as u8
-            );
-
-            save_compression_proof_and_vk_into_file(&output_proof, &output_vk, circuit_type);
-
-            if setup_data.is_some() {
-                let bytes = bincode::serialize(&setup_data.unwrap()).unwrap();
-                fs::write(setup_data_file_path, bytes).unwrap();
-                println!(
-                    "Compression wrapper setup data for {compression_schedule_name}/{} saved",
-                    compression_mode as u8
-                );
-            }
-
-            if step_idx + 1 == num_compression_steps {
-                input = CompressionInput::CompressionWrapper(
-                    Some(output_proof),
-                    output_vk,
-                    last_compression_wrapping_mode,
-                );
-            } else {
-                input = CompressionInput::Compression(
-                    Some(output_proof),
-                    output_vk,
-                    CompressionMode::from_compression_mode(compression_mode as u8 + 1),
-                );
-            }
-        }
-
-        // last wrapping step
-        let proof_file_path = format!(
-            "./test_data/compression/compression_wrapper_{}_proof.json",
-            last_compression_wrapping_mode as u8
-        );
-        let proof_file_path = Path::new(&proof_file_path);
-        let vk_file_path = format!(
-            "./test_data/compression/compression_wrapper_{}_vk.json",
-            last_compression_wrapping_mode as u8
-        );
-        let vk_file_path = Path::new(&vk_file_path);
-        let setup_data_file_path = format!(
-            "./test_data/compression/compression_wrapper_{}_setup_data.bin",
-            last_compression_wrapping_mode as u8
-        );
-        let setup_data_file_path = Path::new(&setup_data_file_path);
-        println!(
-            "Compression for wrapper level {}",
-            last_compression_wrapping_mode as u8
-        );
-        if proof_file_path.exists() && vk_file_path.exists() {
-            println!(
-                "Compression {compression_schedule_name}/{} for wrapper proof and vk already exist ignoring",
-                last_compression_wrapping_mode as u8
-            );
-        } else {
-            println!(
-                "Proving compression {compression_schedule_name}/{} for wrapper",
-                last_compression_wrapping_mode as u8
-            );
-            let mut setup_data = if setup_data_file_path.exists() {
-                let bytes = fs::read(setup_data_file_path).unwrap();
-                println!(
-                    "Compression wrapper setup data for {compression_schedule_name}/{} loaded",
-                    last_compression_wrapping_mode as u8
-                );
-                Some(bincode::deserialize(&bytes).unwrap())
-            } else {
-                None
-            };
-            let compression_circuit = input.into_compression_wrapper_circuit();
-            let (output_proof, output_vk) =
-                prove_compression_wrapper_circuit(compression_circuit, &mut setup_data, &worker);
-            println!(
-                "Proof for compression wrapper {compression_schedule_name}/{} is generated!",
-                last_compression_wrapping_mode as u8
-            );
-            save_compression_wrapper_proof_and_vk_into_file(
-                &output_proof,
-                &output_vk,
-                last_compression_wrapping_mode as u8,
-            );
-            println!(
-                "Compression wrapper proof and vk for {compression_schedule_name}/{} saved",
-                last_compression_wrapping_mode as u8
-            );
-            if setup_data.is_some() {
-                let bytes = bincode::serialize(&setup_data.unwrap()).unwrap();
-                fs::write(setup_data_file_path, bytes).unwrap();
-                println!(
-                    "Compression wrapper setup data for {compression_schedule_name}/{} saved",
-                    last_compression_wrapping_mode as u8
-                );
-            }
-        }
-    }
-
-    pub fn save_compression_proof_and_vk_into_file(
-        proof: &ZkSyncCompressionProof,
-        vk: &ZkSyncCompressionVerificationKey,
-        compression_mode: u8,
-    ) {
-        let proof_file = fs::File::create(format!(
-            "./test_data/compression/compression_{}_proof.json",
-            compression_mode
-        ))
-        .unwrap();
-        serde_json::to_writer(proof_file, &proof).unwrap();
-        let vk_file = fs::File::create(format!(
-            "./test_data/compression/compression_{}_vk.json",
-            compression_mode
-        ))
-        .unwrap();
-        serde_json::to_writer(vk_file, &vk).unwrap();
-    }
-
-    pub fn save_compression_wrapper_proof_and_vk_into_file(
-        proof: &ZkSyncCompressionProofForWrapper,
-        vk: &ZkSyncCompressionVerificationKeyForWrapper,
-        compression_mode: u8,
-    ) {
-        let proof_file = fs::File::create(format!(
-            "./test_data/compression/compression_wrapper_{}_proof.json",
-            compression_mode
-        ))
-        .unwrap();
-        serde_json::to_writer(proof_file, &proof).unwrap();
-        let vk_file = fs::File::create(format!(
-            "./test_data/compression/compression_wrapper_{}_vk.json",
-            compression_mode
-        ))
-        .unwrap();
-        serde_json::to_writer(vk_file, &vk).unwrap();
-    }
-
-    pub fn prove_compression_layer_circuit(
-        circuit: ZkSyncCompressionLayerCircuit,
-        setup_data: &mut Option<GpuProverSetupData<CompressionProofsTreeHasher>>,
-        worker: &Worker,
-    ) -> (ZkSyncCompressionProof, ZkSyncCompressionVerificationKey) {
-        let proof_config = circuit.proof_config_for_compression_step();
-        let verifier_builder = circuit.into_dyn_verifier_builder();
-        let verifier = verifier_builder.create_verifier();
-        let gpu_proof_config = GpuProofConfig::from_compression_layer_circuit(&circuit);
-
-        let (proof, vk, is_proof_valid) = match circuit {
-            ZkSyncCompressionLayerCircuit::CompressionMode1Circuit(inner) => {
-                let (proof, vk) = inner_prove_compression_layer_circuit(
-                    inner.clone(),
-                    proof_config,
-                    gpu_proof_config,
-                    setup_data,
-                    worker,
-                );
-                let is_proof_valid = verify_compression_layer_circuit(inner, &proof, &vk, verifier);
-                (proof, vk, is_proof_valid)
-            }
-            ZkSyncCompressionLayerCircuit::CompressionMode2Circuit(inner) => {
-                let (proof, vk) = inner_prove_compression_layer_circuit(
-                    inner.clone(),
-                    proof_config,
-                    gpu_proof_config,
-                    setup_data,
-                    worker,
-                );
-                let is_proof_valid = verify_compression_layer_circuit(inner, &proof, &vk, verifier);
-                (proof, vk, is_proof_valid)
-            }
-            ZkSyncCompressionLayerCircuit::CompressionMode3Circuit(inner) => {
-                let (proof, vk) = inner_prove_compression_layer_circuit(
-                    inner.clone(),
-                    proof_config,
-                    gpu_proof_config,
-                    setup_data,
-                    worker,
-                );
-                let is_proof_valid = verify_compression_layer_circuit(inner, &proof, &vk, verifier);
-                (proof, vk, is_proof_valid)
-            }
-            ZkSyncCompressionLayerCircuit::CompressionMode4Circuit(inner) => {
-                let (proof, vk) = inner_prove_compression_layer_circuit(
-                    inner.clone(),
-                    proof_config,
-                    gpu_proof_config,
-                    setup_data,
-                    worker,
-                );
-                let is_proof_valid = verify_compression_layer_circuit(inner, &proof, &vk, verifier);
-                (proof, vk, is_proof_valid)
-            }
-            ZkSyncCompressionLayerCircuit::CompressionMode5Circuit(inner) => {
-                let (proof, vk) = inner_prove_compression_layer_circuit(
-                    inner.clone(),
-                    proof_config,
-                    gpu_proof_config,
-                    setup_data,
-                    worker,
-                );
-                let is_proof_valid = verify_compression_layer_circuit(inner, &proof, &vk, verifier);
-                (proof, vk, is_proof_valid)
-            }
-        };
-        if !is_proof_valid {
-            panic!("Proof is invalid");
-        }
-
-        (proof, vk)
-    }
-
-    pub fn prove_compression_wrapper_circuit(
-        circuit: ZkSyncCompressionForWrapperCircuit,
-        setup_data: &mut Option<GpuProverSetupData<CompressionTreeHasherForWrapper>>,
-        worker: &Worker,
-    ) -> (
-        ZkSyncCompressionProofForWrapper,
-        ZkSyncCompressionVerificationKeyForWrapper,
-    ) {
-        let proof_config = circuit.proof_config_for_compression_step();
-        let verifier_builder = circuit.into_dyn_verifier_builder();
-        let verifier = verifier_builder.create_verifier();
-        let gpu_proof_config = GpuProofConfig::from_compression_wrapper_circuit(&circuit);
-
-        let (proof, vk, is_proof_valid) = match circuit {
-            ZkSyncCompressionForWrapperCircuit::CompressionMode1Circuit(inner) => {
-                let (proof, vk) = inner_prove_compression_wrapper_circuit(
-                    inner.clone(),
-                    proof_config,
-                    gpu_proof_config,
-                    setup_data,
-                    worker,
-                );
-                let is_proof_valid =
-                    verify_compression_wrapper_circuit(inner, &proof, &vk, verifier);
-                (proof, vk, is_proof_valid)
-            }
-            ZkSyncCompressionForWrapperCircuit::CompressionMode2Circuit(inner) => {
-                let (proof, vk) = inner_prove_compression_wrapper_circuit(
-                    inner.clone(),
-                    proof_config,
-                    gpu_proof_config,
-                    setup_data,
-                    worker,
-                );
-                let is_proof_valid =
-                    verify_compression_wrapper_circuit(inner, &proof, &vk, verifier);
-                (proof, vk, is_proof_valid)
-            }
-            ZkSyncCompressionForWrapperCircuit::CompressionMode3Circuit(inner) => {
-                let (proof, vk) = inner_prove_compression_wrapper_circuit(
-                    inner.clone(),
-                    proof_config,
-                    gpu_proof_config,
-                    setup_data,
-                    worker,
-                );
-                let is_proof_valid =
-                    verify_compression_wrapper_circuit(inner, &proof, &vk, verifier);
-                (proof, vk, is_proof_valid)
-            }
-            ZkSyncCompressionForWrapperCircuit::CompressionMode4Circuit(inner) => {
-                let (proof, vk) = inner_prove_compression_wrapper_circuit(
-                    inner.clone(),
-                    proof_config,
-                    gpu_proof_config,
-                    setup_data,
-                    worker,
-                );
-                let is_proof_valid =
-                    verify_compression_wrapper_circuit(inner, &proof, &vk, verifier);
-                (proof, vk, is_proof_valid)
-            }
-            ZkSyncCompressionForWrapperCircuit::CompressionMode5Circuit(inner) => {
-                let (proof, vk) = inner_prove_compression_wrapper_circuit(
-                    inner.clone(),
-                    proof_config,
-                    gpu_proof_config,
-                    setup_data,
-                    worker,
-                );
-                let is_proof_valid =
-                    verify_compression_wrapper_circuit(inner, &proof, &vk, verifier);
-                (proof, vk, is_proof_valid)
-            }
-        };
-        if !is_proof_valid {
-            panic!("Proof is invalid");
-        }
-
-        (proof, vk)
-    }
-
-    pub fn inner_prove_compression_layer_circuit<CF: ProofCompressionFunction>(
-        circuit: CompressionLayerCircuit<CF>,
-        proof_cfg: ProofConfig,
-        gpu_cfg: GpuProofConfig,
-        setup_data: &mut Option<GpuProverSetupData<CompressionProofsTreeHasher>>,
-        worker: &Worker,
-    ) -> (ZkSyncCompressionProof, ZkSyncCompressionVerificationKey) {
-        let local_setup_data = match setup_data.take() {
-            Some(setup_data) => setup_data,
-            None => {
-                let (setup_cs, finalization_hint) = synthesize_compression_circuit::<
-                    _,
-                    SetupCSConfig,
-                    Global,
-                >(circuit.clone(), true, None);
-                let (base_setup, _setup, setup_tree, variables_hint, witnesses_hint, vk) = setup_cs.prepare_base_setup_with_precomputations_and_vk::<CompressionProofsTranscript, CompressionProofsTreeHasher>(proof_cfg.clone(), worker);
-                let gpu_setup = GpuSetup::from_setup_and_hints(
-                    base_setup,
-                    setup_tree,
-                    variables_hint,
-                    witnesses_hint,
-                    worker,
-                )
-                .unwrap();
-                GpuProverSetupData {
-                    setup: gpu_setup,
-                    vk,
-                    finalization_hint: finalization_hint.unwrap(),
-                }
-            }
-        };
-        let (proving_cs, _) = synthesize_compression_circuit::<_, ProvingCSConfig, Global>(
-            circuit.clone(),
-            true,
-            Some(&local_setup_data.finalization_hint),
-        );
-        let witness = proving_cs.witness.as_ref().unwrap();
-        let domain_size = local_setup_data.vk.fixed_parameters.domain_size as usize;
-        let config =
-            ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
-        let ctx = ProverContext::create_with_config(config).expect("gpu prover context");
-        let cache_strategy = CacheStrategy {
-            setup_polynomials: PolynomialsCacheStrategy::CacheMonomialsAndFirstCoset,
-            trace_polynomials: PolynomialsCacheStrategy::CacheMonomialsAndFirstCoset,
-            other_polynomials: PolynomialsCacheStrategy::CacheMonomialsAndFirstCoset,
-            commitment: CommitmentCacheStrategy::CacheCosetCaps,
-        };
-        let gpu_proof = gpu_prove_from_external_witness_data_with_cache_strategy::<
-            CompressionProofsTranscript,
-            CompressionProofsTreeHasher,
-            CF::ThisLayerPoW,
-            Global,
-        >(
-            &gpu_cfg,
-            witness,
-            proof_cfg.clone(),
-            &local_setup_data.setup,
-            &local_setup_data.vk,
-            (),
-            worker,
-            cache_strategy,
-        )
-        .expect("gpu proof");
-        drop(ctx);
-        let proof = gpu_proof.into();
-        // let cpu_proof ={
-        //     let (setup_cs, finalization_hint) =
-        //         synthesize_compression_circuit::<_, SetupCSConfig, Global>(circuit.clone(), true, None);
-        //     let domain_size = setup_cs.max_trace_len;
-        //     let (base_setup, setup, setup_tree, variables_hint, witnesses_hint, vk)= setup_cs.prepare_base_setup_with_precomputations_and_vk::<CompressionProofsTranscript, CompressionProofsTreeHasher>(proof_cfg.clone(), worker);
-        //     proving_cs.prove_from_precomputations::<EXT, CompressionProofsTranscript, CompressionProofsTreeHasher, CF::ThisLayerPoW>(
-        //         proof_cfg.clone(),
-        //         &base_setup,
-        //         &setup,
-        //         &setup_tree,
-        //         &vk,
-        //         &variables_hint,
-        //         &witnesses_hint,
-        //         (),
-        //         worker,
-        //     )
-        // };
-        // compare_proofs(&cpu_proof, &proof);
-        let vk = local_setup_data.vk.clone();
-        setup_data.replace(local_setup_data);
-        (proof, vk)
-    }
-
-    pub fn inner_prove_compression_wrapper_circuit<CF: ProofCompressionFunction>(
-        circuit: CompressionLayerCircuit<CF>,
-        proof_cfg: ProofConfig,
-        gpu_cfg: GpuProofConfig,
-        setup_data: &mut Option<GpuProverSetupData<CompressionTreeHasherForWrapper>>,
-        worker: &Worker,
-    ) -> (
-        ZkSyncCompressionProofForWrapper,
-        ZkSyncCompressionVerificationKeyForWrapper,
-    ) {
-        let local_setup_data = match setup_data.take() {
-            Some(setup_data) => setup_data,
-            None => {
-                let (setup_cs, finalization_hint) = synthesize_compression_circuit::<
-                    _,
-                    SetupCSConfig,
-                    Global,
-                >(circuit.clone(), true, None);
-                let (base_setup, _setup, setup_tree, variables_hint, witnesses_hint, vk) = setup_cs.prepare_base_setup_with_precomputations_and_vk::<CompressionTranscriptForWrapper, CompressionTreeHasherForWrapper>(proof_cfg.clone(), worker);
-                let gpu_setup = GpuSetup::from_setup_and_hints(
-                    base_setup,
-                    setup_tree,
-                    variables_hint,
-                    witnesses_hint,
-                    worker,
-                )
-                .unwrap();
-                GpuProverSetupData {
-                    setup: gpu_setup,
-                    vk,
-                    finalization_hint: finalization_hint.unwrap(),
-                }
-            }
-        };
-        let (proving_cs, _) = synthesize_compression_circuit::<_, ProvingCSConfig, Global>(
-            circuit,
-            true,
-            Some(&local_setup_data.finalization_hint),
-        );
-        let witness = proving_cs.witness.as_ref().unwrap();
-        let domain_size = local_setup_data.vk.fixed_parameters.domain_size as usize;
-        let config =
-            ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
-        let ctx = ProverContext::create_with_config(config).expect("gpu prover context");
-        let cache_strategy = CacheStrategy {
-            setup_polynomials: PolynomialsCacheStrategy::CacheMonomialsAndFirstCoset,
-            trace_polynomials: PolynomialsCacheStrategy::CacheMonomialsAndFirstCoset,
-            other_polynomials: PolynomialsCacheStrategy::CacheMonomialsAndFirstCoset,
-            commitment: CommitmentCacheStrategy::CacheCosetCaps,
-        };
-        let gpu_proof = gpu_prove_from_external_witness_data_with_cache_strategy::<
-            CompressionTranscriptForWrapper,
-            CompressionTreeHasherForWrapper,
-            CF::ThisLayerPoW,
-            Global,
-        >(
-            &gpu_cfg,
-            witness,
-            proof_cfg.clone(),
-            &local_setup_data.setup,
-            &local_setup_data.vk,
-            (),
-            worker,
-            cache_strategy,
-        )
-        .expect("gpu proof");
-        drop(ctx);
-        let vk = local_setup_data.vk.clone();
-        setup_data.replace(local_setup_data);
-        (gpu_proof.into(), vk)
-    }
-
-    pub fn verify_compression_layer_circuit<CF: ProofCompressionFunction>(
-        _circuit: CompressionLayerCircuit<CF>,
-        proof: &ZkSyncCompressionProof,
-        vk: &ZkSyncCompressionVerificationKey,
-        verifier: Verifier<F, EXT>,
-    ) -> bool {
-        verifier
-            .verify::<CompressionProofsTreeHasher, CompressionProofsTranscript, CF::ThisLayerPoW>(
-                (),
-                vk,
-                proof,
-            )
-    }
-
-    pub fn verify_compression_wrapper_circuit<CF: ProofCompressionFunction>(
-        _circuit: CompressionLayerCircuit<CF>,
-        proof: &ZkSyncCompressionProofForWrapper,
-        vk: &ZkSyncCompressionVerificationKeyForWrapper,
-        verifier: Verifier<F, EXT>,
-    ) -> bool {
-        verifier.verify::<CompressionProofsTreeHasherForWrapper, CompressionTranscriptForWrapper, CF::ThisLayerPoW>(
-            (),
-            vk,
-            proof,
-        )
     }
 
     #[serial]
@@ -1920,12 +1122,12 @@ mod zksync {
 
         let proving_cs = synth_circuit_for_proving(circuit.clone(), &finalization_hint);
 
-        let gpu_setup = GpuSetup::<DefaultTreeHasher, Global>::from_setup_and_hints(
+        let gpu_setup = GpuSetup::<Global>::from_setup_and_hints(
             setup_base.clone(),
             clone_reference_tree(&setup_tree),
             vars_hint.clone(),
             wits_hint.clone(),
-            worker,
+            &worker,
         )
         .expect("gpu setup");
 
@@ -1940,7 +1142,7 @@ mod zksync {
                 Global,
             >(
                 &config,
-                witness,
+                &witness,
                 proof_cfg.clone(),
                 &gpu_setup,
                 &vk,
@@ -1970,7 +1172,7 @@ mod zksync {
         let start = std::time::Instant::now();
         let actual_proof = gpu_proof.into();
         println!("proof transformation takes {:?}", start.elapsed());
-        circuit.verify_proof::<DefaultTranscript, DefaultTreeHasher>((), &vk, &actual_proof);
+        circuit.verify_proof(&vk, &actual_proof);
         compare_proofs(&reference_proof, &actual_proof);
     }
 
@@ -1997,12 +1199,12 @@ mod zksync {
         let config = GpuProofConfig::from_circuit_wrapper(&circuit);
         let gpu_setup = {
             let _ctx = ProverContext::create().expect("gpu prover context");
-            GpuSetup::<DefaultTreeHasher, Global>::from_setup_and_hints(
+            GpuSetup::<Global>::from_setup_and_hints(
                 setup_base.clone(),
                 clone_reference_tree(&setup_tree),
                 vars_hint.clone(),
                 wits_hint.clone(),
-                worker,
+                &worker,
             )
             .expect("gpu setup")
         };
@@ -2097,12 +1299,12 @@ mod zksync {
         let config = GpuProofConfig::from_assembly(&reusable_cs);
         let gpu_setup = {
             let _ctx = ProverContext::create().expect("gpu prover context");
-            GpuSetup::<DefaultTreeHasher, Global>::from_setup_and_hints(
+            GpuSetup::<Global>::from_setup_and_hints(
                 setup_base.clone(),
                 clone_reference_tree(&setup_tree),
                 vars_hint.clone(),
                 wits_hint.clone(),
-                worker,
+                &worker,
             )
             .expect("gpu setup")
         };
@@ -2184,7 +1386,7 @@ mod zksync {
             finalization_hint.as_ref(),
         );
         let config = GpuProofConfig::from_assembly(&reusable_cs);
-        let mut gpu_setup = GpuSetup::<DefaultTreeHasher, Global>::from_setup_and_hints(
+        let mut gpu_setup = GpuSetup::<Global>::from_setup_and_hints(
             setup_base.clone(),
             clone_reference_tree(&setup_tree),
             vars_hint.clone(),
@@ -2244,7 +1446,7 @@ mod zksync {
             // we can't clone assembly lets synth it again
             let mut proving_cs = synth_circuit_for_proving(circuit.clone(), &finalization_hint);
             let _witness_set =
-                proving_cs.take_witness_using_hints(worker, &vars_hint, &witness_hints);
+                proving_cs.take_witness_using_hints(&worker, &vars_hint, &witness_hints);
             proving_cs
                 .prove_from_precomputations::<EXT, DefaultTranscript, DefaultTreeHasher, NoPow>(
                     proof_cfg.clone(),
@@ -2258,7 +1460,7 @@ mod zksync {
                     worker,
                 )
         };
-        circuit.verify_proof::<DefaultTranscript, DefaultTreeHasher>((), &vk, &reference_proof);
+        circuit.verify_proof(&vk, &reference_proof);
     }
 
     #[serial]
@@ -2286,9 +1488,9 @@ mod zksync {
                 );
 
                 let (setup_cs, _finalization_hint) = synth_circuit_for_setup(circuit);
-                let reference_base_setup = setup_cs.create_base_setup(worker, &mut ());
+                let reference_base_setup = setup_cs.create_base_setup(&worker, &mut ());
 
-                let setup_file = fs::File::create(&setup_file_path).unwrap();
+                let setup_file = std::fs::File::create(&setup_file_path).unwrap();
                 reference_base_setup
                     .write_into_buffer(&setup_file)
                     .expect("write gpu setup into file");
@@ -2335,16 +1537,16 @@ mod zksync {
                 );
                 let (variables_hint, wits_hint) = setup_cs.create_copy_hints();
 
-                let gpu_setup = GpuSetup::<DefaultTreeHasher, Global>::from_setup_and_hints(
+                let gpu_setup = GpuSetup::<Global>::from_setup_and_hints(
                     reference_base_setup,
                     reference_setup_tree,
                     variables_hint,
                     wits_hint,
-                    worker,
+                    &worker,
                 )
                 .expect("gpu setup");
 
-                let setup_file = fs::File::create(&setup_file_path).unwrap();
+                let setup_file = std::fs::File::create(&setup_file_path).unwrap();
                 bincode::serialize_into(&setup_file, &gpu_setup).unwrap();
                 println!("Setup written into file {}", setup_file_path);
             }
@@ -2373,7 +1575,7 @@ mod zksync {
                 ))
         };
 
-        let data = fs::read(circuit_file_path).expect("circuit file");
+        let data = std::fs::read(circuit_file_path).expect("circuit file");
         bincode::deserialize(&data).expect("circuit")
     }
 

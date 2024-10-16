@@ -64,16 +64,16 @@ pub fn compute_partial_products(
             variable_cols_chunk,
             sigma_cols_chunk,
             &omega_values,
-            non_residues_chunk,
-            beta,
-            gamma,
+            &non_residues_chunk,
+            &beta,
+            &gamma,
             num_cols_per_product,
             domain_size,
         )?;
         denum.inverse()?;
         num.mul_assign(&denum)?;
 
-        z_poly.mul_assign(num)?;
+        z_poly.mul_assign(&num)?;
     }
     assert!(partial_products_iter.next().is_none());
 
@@ -90,7 +90,6 @@ pub fn compute_partial_products(
 }
 
 // For debugging purposes
-#[allow(clippy::too_many_arguments)]
 #[allow(dead_code)]
 pub fn compute_quotient_for_partial_products_naive<'a, 'b>(
     trace: &TracePolynomials<'a, CosetEvaluations>,
@@ -134,7 +133,7 @@ where
     // partial_product0*g0 - z*f0
     // partial_product1*g1 - partial_product0*f1
     // partial_product2*g2 - partial_product1*f2
-    // ...
+    // ..
     // z_shifted*g_n - partial_product_(n-1)*f_n
     assert_eq!(powers_of_alpha.len(), partial_products.len() + 1);
     assert_eq!(non_residues_by_beta.len(), variable_cols.len(),);
@@ -179,12 +178,12 @@ where
         {
             // numerator w + beta * non_res * x + gamma
             let mut current_num = omega_values.clone();
-            current_num.scale_real(non_residue_by_beta)?;
+            current_num.scale_real(&non_residue_by_beta)?;
             let variable_col = variable_col.clone();
             current_num.add_assign_real(&variable_col)?;
             current_num.add_constant(&gamma)?;
 
-            // denominator w + beta * sigma(x) + gamma
+            // dnumerator w + beta * sigma(x) + gamma
             let mut current_denum = ComplexPoly::<CosetEvaluations>::from_real(sigma_col)?;
             current_denum.scale_real(&beta)?;
             current_denum.add_assign_real(&variable_col)?;
@@ -195,17 +194,16 @@ where
         }
         // lhs * denum - rhs * num
         // division will happen on the final quotient
-        denum.mul_assign(existing_lhs)?;
-        num.mul_assign(existing_rhs)?;
+        denum.mul_assign(&existing_lhs)?;
+        num.mul_assign(&existing_rhs)?;
         denum.sub_assign(&num)?;
-        denum.scale(alpha)?;
+        denum.scale(&alpha)?;
         quotient.add_assign(&denum)?;
     }
 
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn compute_quotient_for_partial_products(
     variable_cols: &[Poly<CosetEvaluations>],
     permutation_cols: &[Poly<CosetEvaluations>],
@@ -226,7 +224,7 @@ pub fn compute_quotient_for_partial_products(
     // partial_product0*g0 - z*f0
     // partial_product1*g1 - partial_product0*f1
     // partial_product2*g2 - partial_product1*f2
-    // ...
+    // ..
     // z_shifted*g_n - partial_product_(n-1)*f_n
     let num_polys = variable_cols.len();
     let domain_size = variable_cols[0].domain_size();

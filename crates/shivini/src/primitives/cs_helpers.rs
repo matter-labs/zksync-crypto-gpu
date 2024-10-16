@@ -6,6 +6,7 @@ use boojum_cuda::{
     extension_field::VectorizedExtensionField,
 };
 use era_cudart::stream::CudaStreamWaitEventFlags;
+use std::mem::size_of;
 
 #[allow(dead_code)]
 pub fn assign_gate_selectors(
@@ -17,8 +18,6 @@ pub fn assign_gate_selectors(
     todo!()
 }
 
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::assertions_on_constants)]
 pub fn constraint_evaluation(
     gates: &[GateEvaluationParams],
     variable_columns: &[F],
@@ -39,11 +38,11 @@ pub fn constraint_evaluation(
     let challenge = unsafe { DeviceSlice::from_slice(&d_challenge[..]) };
     let challenge = unsafe { challenge.transmute::<VectorizedExtensionField>() };
 
-    let variables_slice = unsafe { DeviceSlice::from_slice(variable_columns) };
-    let witnesses_slice = unsafe { DeviceSlice::from_slice(witness_columns) };
-    let constants_slice = unsafe { DeviceSlice::from_slice(constant_columns) };
+    let variables_slice = unsafe { DeviceSlice::from_slice(variable_columns.as_ref()) };
+    let witnesses_slice = unsafe { DeviceSlice::from_slice(witness_columns.as_ref()) };
+    let constants_slice = unsafe { DeviceSlice::from_slice(constant_columns.as_ref()) };
     let quotient_slice = unsafe {
-        DeviceSlice::from_mut_slice(quotient).transmute_mut::<VectorizedExtensionField>()
+        DeviceSlice::from_mut_slice(quotient.as_mut()).transmute_mut::<VectorizedExtensionField>()
     };
     const STREAMS_COUNT: usize = 4;
     assert!(STREAMS_COUNT <= NUM_AUX_STREAMS_AND_EVENTS);
@@ -66,7 +65,7 @@ pub fn constraint_evaluation(
         let mut quotient_matrix = DeviceMatrixMut::new(quotient_slice, domain_size);
         if_not_dry_run! {
             boojum_cuda::gates::evaluate_gates(
-                gates,
+                &gates,
                 &variable_columns_matrix,
                 &witness_columns_matrix,
                 &constant_columns_matrix,
@@ -102,7 +101,7 @@ pub fn constraint_evaluation(
                     DeviceMatrixChunkMut::new(quotient_slice, domain_size, offset, rows);
                 let stream = &streams[i % STREAMS_COUNT];
                 boojum_cuda::gates::evaluate_gates(
-                    gates,
+                    &gates,
                     &variable_columns_matrix,
                     &witness_columns_matrix,
                     &constant_columns_matrix,

@@ -1,6 +1,7 @@
 #pragma once
 
-#include <cuda/std/cstdint>
+#include <cstdint>
+#include <cstdio>
 #include <cuda_runtime.h>
 
 #ifdef __CUDA_ARCH__

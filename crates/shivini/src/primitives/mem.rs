@@ -4,6 +4,7 @@ use era_cudart::execution::{launch_host_fn, HostFn};
 pub use era_cudart::memory::memory_copy_async;
 use era_cudart::stream::CudaStreamWaitEventFlags;
 use std::intrinsics::copy_nonoverlapping;
+use std::mem::size_of;
 use std::ops::DerefMut;
 use std::slice;
 
@@ -15,7 +16,6 @@ pub fn h2d<T>(host: &[T], device: &mut [T]) -> CudaResult<()> {
     }
 }
 
-#[allow(clippy::assertions_on_constants)]
 pub fn h2d_buffered<'a, T: Send + Sync>(
     host: &'a [T],
     device: &'a mut [T],
@@ -26,7 +26,7 @@ pub fn h2d_buffered<'a, T: Send + Sync>(
     assert_eq!(host.len(), device.len());
     assert_ne!(chunk_size, 0);
     if is_dry_run()? {
-        Ok(vec![])
+        return Ok(vec![]);
     } else {
         const STREAMS_COUNT: usize = 2;
         assert!(STREAMS_COUNT <= NUM_AUX_STREAMS_AND_EVENTS);
@@ -87,7 +87,7 @@ pub fn h2d_on_stream<T>(host: &[T], device: &mut [T], stream: &CudaStream) -> Cu
     assert!(!host.is_empty());
     assert_eq!(host.len(), device.len());
     if_not_dry_run! {
-        memory_copy_async(device, host, stream)
+        memory_copy_async(&mut device[..], host, stream)
     }
 }
 
@@ -95,7 +95,7 @@ pub fn d2h<T>(device: &[T], host: &mut [T]) -> CudaResult<()> {
     assert!(!host.is_empty());
     assert_eq!(host.len(), device.len());
     if_not_dry_run! {
-        memory_copy_async(host, device, get_d2h_stream())
+        memory_copy_async(host, &device[..], get_d2h_stream())
     }
 }
 
@@ -103,6 +103,6 @@ pub fn d2d<T>(src: &[T], dst: &mut [T]) -> CudaResult<()> {
     assert!(!src.is_empty());
     assert_eq!(src.len(), dst.len());
     if_not_dry_run! {
-        memory_copy_async(dst, src, get_stream())
+        memory_copy_async(&mut dst[..], &src[..], get_stream())
     }
 }

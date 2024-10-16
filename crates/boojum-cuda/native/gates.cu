@@ -1,4 +1,4 @@
 #include "gates.cuh"
-#include "poseidon2/gl/poseidon2_gl_gates.cuh"
+#include "gates_poseidon.cuh"
 // do not reorder includes
 #include "gate_kernels.cuh"

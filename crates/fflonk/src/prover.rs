@@ -68,7 +68,6 @@ where
             domain_size,
             common_combined_degree,
             stream,
-            worker,
         )?;
     println!("Statement are proven in {} s ", start.elapsed().as_secs());
     let start = std::time::Instant::now();
@@ -107,7 +106,6 @@ pub fn prove_statements<E, C, S, T, CM, A>(
     domain_size: usize,
     common_combined_degree: usize,
     stream: bc_stream,
-    worker: &bellman::worker::Worker,
 ) -> CudaResult<([E::G1Affine; 2], Vec<E::Fr>, Vec<E::Fr>, [E::Fr; 3])>
 where
     E: Engine,
@@ -118,9 +116,8 @@ where
     A: HostAllocator,
 {
     // take witnesses
-    let trace_monomials = unsafe {
-        load_trace_from_precomputations(assembly, worker, domain_size, stream).expect("load trace")
-    };
+    let (trace_monomials, indexes) =
+        load_trace(assembly, &setup.variable_indexes, domain_size, stream)?;
     // load main gate selectors
     let main_gate_selectors_monomial = unsafe {
         load_main_gate_selectors(&setup.main_gate_selector_monomials, domain_size, stream)?
@@ -199,7 +196,7 @@ where
     //     materialize_permutation_polys(&variable_indexes, &non_residues, domain_size, stream)?
     // };
     let permutation_monomials =
-        unsafe { load_permutation_monomials(&setup.permutation_monomials, domain_size, stream)? };
+        materialize_permutation_polys::<_, 3>(&indexes, domain_size, _tmp_mempool(), stream)?;
     // compute product of scalars
     let mut h_non_residues_by_beta = vec![h_beta];
     for mut non_residue in h_non_residues.iter().cloned() {
@@ -608,17 +605,13 @@ pub unsafe fn load_permutation_monomials<F: PrimeField, A: HostAllocator>(
     Ok(permutation_monomials)
 }
 
-pub unsafe fn load_trace_from_precomputations<E: Engine, S: SynthesisMode, A: HostAllocator>(
+pub fn load_trace_from_precomputations<E: Engine, S: SynthesisMode, A: HostAllocator>(
     assembly: &FflonkAssembly<E, S, A>,
     worker: &bellman::worker::Worker,
     domain_size: usize,
     stream: bc_stream,
 ) -> CudaResult<Trace<E::Fr>> {
-    let mut trace_monomial = Trace::allocate_zeroed(domain_size);
-
-    // let (raw_trace_cols, _) = assembly
-    //     .make_state_and_witness_polynomials(worker, true)
-    //     .unwrap();
+    let mut trace_monomial = unsafe { Trace::allocate_zeroed(domain_size) };
     let src_trace_cols = assembly.make_assembled_poly_storage(worker, true).unwrap();
 
     // let h2d_stream = bc_stream::new().unwrap();
@@ -644,54 +637,78 @@ pub unsafe fn load_trace_from_precomputations<E: Engine, S: SynthesisMode, A: Ho
     Ok(trace_monomial)
 }
 
-pub unsafe fn load_witnesses_and_assign_values<F: PrimeField, A: Allocator>(
-    h_input_assignments: &Vec<F>,
-    h_aux_assignments: &Vec<F, A>,
-    h_indexes: &[Vec<u32, A>; 3],
+pub fn load_trace<E: Engine, S: SynthesisMode, A: HostAllocator>(
+    assembly: &FflonkAssembly<E, S, A>,
+    h_index_cols: &[Vec<u32, A>; 3],
     domain_size: usize,
     stream: bc_stream,
-) -> CudaResult<(Trace<F>, DVec<u32>)> {
-    let mut trace_monomial = Trace::allocate_zeroed(domain_size);
-    // same indexes will be used in materializing permutation polys and it requires
-    // it to be same length with trace
-    let mut indexes = DVec::allocate_zeroed(3 * domain_size);
-    // transfer flattened witness values
-    let num_aux_variables = h_aux_assignments.len();
-    // assignments should have dummy value as first element
-    let total_num_variables = num_aux_variables + h_input_assignments.len() + 1;
+) -> CudaResult<(Trace<E::Fr>, DVec<u32, PoolAllocator>)> {
+    assert!(S::PRODUCE_WITNESS);
+    let h_input_assignments = &assembly.input_assingments;
+    let h_aux_assignments = &assembly.aux_assingments;
+    let num_input_gates = assembly.num_input_gates;
+    assert_eq!(num_input_gates, h_input_assignments.len());
+    let num_aux_gates = assembly.num_aux_gates;
+    let raw_trace_len = num_input_gates + num_aux_gates;
+    let total_num_variables = h_input_assignments.len() + h_aux_assignments.len();
     let mut full_assignments =
-        DVec::allocate_zeroed_on(total_num_variables, _tmp_mempool(), stream);
-    let (aux_assignments, input_assignments) =
-        full_assignments[1..].split_at_mut(num_aux_variables);
-    mem::h2d_on(&h_aux_assignments, aux_assignments, stream)?;
-    // place input assignments right after aux assignments
+        DVec::allocate_zeroed_on(1 + total_num_variables, _tmp_mempool(), stream);
+    let (input_assignments, aux_assignments) = full_assignments[1..].split_at_mut(num_input_gates);
     mem::h2d_on(&h_input_assignments, input_assignments, stream)?;
-    // The setup already merges variables of both public input gates and main gate variables
-    // assign values column by column and benefit from overlapping
-    for ((h_index_col, index_col), trace_col) in h_indexes
+    mem::h2d_on(&h_aux_assignments, aux_assignments, stream)?;
+
+    let mut trace = unsafe { MultiMonomialStorage::allocate_zeroed(domain_size) };
+    let num_cols = trace.num_polys();
+    assert_eq!(num_cols, 3);
+    assert_eq!(h_index_cols.len(), 3);
+    let mut indexes = DVec::allocate_zeroed_on(num_cols * domain_size, _tmp_mempool(), stream);
+
+    let substream = bc_stream::new().unwrap();
+    for ((h_index_col, index_col), trace_col) in h_index_cols
         .iter()
         .zip(indexes.chunks_mut(domain_size))
-        .zip(trace_monomial.iter_mut())
+        .zip(trace.iter_mut())
     {
-        // load indexes first
+        assert_eq!(index_col.len(), domain_size);
+        assert_eq!(h_index_col.len(), raw_trace_len);
+        let (_, h_aux_rows) = h_index_col.split_at(num_input_gates);
+        let (_, index_col) = index_col.split_at_mut(num_input_gates);
+        let (aux_rows, _) = index_col.split_at_mut(num_aux_gates);
+        let (_, trace_col) = trace_col.as_mut().split_at_mut(num_input_gates);
+        let (trace_col, _) = trace_col.split_at_mut(num_aux_gates);
+        assert_eq!(h_aux_rows.len(), num_aux_gates);
+        assert_eq!(aux_rows.len(), num_aux_gates);
+        assert_eq!(trace_col.len(), num_aux_gates);
         let event = bc_event::new().unwrap();
-        let num_rows = h_index_col.len();
-        assert!(h_index_col.len() <= index_col.len());
-        mem::h2d_on(h_index_col, &mut index_col[..num_rows], stream)?;
+        mem::h2d_on(h_aux_rows, aux_rows, substream).unwrap();
+        event.record(substream).unwrap();
         event.sync().unwrap();
-        stream.wait(event).unwrap();
         variable_assignment_for_single_col(
             &full_assignments,
-            index_col,
-            trace_col.as_mut(),
-            num_rows,
+            aux_rows,
+            trace_col,
+            num_aux_gates,
             stream,
         )?;
-        // convert column into monomial basis
-        ntt::inplace_ifft_on(trace_col.as_mut(), stream).expect("inplace ifft");
+    }
+    // set public inputs manually to stay consistent with reference impl
+    let mut trace_cols_iter = trace.iter_mut();
+    let first_trace_col = trace_cols_iter.next().unwrap();
+    mem::h2d_on(
+        &h_input_assignments,
+        &mut first_trace_col.as_mut()[..num_input_gates],
+        stream,
+    )?;
+
+    for col in trace_cols_iter {
+        mem::set_zero(&mut col.as_mut()[0..1], stream)?;
     }
 
-    Ok((trace_monomial, indexes))
+    for col in trace.iter_mut() {
+        ntt::inplace_fft_on(col.as_mut(), stream)?;
+    }
+
+    Ok((trace, indexes))
 }
 
 pub fn variable_assignment_for_single_col<F: PrimeField>(
@@ -758,6 +775,13 @@ pub fn materialize_permutation_polys<F: PrimeField + SqrtField, const N: usize>(
         if result != 0 {
             return Err(CudaError::MaterializePermutationsError(result.to_string()));
         }
+    }
+
+    // place coressponding elements for the public input rows
+    for (col, h_non_residue) in permutations_monomial.iter_mut().zip(h_non_residues.iter()) {
+        let (first_row, _) = col.as_mut().split_at_mut(1);
+        let non_residue = DScalar::from_host_value_on(h_non_residue, stream)?;
+        mem::set_value(first_row, &non_residue, stream)?;
     }
 
     Ok(permutations_monomial)

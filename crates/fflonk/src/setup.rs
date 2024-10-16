@@ -22,9 +22,8 @@ pub type FflonkSnarkVerifierCircuitDeviceSetup =
 pub struct FflonkDeviceSetup<E: Engine, C: Circuit<E>, A: HostAllocator = GlobalHost> {
     // We could use bit representation but elems in lagrange basis are also fine
     pub main_gate_selector_monomials: [Vec<E::Fr, A>; 5],
-    pub permutation_monomials: [Vec<E::Fr, A>; 3],
     // Transform 64-bit variable indexes into 32-bits
-    // pub variable_indexes: [Vec<u32, A>; 3],
+    pub variable_indexes: [Vec<u32, A>; 3],
     pub c0_commitment: E::G1Affine,
     pub g2_elems: [E::G2Affine; 2],
     _c: std::marker::PhantomData<C>,
@@ -50,15 +49,15 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
 
         let num_polys = reader.read_u64::<BigEndian>()?;
         assert_eq!(num_polys, 3);
-        let mut permutation_monomials = vec![];
+        let mut variable_indexes = vec![];
         for _ in 0..num_polys {
             let num_values = reader.read_u64::<BigEndian>()?;
             let mut coeffs = Vec::with_capacity_in(num_values as usize, A::default());
             for _ in 0..num_values {
-                let el = read_fr(&mut reader)?;
+                let el = reader.read_u32::<BigEndian>()?;
                 coeffs.push(el);
             }
-            permutation_monomials.push(coeffs);
+            variable_indexes.push(coeffs);
         }
 
         let c0_commitment = read_curve_affine(&mut reader)?;
@@ -67,7 +66,7 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
 
         Ok(Self {
             main_gate_selector_monomials: main_gate_selector_monomials.try_into().unwrap(),
-            permutation_monomials: permutation_monomials.try_into().unwrap(),
+            variable_indexes: variable_indexes.try_into().unwrap(),
             c0_commitment,
             g2_elems: [g2_first, g2_second],
             _c: std::marker::PhantomData,
@@ -80,9 +79,12 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
         for mon in self.main_gate_selector_monomials.iter() {
             write_fr_vec(&mon, &mut writer)?;
         }
-        writer.write_u64::<BigEndian>(self.permutation_monomials.len() as u64)?;
-        for mon in self.permutation_monomials.iter() {
-            write_fr_vec(&mon, &mut writer)?;
+        writer.write_u64::<BigEndian>(self.variable_indexes.len() as u64)?;
+        for col in self.variable_indexes.iter() {
+            writer.write_u64::<BigEndian>(col.len() as u64)?;
+            for el in col {
+                writer.write_u32::<BigEndian>(*el)?;
+            }
         }
         write_curve_affine(&self.c0_commitment, &mut writer)?;
         write_curve_affine(&self.g2_elems[0], &mut writer)?;
@@ -101,7 +103,7 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
 
         // We want to keep only raw(unpadded) trace column indexes as
         // permutation polynomials will be constructed during proof generation
-
+        let raw_trace_len = setup_assembly.n();
         setup_assembly.finalize();
 
         let setup: Setup<E, C> = setup_assembly.create_setup(worker).unwrap();
@@ -128,17 +130,12 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
             new.extend(col.into_coeffs());
             main_gate_selectors.push(new);
         }
-        let mut permutations = vec![];
-        for col in setup.permutation_monomials.into_iter() {
-            let mut new = Vec::with_capacity_in(col.size(), A::default());
-            new.extend(col.into_coeffs());
-            permutations.push(new);
-        }
+        let variable_indexes = transform_variables(&setup_assembly, worker, raw_trace_len);
 
         let g2_elems = [mon_crs.g2_monomial_bases[0], mon_crs.g2_monomial_bases[1]];
         Self {
             main_gate_selector_monomials: main_gate_selectors.try_into().unwrap(),
-            permutation_monomials: permutations.try_into().unwrap(),
+            variable_indexes: variable_indexes.try_into().unwrap(),
             c0_commitment,
             g2_elems,
             _c: std::marker::PhantomData,
@@ -155,11 +152,12 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
             .expect("synthesize circuit");
         assert!(setup_assembly.num_inputs >= 1);
         assert!(setup_assembly.inputs_storage.setup_map.len() >= 1);
+        let raw_trace_len = setup_assembly.n();
         setup_assembly.finalize();
         let domain_size = setup_assembly.n() + 1;
         assert!(domain_size.is_power_of_two());
 
-        Self::create_setup_from_assembly_on_device(&setup_assembly, worker)
+        Self::create_setup_from_assembly_on_device(&setup_assembly, raw_trace_len, worker)
     }
 
     pub fn get_verification_key(&self) -> FflonkVerificationKey<E, C> {
@@ -181,13 +179,14 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
 
     pub fn create_setup_from_assembly_on_device<S: SynthesisMode>(
         assembly: &FflonkAssembly<E, S, A>,
+        raw_trace_len: usize,
         worker: &Worker,
     ) -> CudaResult<FflonkDeviceSetup<E, C, A>> {
         assert!(assembly.is_finalized);
         assert!(S::PRODUCE_SETUP, "Assembly should hold setup values");
-
         let domain_size = assembly.n() + 1;
         assert!(domain_size.is_power_of_two());
+        assert_eq!(domain_size, (raw_trace_len + 1).next_power_of_two());
         let mut setup_polys = assembly.make_setup_polynomials(false).unwrap();
         let mut main_gate_selectors = vec![];
         for col in GateInternal::<E>::setup_polynomials(&assembly.main_gate) {
@@ -219,19 +218,18 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
             let monomial = values.ifft_on(stream)?;
             selector_monomials.push(monomial);
         }
-        println!("Reading permutation values from Assembly");
-        let mut permutation_monomials = vec![];
-        for col in permutation_polys {
-            assert_eq!(col.size(), domain_size);
-            let event = bc_event::new().unwrap();
-            let mut buf = DVec::allocate_zeroed(domain_size);
-            mem::h2d_on(col.as_ref(), &mut buf, substream)?;
-            let values = Poly::from_buffer(buf);
-            event.sync().unwrap();
-            let monomial = values.ifft_on(stream)?;
-            permutation_monomials.push(monomial);
+        println!("Transforming indexes into u32 values");
+        let pool = bc_mem_pool::new(DEFAULT_DEVICE_ID).unwrap();
+        let h_transformed_indexes = transform_variables(&assembly, worker, raw_trace_len);
+        let mut indexes = DVec::allocate_zeroed_on(3 * raw_trace_len, pool, stream);
+        for (src, dst) in h_transformed_indexes
+            .iter()
+            .zip(indexes.chunks_mut(raw_trace_len))
+        {
+            mem::h2d_on(&src, dst, stream)?;
         }
-
+        let permutation_monomials =
+            materialize_permutation_polys::<_, 3>(&indexes, domain_size, pool, stream)?;
         println!("Computing combined monomial on the device");
         let mut combined_monomial = Poly::zero(9 * domain_size);
         combine_monomials(
@@ -256,22 +254,12 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
             mem::d2h_on(col.as_ref(), &mut h_monomial, stream).unwrap();
             main_gate_selectors.push(h_monomial);
         }
-        println!("Moving permutation monomials back to the Host");
-        let mut permutations = vec![];
-        for col in permutation_monomials {
-            let mut h_monomial = Vec::with_capacity_in(domain_size, A::default());
-            unsafe {
-                h_monomial.set_len(domain_size);
-            }
-            mem::d2h_on(col.as_ref(), &mut h_monomial, stream).unwrap();
-            permutations.push(h_monomial);
-        }
         stream.sync().unwrap();
         println!("Reading G2 elems from CRS file");
         let g2_elems = get_g2_elems_from_compact_crs::<E>();
         Ok(FflonkDeviceSetup {
             main_gate_selector_monomials: main_gate_selectors.try_into().unwrap(),
-            permutation_monomials: permutations.try_into().unwrap(),
+            variable_indexes: h_transformed_indexes,
             c0_commitment,
             g2_elems,
             _c: std::marker::PhantomData,
@@ -279,7 +267,31 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
     }
 }
 
-pub(crate) fn _transform_variables(
+pub(crate) fn transform_variables<E: Engine, S: SynthesisMode, A: HostAllocator, const N: usize>(
+    assembly: &FflonkAssembly<E, S, A>,
+    worker: &Worker,
+    raw_trace_len: usize,
+) -> [Vec<u32, A>; N] {
+    assert!(assembly.is_finalized);
+    let num_input_variables = assembly.num_inputs;
+    let mut h_transformed_variables =
+        std::array::from_fn(|_| Vec::with_capacity_in(raw_trace_len, A::default()));
+
+    for (idx, h_variables) in h_transformed_variables.iter_mut().enumerate() {
+        h_variables.resize(raw_trace_len, 0);
+        let poly_idx =
+            bellman::plonk::better_better_cs::cs::PolyIdentifier::VariablesPolynomial(idx);
+        let inputs_storage = assembly.inputs_storage.state_map.get(&poly_idx).unwrap();
+        let (input_rows, aux_rows) = h_variables.split_at_mut(num_input_variables);
+        transform_variables_col(&inputs_storage, input_rows, num_input_variables, &worker);
+        let aux_storage = assembly.aux_storage.state_map.get(&poly_idx).unwrap();
+        transform_variables_col(&aux_storage, aux_rows, num_input_variables, &worker);
+    }
+
+    h_transformed_variables
+}
+
+pub(crate) fn transform_variables_col(
     variables: &[Variable],
     result: &mut [u32],
     num_input_variables: usize,
@@ -294,13 +306,11 @@ pub(crate) fn _transform_variables(
             scope.spawn(move |_| {
                 for (a, b) in src.iter().zip(dst.iter_mut()) {
                     *b = match a.get_unchecked() {
-                        Index::Input(0) => unreachable!(),
                         Index::Aux(0) => 0,
-                        // Index::Input(idx) => (num_aux_variables + idx) as u32,
-                        // Index::Aux(idx) => idx as u32,
-                        Index::Input(idx) => idx as u32,
-                        // Shift aux variables by num_inputs
-                        Index::Aux(idx) => (num_input_variables + idx) as u32,
+                        Index::Aux(aux_idx) => (num_input_variables + aux_idx) as u32,
+                        Index::Input(0) => unreachable!(),
+                        Index::Input(input_idx) => input_idx as u32,
+                        _ => unreachable!(),
                     };
                 }
             });

@@ -28,6 +28,7 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_single_shot(
     let mut assembly = FflonkAssembly::<Bn256, SynthesisModeTesting, GlobalHost>::new();
     circuit.synthesize(&mut assembly).expect("must work");
     assert!(assembly.is_satisfied());
+    let raw_trace_len = assembly.n();
     assembly.finalize();
     let domain_size = assembly.n() + 1;
     assert!(domain_size.is_power_of_two());
@@ -38,7 +39,7 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_single_shot(
 
     let setup =
         FflonkDeviceSetup::<_, FflonkSnarkVerifierCircuit, GlobalHost>::create_setup_from_assembly_on_device(
-            &assembly, &worker,
+            &assembly, raw_trace_len, &worker,
         )
         .unwrap();
     let vk = setup.get_verification_key();

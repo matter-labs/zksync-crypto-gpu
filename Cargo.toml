@@ -29,7 +29,7 @@ shivini = { version = "=0.150.9", path = "crates/shivini" }
 wrapper-prover = { version = "=0.150.9", path = "crates/wrapper-prover", package = "zksync-wrapper-prover" }
 
 # These dependencies should be shared by all the crates.
-circuit_definitions = { git = "https://github.com/matter-labs/zksync-protocol.git", package = "circuit_definitions" }
-zkevm_test_harness = { git = "https://github.com/matter-labs/zksync-protocol.git", package = "zkevm_test_harness" }
+circuit_definitions = "=0.150.6"
+zkevm_test_harness = "=0.150.6"
 boojum = "=0.30.1"
 franklin-crypto = "=0.30.1"

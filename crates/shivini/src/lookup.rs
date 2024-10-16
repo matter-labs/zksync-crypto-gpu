@@ -6,7 +6,6 @@ use crate::primitives::arith::{
 
 use super::*;
 
-#[allow(clippy::too_many_arguments)]
 pub fn compute_lookup_argument_over_specialized_cols(
     trace: &TracePolynomials<LagrangeBasis>,
     setup: &SetupPolynomials<LagrangeBasis>,
@@ -36,7 +35,7 @@ pub fn compute_lookup_argument_over_specialized_cols(
         ..
     } = storage.as_polynomials_mut();
 
-    assert!(!variable_cols.is_empty());
+    assert!(variable_cols.len() > 0);
 
     // added up multiplicities
     assert_eq!(multiplicity_cols.len(), 1);
@@ -55,7 +54,7 @@ pub fn compute_lookup_argument_over_specialized_cols(
             num_repetitions,
             share_table_id,
         } => {
-            assert!(!share_table_id);
+            assert!(share_table_id == false);
             (
                 false,
                 false,
@@ -94,9 +93,9 @@ pub fn compute_lookup_argument_over_specialized_cols(
     assert_eq!(table_cols.len(), powers_of_gamma.len());
     let mut aggregated_table_values = ComplexPoly::<LagrangeBasis>::empty(domain_size)?;
     lookup_aggregated_table_values(
-        table_cols,
-        beta,
-        powers_of_gamma,
+        &table_cols,
+        &beta,
+        &powers_of_gamma,
         &mut aggregated_table_values,
         num_variable_columns_per_subargument,
         domain_size,
@@ -105,23 +104,20 @@ pub fn compute_lookup_argument_over_specialized_cols(
     aggregated_table_values.inverse()?;
     let aggregated_table_values_inv = aggregated_table_values;
 
-    assert_eq!(table_id_column_idxes.len(), 1);
+    assert!(table_id_column_idxes.len() == 1);
     assert!(use_constant_for_table_id);
-    let table_id_col_idx = table_id_column_idxes
-        .first()
-        .copied()
-        .expect("should exist");
+    let table_id_col_idx = table_id_column_idxes.get(0).copied().expect("should exist");
     let table_id_col = &constant_cols[table_id_col_idx];
 
     lookup_subargs(
-        variable_cols_for_lookup,
+        &variable_cols_for_lookup,
         &mut subargs_a,
         &mut subargs_b,
-        beta,
-        powers_of_gamma,
-        table_id_col,
+        &beta,
+        &powers_of_gamma,
+        &table_id_col,
         &aggregated_table_values_inv,
-        multiplicity_cols,
+        &multiplicity_cols,
         num_variable_columns_per_subargument,
         variable_cols_for_lookup.len(),
         domain_size,
@@ -163,7 +159,6 @@ pub fn compute_lookup_argument_over_specialized_cols(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 #[allow(dead_code)]
 pub fn compute_lookup_argument_over_general_purpose_cols(
     _trace: &TracePolynomials<LagrangeBasis>,
@@ -266,7 +261,6 @@ pub fn compute_lookup_argument_over_general_purpose_cols(
     unimplemented!()
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn compute_quotient_for_lookup_over_specialized_cols(
     variable_cols: &[Poly<CosetEvaluations>],
     multiplicity_cols: &[Poly<CosetEvaluations>],
@@ -289,7 +283,7 @@ pub fn compute_quotient_for_lookup_over_specialized_cols(
             num_repetitions,
             share_table_id,
         } => {
-            assert!(!share_table_id);
+            assert!(share_table_id == false);
             num_repetitions
         }
         LookupParameters::UseSpecializedColumnsWithTableIdAsConstant {
@@ -325,27 +319,29 @@ pub fn compute_quotient_for_lookup_over_specialized_cols(
     let variable_cols_for_specialized = &variable_cols[variables_offset
         ..(variables_offset + num_column_elements_per_subargument * num_subarguments)];
 
-    assert_eq!(table_ids_column_idxes.len(), 1);
+    assert!(table_ids_column_idxes.len() == 1);
     let table_id_col_idx = table_ids_column_idxes
-        .first()
+        .get(0)
         .copied()
         .expect("should exist");
     let table_id_col = &constant_cols[table_id_col_idx];
 
     let powers_of_gamma_ref = powers_of_gamma.as_ref().expect("must exist");
     lookup_quotient_ensure_a_and_b_are_well_formed(
-        variable_cols_for_specialized,
-        table_cols,
-        lookup_a_polys,
-        lookup_b_polys,
-        beta,
+        &variable_cols_for_specialized,
+        &table_cols,
+        &lookup_a_polys,
+        &lookup_b_polys,
+        &beta,
         powers_of_gamma_ref,
         powers_of_alpha_ref,
-        table_id_col,
-        multiplicity_cols,
+        &table_id_col,
+        &multiplicity_cols,
         quotient,
         num_column_elements_per_subargument,
         variable_cols_for_specialized.len(),
         domain_size,
-    )
+    )?;
+
+    Ok(())
 }

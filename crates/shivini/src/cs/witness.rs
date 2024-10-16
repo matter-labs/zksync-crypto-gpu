@@ -15,8 +15,8 @@ pub fn variable_assignment(
     assert_eq!(d_variable_indexes.len(), d_result.len());
     let (d_variable_indexes_ref, d_variable_values_ref, d_result) = unsafe {
         (
-            DeviceSlice::from_slice(d_variable_indexes),
-            DeviceSlice::from_slice(d_variable_values),
+            DeviceSlice::from_slice(&d_variable_indexes),
+            DeviceSlice::from_slice(&d_variable_values),
             DeviceSlice::from_mut_slice(d_result),
         )
     };

@@ -11,8 +11,8 @@ name = "zksync-gpu-prover"
 description = "ZKsync GPU prover utilities"
 
 [dependencies]
-franklin-crypto = { workspace = true, optional = true }
 gpu-ffi.workspace = true
+franklin-crypto = { workspace = true, optional = true }
 
 crossbeam = "0.8"
 rand = "0.4"

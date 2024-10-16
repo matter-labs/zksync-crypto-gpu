@@ -42,6 +42,7 @@ impl StaticHostAllocator {
         self.memory.as_ptr()
     }
 
+    #[allow(dead_code)]
     pub fn block_size_in_bytes(&self) -> usize {
         self.block_size_in_bytes
     }
@@ -50,11 +51,13 @@ impl StaticHostAllocator {
         assert_ne!(num_blocks, 0);
         assert!(block_size.is_power_of_two());
         let memory_size = num_blocks * block_size;
-        let memory_size_in_bytes = memory_size * size_of::<F>();
-        let block_size_in_bytes = block_size * size_of::<F>();
+        let memory_size_in_bytes = memory_size * std::mem::size_of::<F>();
+        let block_size_in_bytes = block_size * std::mem::size_of::<F>();
 
-        let memory = HostAllocation::alloc(memory_size_in_bytes, CudaHostAllocFlags::DEFAULT)
-            .unwrap_or_else(|_| panic!("failed to allocate {memory_size_in_bytes} bytes"));
+        let memory =
+            HostAllocation::alloc(memory_size_in_bytes, CudaHostAllocFlags::DEFAULT).expect(
+                &format!("failed to allocate {} bytes", memory_size_in_bytes),
+            );
 
         println!("allocated {memory_size_in_bytes} bytes on host");
 
@@ -103,7 +106,7 @@ impl StaticHostAllocator {
                     busy_block_idx = start + idx;
                 }
             }
-            if !has_busy_block {
+            if has_busy_block == false {
                 for entry in self.bitmap[start..end].iter() {
                     entry.store(true, Ordering::SeqCst);
                 }
@@ -127,6 +130,7 @@ impl StaticHostAllocator {
             .is_ok();
     }
 
+    #[allow(dead_code)]
     pub fn free(self) -> CudaResult<()> {
         println!("freeing static host allocation");
         assert_eq!(Arc::weak_count(&self.memory), 0);
@@ -205,10 +209,12 @@ impl SmallStaticHostAllocator {
         Ok(Self { inner })
     }
 
+    #[allow(dead_code)]
     pub fn free(self) -> CudaResult<()> {
         self.inner.free()
     }
 
+    #[allow(dead_code)]
     pub fn block_size_in_bytes(&self) -> usize {
         self.inner.block_size_in_bytes
     }

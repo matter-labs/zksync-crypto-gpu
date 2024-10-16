@@ -2,7 +2,6 @@ use crate::extension_field::{ExtensionField, VectorizedExtensionField};
 use crate::BaseField;
 use era_cudart::memory::DeviceAllocation;
 use era_cudart::slice::{DeviceSlice, DeviceVariable};
-use snark_wrapper::franklin_crypto::bellman::bn256::Fr;
 
 pub trait DeviceRepr: Sized {
     type Type: Sized;
@@ -18,10 +17,6 @@ impl DeviceRepr for u64 {
 
 impl DeviceRepr for BaseField {
     type Type = Self;
-}
-
-impl DeviceRepr for Fr {
-    type Type = [u64; 4];
 }
 
 impl DeviceRepr for ExtensionField {

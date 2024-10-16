@@ -1,24 +1,10 @@
 use super::*;
 
-pub trait DigestType: 'static + Copy + Clone + PartialEq + Eq + Default + Debug {}
+type P = boojum_cuda::poseidon::Poseidon2;
 
-impl<T: 'static + Copy + Clone + Eq + Default + Debug> DigestType for T {}
-
-pub trait GpuTreeHasher:
-    boojum_cuda::poseidon2::GpuTreeHasher<
-    DigestElements: DigestType,
-    DigestElementType: DigestType,
-    Output: DigestType + Serialize + for<'a> Deserialize<'a>,
->
-{
-}
-
-impl GpuTreeHasher for GLHasher {}
-impl GpuTreeHasher for BNHasher {}
-
-pub fn build_tree<H: GpuTreeHasher>(
+pub fn build_tree(
     leaf_sources: &[F],
-    result: &mut [H::DigestElementType],
+    result: &mut [F],
     source_len: usize,
     cap_size: usize,
     num_elems_per_leaf: usize,
@@ -30,12 +16,12 @@ pub fn build_tree<H: GpuTreeHasher>(
     let num_layers = depth - log_cap + 1;
     let (leaf_sources, result) = unsafe {
         (
-            DeviceSlice::from_slice(leaf_sources),
+            DeviceSlice::from_slice(&leaf_sources[..]),
             DeviceSlice::from_mut_slice(result),
         )
     };
     if_not_dry_run! {
-        H::build_merkle_tree(
+        boojum_cuda::poseidon::build_merkle_tree::<P>(
             leaf_sources,
             result,
             num_elems_per_leaf.trailing_zeros(),
@@ -46,9 +32,12 @@ pub fn build_tree<H: GpuTreeHasher>(
 }
 
 #[allow(dead_code)]
-pub fn build_leaves_from_chunk<H: GpuTreeHasher>(
+pub(crate) const POSEIDON_RATE: usize = 8;
+
+#[allow(dead_code)]
+pub fn build_leaves_from_chunk(
     leaf_sources: &[F],
-    result: &mut [H::DigestElementType],
+    result: &mut [F],
     _domain_size: usize,
     load_intermediate: bool,
     store_intermediate: bool,
@@ -60,7 +49,7 @@ pub fn build_leaves_from_chunk<H: GpuTreeHasher>(
         )
     };
     if_not_dry_run! {
-        H::build_merkle_tree_leaves(
+        boojum_cuda::poseidon::build_merkle_tree_leaves::<P>(
             d_values,
             d_result,
             0,
@@ -72,9 +61,9 @@ pub fn build_leaves_from_chunk<H: GpuTreeHasher>(
 }
 
 #[allow(dead_code)]
-pub fn build_tree_nodes<H: GpuTreeHasher>(
-    leaf_hashes: &[H::DigestElementType],
-    result: &mut [H::DigestElementType],
+pub fn build_tree_nodes(
+    leaf_hashes: &[F],
+    result: &mut [F],
     domain_size: usize,
     cap_size: usize,
 ) -> CudaResult<()> {
@@ -86,12 +75,12 @@ pub fn build_tree_nodes<H: GpuTreeHasher>(
     let num_layers = depth - log_cap + 1;
     let (leaf_sources, result) = unsafe {
         (
-            DeviceSlice::from_slice(leaf_hashes),
+            DeviceSlice::from_slice(&leaf_hashes[..]),
             DeviceSlice::from_mut_slice(result),
         )
     };
     if_not_dry_run! {
-        H::build_merkle_tree_nodes(
+        boojum_cuda::poseidon::build_merkle_tree_nodes::<P>(
             leaf_sources,
             result,
             num_layers,

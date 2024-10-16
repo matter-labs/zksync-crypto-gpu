@@ -56,7 +56,7 @@ pub fn calculate_tmp_buffer_size_for_grand_product(buffer_size: usize) -> CudaRe
         }
         num_blocks * block_size_in_bytes
     };
-    let tmp_size_in_field_elements = tmp_size / size_of::<F>();
+    let tmp_size_in_field_elements = tmp_size / std::mem::size_of::<F>();
 
     Ok(tmp_size_in_field_elements)
 }
@@ -81,7 +81,7 @@ pub fn calculate_tmp_buffer_size_for_grand_sum(domain_size: usize) -> CudaResult
         }
         num_blocks * block_size_in_bytes
     };
-    let tmp_size_in_field_elements = tmp_size / size_of::<F>();
+    let tmp_size_in_field_elements = tmp_size / std::mem::size_of::<F>();
 
     Ok(tmp_size_in_field_elements)
 }
@@ -99,7 +99,7 @@ pub fn set_value(buffer: &mut [F], value: &DF) -> CudaResult<()> {
 // value is a device value
 #[allow(dead_code)]
 pub fn set_value_generic<T: SetByRef>(buffer: &mut [T], value: &T) -> CudaResult<()> {
-    assert!(!buffer.is_empty());
+    assert_eq!(buffer.is_empty(), false);
     let (buffer, value) = unsafe {
         let h_var = DeviceVariable::from_ref(value);
         (DeviceSlice::from_mut_slice(buffer), h_var)
@@ -114,7 +114,7 @@ pub fn set_by_value<T: SetByVal>(
     value: T,
     stream: &CudaStream,
 ) -> CudaResult<()> {
-    assert!(!buffer.is_empty());
+    assert_eq!(buffer.is_empty(), false);
     let buffer = unsafe { DeviceSlice::from_mut_slice(buffer) };
     if_not_dry_run! {
         set_by_val(value, buffer, stream)

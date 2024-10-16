@@ -1,7 +1,6 @@
 use crate::device_structures::{
     DeviceMatrixChunkImpl, DeviceMatrixChunkMutImpl, DeviceMatrixImpl, DeviceMatrixMutImpl,
-    DeviceRepr, DeviceVectorChunkImpl, DeviceVectorChunkMutImpl, DeviceVectorImpl,
-    DeviceVectorMutImpl, MutPtrAndStride, PtrAndStride,
+    DeviceRepr, DeviceVectorImpl, DeviceVectorMutImpl, MutPtrAndStride, PtrAndStride,
 };
 use crate::extension_field::{ExtensionField, VectorizedExtensionField};
 use crate::ops_cub::device_radix_sort::{get_sort_pairs_temp_storage_bytes, sort_pairs};
@@ -18,7 +17,6 @@ use era_cudart::stream::CudaStream;
 use era_cudart::{
     cuda_kernel, cuda_kernel_declaration, cuda_kernel_signature_arguments_and_function,
 };
-use std::fmt::Debug;
 use std::mem;
 
 type BF = BaseField;
@@ -677,7 +675,6 @@ cuda_kernel!(
     fold_kernel(
         coset_inverse: BF,
         challenge: *const <ExtensionField as DeviceRepr>::Type,
-        root_offset: u32,
         src: PtrAndStride<<EF as DeviceRepr>::Type>,
         dst: MutPtrAndStride<<EF as DeviceRepr>::Type>,
         count: u32,
@@ -687,28 +684,25 @@ cuda_kernel!(
 pub fn fold<S, D>(
     coset_inverse: BF,
     challenge: &DeviceVariable<ExtensionField>,
-    root_offset: usize,
     src: &S,
     dst: &mut D,
     stream: &CudaStream,
 ) -> CudaResult<()>
 where
-    S: DeviceVectorChunkImpl<EF> + Debug + ?Sized,
-    D: DeviceVectorChunkMutImpl<EF> + Debug + ?Sized,
+    S: DeviceVectorImpl<EF> + ?Sized,
+    D: DeviceVectorMutImpl<EF> + ?Sized,
 {
-    assert!(root_offset < 1 << 32);
-    let root_offset = root_offset as u32;
-    assert!(src.rows().is_power_of_two());
-    assert!(dst.rows().is_power_of_two());
-    let log_count = dst.rows().trailing_zeros();
-    assert_eq!(src.rows().trailing_zeros(), log_count + 1);
+    assert!(src.slice().len().is_power_of_two());
+    assert!(dst.slice().len().is_power_of_two());
+    let log_count = dst.slice().len().ilog2();
+    assert_eq!(src.slice().len().ilog2(), log_count + 1);
     assert!(log_count < 32);
     let (grid_dim, block_dim) = get_launch_dims(1 << log_count);
     let challenge = challenge.as_ptr() as *const <ExtensionField as DeviceRepr>::Type;
     let src = src.as_ptr_and_stride();
     let dst = dst.as_mut_ptr_and_stride();
     let config = CudaLaunchConfig::basic(grid_dim, block_dim, stream);
-    let args = FoldArguments::new(coset_inverse, challenge, root_offset, src, dst, log_count);
+    let args = FoldArguments::new(coset_inverse, challenge, src, dst, log_count);
     FoldFunction::default().launch(&config, &args)
 }
 
@@ -1337,9 +1331,7 @@ pub fn deep_quotient_public_input(
 mod tests {
     use super::*;
     use crate::context::{Context, OMEGA_LOG_ORDER};
-    use crate::device_structures::{
-        DeviceMatrix, DeviceMatrixMut, DeviceVectorChunk, DeviceVectorChunkMut,
-    };
+    use crate::device_structures::{DeviceMatrix, DeviceMatrixMut};
     use crate::extension_field::test_helpers::{transmute_gf_vec, ExtensionFieldTest};
     use crate::extension_field::{convert, ExtensionField};
     use crate::ops_cub::device_run_length_encode::{encode, get_encode_temp_storage_bytes};
@@ -2017,22 +2009,16 @@ mod tests {
         let mut d_challenge = DeviceAllocation::alloc(1).unwrap();
         let mut d_src_ef = DeviceAllocation::alloc(N * 2).unwrap();
         let mut d_src_vf = DeviceAllocation::alloc(N * 2).unwrap();
-        let mut d_dst_vf = DeviceAllocation::<VectorizedExtensionField>::alloc(N).unwrap();
+        let mut d_dst_vf = DeviceAllocation::alloc(N).unwrap();
         let mut d_dst_ef = DeviceAllocation::alloc(N).unwrap();
         memory_copy_async(&mut d_challenge, &[h_challenge], &stream).unwrap();
         memory_copy_async(&mut d_src_ef, &h_src, &stream).unwrap();
         convert(&d_src_ef, &mut d_src_vf, &stream).unwrap();
-        let src = DeviceVectorChunk::new(&d_src_vf, 0, N);
-        let mut dst = DeviceVectorChunkMut::new(&mut d_dst_vf, 0, N / 2);
-        super::fold(coset_inverse, &d_challenge[0], 0, &src, &mut dst, &stream).unwrap();
-        let src = DeviceVectorChunk::new(&d_src_vf, N, N);
-        let mut dst = DeviceVectorChunkMut::new(&mut d_dst_vf, N / 2, N / 2);
         super::fold(
             coset_inverse,
             &d_challenge[0],
-            N / 2,
-            &src,
-            &mut dst,
+            &d_src_vf,
+            &mut d_dst_vf,
             &stream,
         )
         .unwrap();

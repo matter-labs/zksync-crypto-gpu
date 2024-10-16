@@ -12,19 +12,15 @@ pub use setup::*;
 mod arguments;
 pub use arguments::*;
 
-mod quotient;
-pub use quotient::*;
-
 mod cache;
 pub use cache::*;
+
+mod tree;
+pub use tree::*;
 
 pub trait AsSingleSlice {
     fn domain_size(&self) -> usize;
     fn num_polys(&self) -> usize;
-    fn num_polys_in_base(&self) -> usize {
-        self.len() / self.domain_size()
-    }
-
     fn as_single_slice(&self) -> &[F];
     fn as_single_slice_mut(&mut self) -> &mut [F] {
         unreachable!()
@@ -35,12 +31,14 @@ pub trait AsSingleSlice {
 }
 
 pub(crate) fn coset_cap_size(cap_size: usize, lde_degree: usize) -> usize {
-    if cap_size < lde_degree {
+    let coset_cap_size = if cap_size < lde_degree {
         1
     } else {
         assert!(cap_size.is_power_of_two());
         1 << (cap_size.trailing_zeros() - lde_degree.trailing_zeros())
-    }
+    };
+
+    coset_cap_size
 }
 
 // (slice, domain size, num polys)

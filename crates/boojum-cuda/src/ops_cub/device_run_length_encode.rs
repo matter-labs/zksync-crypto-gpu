@@ -211,6 +211,7 @@ mod tests {
         let mut run_index = 0usize;
         let mut current_value = h_in[0];
         let mut current_count = 0;
+        dbg!(&h_in);
         for x in h_in {
             if x == current_value {
                 current_count += 1;

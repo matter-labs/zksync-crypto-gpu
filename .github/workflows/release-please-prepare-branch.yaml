@@ -34,7 +34,7 @@ jobs:
           fi
     
   update_version:
-    runs-on: [ubuntu-latest]
+    runs-on: [ubuntu-22.04.1]
     name: "release-please: Update version in Cargo.toml"
     needs: [check_state]
     if: ${{ needs.check_state.outputs.already_committed != 'true' }}

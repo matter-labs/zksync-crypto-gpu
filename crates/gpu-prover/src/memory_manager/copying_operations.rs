@@ -59,11 +59,8 @@ impl<MC: ManagerConfigs> DeviceMemoryManager<Fr, MC> {
                                                                                //     .get_values_mut()
                                                                                //     .unwrap()
                                                                                //     .copy_from_slice(poly);
-        async_copy(
-            worker,
-            self.host_slots[host_idx].0.get_values_mut().unwrap(),
-            poly,
-        );
+        
+        self.host_slots[host_idx].0.async_copy_from_slice(worker, poly).unwrap();
 
         let idx = self.free_slot_idx().expect("No free slots");
 
@@ -123,7 +120,7 @@ impl<MC: ManagerConfigs> DeviceMemoryManager<Fr, MC> {
         async_copy(
             worker,
             poly,
-            self.host_slots[host_idx].0.get_values_mut().unwrap(),
+            self.host_slots[host_idx].0.get_values().unwrap(),
         );
 
         Ok(())

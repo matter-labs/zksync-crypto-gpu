@@ -441,11 +441,8 @@ pub fn process_steps(
             compression_wrapper_vk,
         );
 
-        let worker = bellman::worker::Worker::new();
-        let final_proof = ::fflonk::gpu_prove_fflonk_snark_verifier_circuit_single_shot(
-            &wrapper_circuit,
-            &worker,
-        );
+        let final_proof =
+            ::fflonk::gpu_prove_fflonk_snark_verifier_circuit_single_shot(&wrapper_circuit);
         let final_proof_file = std::fs::File::create(final_proof_file_path).unwrap();
         serde_json::to_writer(&final_proof_file, &final_proof).unwrap();
         println!(

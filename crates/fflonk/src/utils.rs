@@ -286,6 +286,9 @@ where
     let mut result = vec![F::zero(); degree + 1];
     result[0] = constant_term;
     result[degree] = F::one();
+    if pairs.len() == 1 {
+        return result;
+    }
 
     for (degree, constant_term) in pairs.iter().skip(1).cloned() {
         let mut sparse = vec![F::zero(); degree + 1];

@@ -185,9 +185,7 @@ where
         dst: &mut Poly<F, MonomialBasis>,
         stream: bc_stream,
     ) -> CudaResult<()> {
-        self.events[poly_idx]
-            .sync()
-            .map_err(|err| CudaError::Error(format!("EventSyncErr: {:?}", err)))?;
+        stream.wait(self.events[poly_idx]).unwrap();
 
         let h_poly = &self.combined_monomials[poly_idx];
         assert!(h_poly.len() <= dst.size());
@@ -200,7 +198,7 @@ where
 }
 
 pub(crate) trait PolyStorage<F, const N: usize>: Sized {
-    unsafe fn allocate_zeroed(domain_size: usize) -> Self;
+    fn allocate_zeroed(domain_size: usize) -> Self;
     fn num_polys(&self) -> usize {
         N
     }
@@ -217,9 +215,10 @@ impl<F, const N: usize> PolyStorage<F, N> for MultiMonomialStorage<F, N>
 where
     F: PrimeField,
 {
-    unsafe fn allocate_zeroed(domain_size: usize) -> Self {
+    fn allocate_zeroed(domain_size: usize) -> Self {
         // constructing permutation polys require storage to be adjacent
-        let mut chunks = DVec::allocate_zeroed(domain_size * N).into_owned_chunks(domain_size);
+        let mut chunks =
+            unsafe { DVec::allocate_zeroed(domain_size * N).into_owned_chunks(domain_size) };
         chunks.reverse();
         Self(std::array::from_fn(|_| {
             Poly::<F, MonomialBasis>::from_buffer(chunks.pop().unwrap())

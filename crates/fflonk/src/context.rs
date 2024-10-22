@@ -291,9 +291,7 @@ pub fn init_compact_crs(
 ) -> Crs<CompactBn256, CrsForMonomialForm> {
     assert!(domain_size <= 1 << fflonk::L1_VERIFIER_DOMAIN_SIZE_LOG);
     let num_points = MAX_COMBINED_DEGREE_FACTOR * domain_size;
-    let mon_crs = if let Ok(socket_path) = std::env::var("TEST_SOCK_FILE") {
-        read_crs_over_socket(&socket_path).unwrap()
-    } else if let Ok(crs_file_path) = std::env::var("COMPACT_CRS_FILE") {
+    let mon_crs = if let Ok(crs_file_path) = std::env::var("COMPACT_CRS_FILE") {
         println!("using crs file at {crs_file_path}");
         let crs_file =
             std::fs::File::open(&crs_file_path).expect(&format!("crs file at {}", crs_file_path));
@@ -303,21 +301,9 @@ pub fn init_compact_crs(
 
         mon_crs
     } else {
+        println!("Using dummy CRS");
         Crs::<CompactBn256, CrsForMonomialForm>::non_power_of_two_crs_42(num_points, &worker)
     };
 
     mon_crs
-}
-
-// This is convenient for faster testing
-fn read_crs_over_socket(
-    socket_path: &str,
-) -> std::io::Result<Crs<CompactBn256, CrsForMonomialForm>> {
-    let mut socket = std::os::unix::net::UnixStream::connect(socket_path)?;
-    let start = std::time::Instant::now();
-    std::io::Write::write_all(&mut socket, &[1])?;
-    let crs = Crs::<CompactBn256, CrsForMonomialForm>::read(&socket)?;
-    println!("Loading CRS takes {} s", start.elapsed().as_secs());
-
-    Ok(crs)
 }

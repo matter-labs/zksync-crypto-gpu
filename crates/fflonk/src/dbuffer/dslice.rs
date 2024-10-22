@@ -82,11 +82,15 @@ impl<T> DSlice<T> {
     }
 
     pub fn to_vec(&self, stream: bc_stream) -> CudaResult<Vec<T>> {
-        self.to_vec_in_on::<std::alloc::Global>(stream)
+        self.to_vec_in(stream, std::alloc::Global)
     }
 
-    pub fn to_vec_in_on<A: HostAllocator>(&self, stream: bc_stream) -> CudaResult<Vec<T, A>> {
-        let mut dst: Vec<_, A> = Vec::with_capacity_in(self.len(), A::default());
+    pub fn to_vec_in<A: HostAllocator>(
+        &self,
+        stream: bc_stream,
+        alloc: A,
+    ) -> CudaResult<Vec<T, A>> {
+        let mut dst: Vec<_, A> = Vec::with_capacity_in(self.len(), alloc);
         unsafe { dst.set_len(self.len()) };
         super::mem::d2h_on(self, &mut dst, stream)?;
 

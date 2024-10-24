@@ -6,6 +6,7 @@ use era_cudart::stream::CudaStreamWaitEventFlags;
 
 // Raw boojum bindings
 
+#[allow(clippy::too_many_arguments)]
 fn raw_batch_coset_ntt(
     inputs: &mut [F],
     bitreversed_input: bool,
@@ -40,6 +41,7 @@ fn raw_batch_coset_ntt(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn raw_batch_coset_ntt_into(
     inputs: &[F],
     outputs: &mut [F],
@@ -111,7 +113,7 @@ pub(crate) fn coset_ntt_into(
 
 pub(crate) fn lde_intt(input: &mut [F]) -> CudaResult<()> {
     // Any power of two > 1 would work for lde_degree, it just signals to the kernel
-    // that we're inverting an LDE and it should multiply x_i by g_inv^i
+    // that we're inverting an LDE and that it should multiply x_i by g_inv^i
     let dummy_lde_degree = 2;
     let coset_idx = 0;
     raw_batch_coset_ntt(
@@ -147,9 +149,10 @@ fn get_l2_chunk_elems(domain_size: usize) -> usize {
     let l2_cache_size_with_safety_margin = (l2_cache_size_bytes * 3) / 8;
     let bytes_per_col = 8 * domain_size;
     let cols_in_l2 = l2_cache_size_with_safety_margin / bytes_per_col;
-    return domain_size * cols_in_l2;
+    domain_size * cols_in_l2
 }
 
+#[allow(clippy::too_many_arguments)]
 fn l2_chunked_with_epilogue<E>(
     inputs: &mut [F],
     bitreversed_input: bool,
@@ -187,7 +190,7 @@ where
         let end_event0 = &_aux_events()[1];
         let end_event1 = &_aux_events()[2];
         if_not_dry_run! {
-            start_event.record(&main_stream)?;
+            start_event.record(main_stream)?;
             stream0.wait_event(start_event, CudaStreamWaitEventFlags::DEFAULT)?;
             stream1.wait_event(start_event, CudaStreamWaitEventFlags::DEFAULT)
         }?;
@@ -261,6 +264,7 @@ fn l2_chunked(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn l2_chunked_with_epilogue_into<E>(
     inputs: &[F],
     outputs: &mut [F],
@@ -299,7 +303,7 @@ where
         let end_event0 = &_aux_events()[1];
         let end_event1 = &_aux_events()[2];
         if_not_dry_run! {
-            start_event.record(&main_stream)?;
+            start_event.record(main_stream)?;
             stream0.wait_event(start_event, CudaStreamWaitEventFlags::DEFAULT)?;
             stream1.wait_event(start_event, CudaStreamWaitEventFlags::DEFAULT)
         }?;
@@ -357,6 +361,7 @@ where
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn l2_chunked_into(
     inputs: &[F],
     outputs: &mut [F],

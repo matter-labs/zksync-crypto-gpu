@@ -38,8 +38,9 @@ pub fn get_evaluators_of_general_purpose_cols(
             let mask = pack_path(&path);
             let count = path.len() as u32;
             let num_repetitions = evaluator.num_repetitions_on_row as u32;
-            let cuda_id = boojum_cuda::gates::find_gate_id_by_name(&evaluator.unique_name)
-                .expect(&format!("gate id found for {}", evaluator.unique_name));
+            let unique_name = &evaluator.unique_name;
+            let cuda_id = boojum_cuda::gates::find_gate_id_by_name(unique_name)
+                .unwrap_or_else(|| panic!("gate id found for {unique_name}"));
             let gate = GateEvaluationParams {
                 id: cuda_id,
                 selector_mask: mask,
@@ -57,7 +58,7 @@ pub fn get_evaluators_of_general_purpose_cols(
             debug_assert!(evaluator.num_quotient_terms == 0);
         }
     }
-    assert!(gates.len() > 0);
+    assert!(!gates.is_empty());
     gates
 }
 
@@ -65,7 +66,7 @@ pub fn get_specialized_evaluators_from_assembly(
     config: &GpuProofConfig,
     selectors_placement: &TreeNode,
 ) -> Vec<GateEvaluationParams> {
-    if config.evaluators_over_specialized_columns.len() < 1 {
+    if config.evaluators_over_specialized_columns.is_empty() {
         return vec![];
     }
 
@@ -83,7 +84,8 @@ pub fn get_specialized_evaluators_from_assembly(
         {
             continue;
         }
-        if evaluator.unique_name == "nop_gate_constraint_evaluator" {
+        let unique_name = &evaluator.unique_name;
+        if unique_name == "nop_gate_constraint_evaluator" {
             continue;
         }
         if gate_type_id == &std::any::TypeId::of::<LookupFormalGate>() {
@@ -98,7 +100,7 @@ pub fn get_specialized_evaluators_from_assembly(
         let num_terms = evaluator.num_quotient_terms;
         let placement_strategy = config
             .placement_strategies
-            .get(&gate_type_id)
+            .get(gate_type_id)
             .copied()
             .expect("gate must be allowed");
         let GatePlacementStrategy::UseSpecializedColumns {
@@ -124,8 +126,8 @@ pub fn get_specialized_evaluators_from_assembly(
             total_terms,
         );
 
-        let cuda_id = boojum_cuda::gates::find_gate_id_by_name(&evaluator.unique_name)
-            .expect(&format!("gate id found for {}", evaluator.unique_name));
+        let cuda_id = boojum_cuda::gates::find_gate_id_by_name(unique_name)
+            .unwrap_or_else(|| panic!("gate id found for {unique_name}"));
 
         let gate = GateEvaluationParams {
             id: cuda_id,
@@ -166,6 +168,7 @@ pub fn multi_polys_as_single_slice_mut<'a, P: PolyForm>(polys: &mut [Poly<'a, P>
 }
 
 // Accumulates into quotient
+#[allow(clippy::too_many_arguments)]
 pub fn generic_evaluate_constraints_by_coset(
     variable_cols: &[Poly<CosetEvaluations>],
     witness_cols: &[Poly<CosetEvaluations>],
@@ -189,9 +192,9 @@ pub fn generic_evaluate_constraints_by_coset(
         std::slice::from_raw_parts_mut(quotient.c0.storage.as_mut().as_mut_ptr(), len)
     };
 
-    let all_variable_cols = multi_polys_as_single_slice(&variable_cols);
-    let all_witness_cols = multi_polys_as_single_slice(&witness_cols);
-    let all_constant_cols = multi_polys_as_single_slice(&constant_cols);
+    let all_variable_cols = multi_polys_as_single_slice(variable_cols);
+    let all_witness_cols = multi_polys_as_single_slice(witness_cols);
+    let all_constant_cols = multi_polys_as_single_slice(constant_cols);
     let d_challenge = challenge.into();
     cs_helpers::constraint_evaluation(
         gates,

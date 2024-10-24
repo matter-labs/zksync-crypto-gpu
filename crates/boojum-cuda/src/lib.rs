@@ -16,7 +16,7 @@ pub mod ntt;
 pub mod ops_complex;
 pub mod ops_cub;
 pub mod ops_simple;
-pub mod poseidon;
+pub mod poseidon2;
 mod utils;
 
 pub type BaseField = boojum::field::goldilocks::GoldilocksField;

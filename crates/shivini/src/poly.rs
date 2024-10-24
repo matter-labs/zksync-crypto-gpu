@@ -1,4 +1,5 @@
 use super::*;
+use era_cudart::slice::CudaSlice;
 
 pub trait PolyForm: Clone {}
 
@@ -6,6 +7,7 @@ pub trait PolyForm: Clone {}
 pub struct LagrangeBasis;
 impl PolyForm for LagrangeBasis {}
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone)]
 pub struct LDE;
 impl PolyForm for LDE {}
@@ -66,8 +68,8 @@ pub enum PolyStorage<'a> {
 impl<'a> AsRef<[F]> for PolyStorage<'a> {
     fn as_ref(&self) -> &[F] {
         match self {
-            PolyStorage::Borrowed(inner) => *inner,
-            PolyStorage::BorrowedMut(inner) => *inner,
+            PolyStorage::Borrowed(inner) => inner,
+            PolyStorage::BorrowedMut(inner) => inner,
             PolyStorage::Owned(inner) => inner,
         }
     }
@@ -76,7 +78,7 @@ impl<'a> AsMut<[F]> for PolyStorage<'a> {
     fn as_mut(&mut self) -> &mut [F] {
         match self {
             PolyStorage::Borrowed(_) => unimplemented!(),
-            PolyStorage::BorrowedMut(inner) => *inner,
+            PolyStorage::BorrowedMut(inner) => inner,
             PolyStorage::Owned(inner) => inner,
         }
     }
@@ -99,7 +101,6 @@ impl<'a> PolyStorage<'a> {
         }
     }
 
-    #[allow(dead_code)]
     pub fn copy_from_device_slice(&mut self, other: &[F]) -> CudaResult<()> {
         match self {
             PolyStorage::Borrowed(_) => unimplemented!(),
@@ -169,7 +170,6 @@ impl<'a, P: PolyForm> Poly<'a, P> {
         }
     }
 
-    #[allow(dead_code)]
     pub fn empty(domain_size: usize) -> CudaResult<Self> {
         let storage = dvec!(domain_size);
         Ok(Self {
@@ -178,7 +178,6 @@ impl<'a, P: PolyForm> Poly<'a, P> {
         })
     }
 
-    #[allow(dead_code)]
     pub fn zero(domain_size: usize) -> CudaResult<Self> {
         let mut storage = dvec!(domain_size);
         helpers::set_zero(&mut storage)?;
@@ -188,7 +187,6 @@ impl<'a, P: PolyForm> Poly<'a, P> {
         })
     }
 
-    #[allow(dead_code)]
     pub fn one(domain_size: usize) -> CudaResult<Self> {
         let mut storage = dvec!(domain_size);
         let el = DF::one()?;
@@ -249,6 +247,27 @@ impl<'a, P: PolyForm> AsSingleSlice for ComplexPoly<'a, P> {
     }
 }
 
+impl<'a, P: PolyForm> From<ComplexPoly<'a, P>> for DVec<F> {
+    fn from(value: ComplexPoly<'a, P>) -> Self {
+        assert!(value.is_owned());
+        let ComplexPoly { c0, c1 } = value;
+        let (c0_ptr, c0_len, c0_capacity, c0_allocator) =
+            c0.storage.into_inner().into_raw_parts_with_alloc();
+        let (c1_ptr, c1_len, c1_capacity, c1_allocator) =
+            c1.storage.into_inner().into_raw_parts_with_alloc();
+        unsafe {
+            assert_eq!(c0_ptr.add(c0_len), c1_ptr);
+        }
+        drop(c1_allocator);
+        DVec::from_raw_parts_in(
+            c0_ptr,
+            c0_len + c1_len,
+            c0_capacity + c1_capacity,
+            c0_allocator,
+        )
+    }
+}
+
 impl<'a, P: PolyForm> From<&'a [F]> for Poly<'a, P> {
     fn from(values: &'a [F]) -> Self {
         Poly {
@@ -291,7 +310,6 @@ impl<'a, P: PolyForm> ComplexPoly<'a, P> {
         Self { c0, c1 }
     }
 
-    #[allow(dead_code)]
     pub fn is_owned(&self) -> bool {
         let c0 = match self.c0.storage {
             PolyStorage::Borrowed(_) => false,
@@ -374,37 +392,29 @@ impl<'a> Poly<'a, LagrangeBasis> {
         let tmp_size = helpers::calculate_tmp_buffer_size_for_grand_sum(self.domain_size())?;
         let mut tmp = dvec!(tmp_size);
         let sum = arith::grand_sum(self.storage.as_ref(), &mut tmp)?;
-        let sum: DF = DF::from(sum);
-
         Ok(sum)
     }
 }
 
 impl<'a> Poly<'a, MonomialBasis> {
-    #[allow(dead_code)]
     pub fn evaluate_at_ext(&self, at: &DExt) -> CudaResult<DExt> {
         arith::evaluate_base_at_ext(self.storage.as_ref(), at)
     }
 
     // use for monomials until we have a barycentric
-    #[allow(dead_code)]
     pub fn grand_sum(&self) -> CudaResult<DF> {
         let tmp_size = helpers::calculate_tmp_buffer_size_for_grand_sum(self.domain_size())?;
         let mut tmp = dvec!(tmp_size);
         let sum = arith::grand_sum(self.storage.as_ref(), &mut tmp)?;
-        let sum: DF = DF::from(sum);
-
         Ok(sum)
     }
 
-    #[allow(dead_code)]
     pub fn bitreverse(&mut self) -> CudaResult<()> {
         ntt::bitreverse(self.storage.as_mut())
     }
 }
 
 impl<'a> ComplexPoly<'a, CosetEvaluations> {
-    #[allow(dead_code)]
     pub fn rotate(&mut self) -> CudaResult<()> {
         self.c0.bitreverse()?;
         helpers::rotate_left(self.c0.storage.as_mut())?;
@@ -442,7 +452,6 @@ impl<'a> ComplexPoly<'a, MonomialBasis> {
         arith::evaluate_ext_at_ext(self.c0.storage.as_ref(), self.c1.storage.as_ref(), at)
     }
 
-    #[allow(dead_code)]
     pub fn bitreverse(&mut self) -> CudaResult<()> {
         self.c0.bitreverse()?;
         self.c1.bitreverse()?;
@@ -450,7 +459,6 @@ impl<'a> ComplexPoly<'a, MonomialBasis> {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn grand_sum(&self) -> CudaResult<DExt> {
         let sum_c0 = self.c0.grand_sum()?;
         let sum_c1 = self.c1.grand_sum()?;
@@ -458,89 +466,72 @@ impl<'a> ComplexPoly<'a, MonomialBasis> {
         Ok(DExt::new(sum_c0, sum_c1))
     }
 
-    pub fn into_degree_n_polys(
+    pub fn into_degree_n_polys<L: GenericPolynomialStorageLayout>(
         self,
         domain_size: usize,
-    ) -> CudaResult<Vec<ComplexPoly<'a, MonomialBasis>>> {
+        mut storage: GenericStorage<Undefined, L>,
+    ) -> CudaResult<GenericStorage<MonomialBasis, L>> {
         let ComplexPoly { c0, c1 } = self;
-
-        let c0_chunks = c0.storage.into_inner().into_adjacent_chunks(domain_size);
-        let c1_chunks = c1.storage.into_inner().into_adjacent_chunks(domain_size);
-        let all_polys = dvec!(2 * c0_chunks.len() * domain_size);
-
-        let mut all_polys_iter = all_polys.into_adjacent_chunks(domain_size).into_iter();
-
-        let mut chunks = vec![];
-        for (c0_chunk, c1_chunk) in c0_chunks.into_iter().zip(c1_chunks.into_iter()) {
+        let c0 = c0.storage.into_inner();
+        let c0_chunks = c0.chunks(domain_size);
+        let c1 = c1.storage.into_inner();
+        let c1_chunks = c1.chunks(domain_size);
+        let storage_chunks = storage.inner.chunks_mut(domain_size).array_chunks::<2>();
+        for ((c0_src, c1_src), [c0_dst, c1_dst]) in c0_chunks.zip(c1_chunks).zip(storage_chunks) {
             // we want both c0 and c1 to be adjacent
-            let mut new_c0 = all_polys_iter.next().unwrap();
-            let mut new_c1 = all_polys_iter.next().unwrap();
-            new_c0.copy_from_device_slice(&c0_chunk)?;
-            new_c1.copy_from_device_slice(&c1_chunk)?;
-            let poly = ComplexPoly::new(Poly::from(new_c0), Poly::from(new_c1));
-            chunks.push(poly);
+            mem::d2d(c0_src, c0_dst)?;
+            mem::d2d(c1_src, c1_dst)?;
         }
 
-        Ok(chunks)
+        unsafe { Ok(storage.transmute()) }
     }
 }
 
 macro_rules! impl_common_poly {
     ($form:tt) => {
         impl<'a> Poly<'a, $form> {
-            #[allow(dead_code)]
-            pub fn add_assign<'b>(&mut self, other: &Poly<'b, $form>) -> CudaResult<()> {
+            pub fn add_assign(&mut self, other: &Poly<$form>) -> CudaResult<()> {
                 arith::add_assign(self.storage.as_mut(), other.storage.as_ref())
             }
 
-            #[allow(dead_code)]
-            pub fn sub_assign<'b>(&mut self, other: &Poly<'b, $form>) -> CudaResult<()> {
+            pub fn sub_assign(&mut self, other: &Poly<$form>) -> CudaResult<()> {
                 arith::sub_assign(self.storage.as_mut(), other.storage.as_ref())
             }
 
-            #[allow(dead_code)]
-            pub fn mul_assign<'b>(&mut self, other: &Poly<'b, $form>) -> CudaResult<()> {
+            pub fn mul_assign(&mut self, other: &Poly<$form>) -> CudaResult<()> {
                 assert_eq!(self.storage.len(), other.storage.len());
                 arith::mul_assign(self.storage.as_mut(), other.storage.as_ref())
             }
 
-            #[allow(dead_code)]
             pub fn square(&mut self) -> CudaResult<()> {
                 let other = self.clone();
                 arith::mul_assign(self.storage.as_mut(), other.storage.as_ref())
             }
 
-            #[allow(dead_code)]
             pub fn add_constant(&mut self, value: &DF) -> CudaResult<()> {
                 arith::add_constant(self.storage.as_mut(), value)
             }
 
-            #[allow(dead_code)]
             pub fn sub_constant(&mut self, value: &DF) -> CudaResult<()> {
                 arith::sub_constant(self.storage.as_mut(), &value)
             }
 
-            #[allow(dead_code)]
             pub fn scale(&mut self, value: &DF) -> CudaResult<()> {
                 arith::scale(self.storage.as_mut(), value)
             }
 
-            #[allow(dead_code)]
             pub fn negate(&mut self) -> CudaResult<()> {
                 arith::negate(self.storage.as_mut())
             }
 
-            #[allow(dead_code)]
             pub fn inverse(&mut self) -> CudaResult<()> {
                 arith::inverse(self.storage.as_mut())
             }
 
-            #[allow(dead_code)]
             pub fn bitreverse(&mut self) -> CudaResult<()> {
                 ntt::bitreverse(self.storage.as_mut())
             }
 
-            #[allow(dead_code)]
             pub fn shifted_grand_product(&mut self) -> CudaResult<()> {
                 let domain_size = self.storage.len();
                 let tmp_size = helpers::calculate_tmp_buffer_size_for_grand_product(domain_size)?;
@@ -558,7 +549,6 @@ impl_common_poly!(CosetEvaluations);
 macro_rules! impl_common_complex_poly {
     ($form:tt) => {
         impl<'a> ComplexPoly<'a, $form> {
-            #[allow(dead_code)]
             pub fn from_real(c0: &Poly<'a, $form>) -> CudaResult<ComplexPoly<'a, $form>> {
                 assert!(c0.is_owned());
                 let domain_size = c0.storage.len();
@@ -580,8 +570,7 @@ macro_rules! impl_common_complex_poly {
                 })
             }
 
-            #[allow(dead_code)]
-            pub fn add_assign<'b>(&mut self, other: &ComplexPoly<'b, $form>) -> CudaResult<()> {
+            pub fn add_assign(&mut self, other: &ComplexPoly<$form>) -> CudaResult<()> {
                 assert_eq!(self.c0.storage.len(), other.c0.storage.len());
                 assert_eq!(self.c1.storage.len(), other.c1.storage.len());
                 self.c0.add_assign(&other.c0)?;
@@ -590,16 +579,14 @@ macro_rules! impl_common_complex_poly {
                 Ok(())
             }
 
-            #[allow(dead_code)]
-            pub fn add_assign_real<'b>(&mut self, other: &Poly<'b, $form>) -> CudaResult<()> {
+            pub fn add_assign_real(&mut self, other: &Poly<$form>) -> CudaResult<()> {
                 assert_eq!(self.c0.storage.len(), other.storage.len());
                 self.c0.add_assign(other)?;
 
                 Ok(())
             }
 
-            #[allow(dead_code)]
-            pub fn sub_assign<'b>(&mut self, other: &ComplexPoly<'b, $form>) -> CudaResult<()> {
+            pub fn sub_assign(&mut self, other: &ComplexPoly<$form>) -> CudaResult<()> {
                 assert_eq!(self.c0.storage.len(), other.c0.storage.len());
                 assert_eq!(self.c1.storage.len(), other.c1.storage.len());
                 self.c0.sub_assign(&other.c0)?;
@@ -608,16 +595,14 @@ macro_rules! impl_common_complex_poly {
                 Ok(())
             }
 
-            #[allow(dead_code)]
-            pub fn sub_assign_real<'b>(&mut self, other: &Poly<'b, $form>) -> CudaResult<()> {
+            pub fn sub_assign_real(&mut self, other: &Poly<$form>) -> CudaResult<()> {
                 assert_eq!(self.c0.storage.len(), other.storage.len());
                 self.c0.sub_assign(other)?;
 
                 Ok(())
             }
 
-            #[allow(dead_code)]
-            pub fn mul_assign<'b>(&mut self, other: &ComplexPoly<'b, $form>) -> CudaResult<()> {
+            pub fn mul_assign(&mut self, other: &ComplexPoly<$form>) -> CudaResult<()> {
                 arith::mul_assign_complex(
                     self.c0.storage.as_mut(),
                     self.c1.storage.as_mut(),
@@ -626,8 +611,7 @@ macro_rules! impl_common_complex_poly {
                 )
             }
 
-            #[allow(dead_code)]
-            pub fn mul_assign_real<'b>(&mut self, other: &Poly<'b, $form>) -> CudaResult<()> {
+            pub fn mul_assign_real(&mut self, other: &Poly<$form>) -> CudaResult<()> {
                 assert_eq!(self.c0.storage.len(), other.storage.len());
                 assert_eq!(self.c1.storage.len(), other.storage.len());
                 self.c0.mul_assign(&other)?;
@@ -636,7 +620,6 @@ macro_rules! impl_common_complex_poly {
                 Ok(())
             }
 
-            #[allow(dead_code)]
             pub fn add_constant(&mut self, value: &DExt) -> CudaResult<()> {
                 self.c0.add_constant(&value.c0)?;
                 self.c1.add_constant(&value.c1)?;
@@ -644,7 +627,6 @@ macro_rules! impl_common_complex_poly {
                 Ok(())
             }
 
-            #[allow(dead_code)]
             pub fn sub_constant(&mut self, value: &DExt) -> CudaResult<()> {
                 self.c0.sub_constant(&value.c0)?;
                 self.c1.sub_constant(&value.c1)?;
@@ -652,7 +634,6 @@ macro_rules! impl_common_complex_poly {
                 Ok(())
             }
 
-            #[allow(dead_code)]
             pub fn scale_real(&mut self, point: &DExt) -> CudaResult<()> {
                 // self.c1.storage.copy_from_device_slice(&self.c0.storage)?;
                 mem::d2d(self.c0.storage.as_ref(), self.c1.storage.as_mut())?;
@@ -662,7 +643,6 @@ macro_rules! impl_common_complex_poly {
                 Ok(())
             }
 
-            #[allow(dead_code)]
             pub fn scale(&mut self, point: &DExt) -> CudaResult<()> {
                 let non_residue = DF::non_residue()?;
 
@@ -683,7 +663,6 @@ macro_rules! impl_common_complex_poly {
                 Ok(())
             }
 
-            #[allow(dead_code)]
             pub fn negate(&mut self) -> CudaResult<()> {
                 self.c0.negate()?;
                 self.c1.negate()?;
@@ -691,12 +670,10 @@ macro_rules! impl_common_complex_poly {
                 Ok(())
             }
 
-            #[allow(dead_code)]
             pub fn inverse(&mut self) -> CudaResult<()> {
                 arith::inverse_ef(self.c0.storage.as_mut(), self.c1.storage.as_mut())
             }
 
-            #[allow(dead_code)]
             pub fn shifted_grand_product(&mut self) -> CudaResult<()> {
                 let tmp_size = helpers::calculate_tmp_buffer_size_for_grand_product(
                     2 * self.c0.storage.len(),
@@ -711,7 +688,6 @@ macro_rules! impl_common_complex_poly {
                 Ok(())
             }
 
-            #[allow(dead_code)]
             pub fn bitreverse(&mut self) -> CudaResult<()> {
                 self.c0.bitreverse()?;
                 self.c1.bitreverse()?;

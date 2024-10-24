@@ -1,5 +1,6 @@
 use crate::synthesis_utils::{
-    get_verifier_for_base_layer_circuit, get_verifier_for_recursive_layer_circuit,
+    get_verifier_for_base_layer_circuit, get_verifier_for_compression_layer_circuit,
+    get_verifier_for_compression_wrapper_circuit, get_verifier_for_recursive_layer_circuit,
 };
 use boojum::config::ProvingCSConfig;
 use boojum::cs::implementations::reference_cs::CSReferenceAssembly;
@@ -13,12 +14,16 @@ use boojum::cs::traits::gate::GatePlacementStrategy;
 use boojum::field::goldilocks::{GoldilocksExt2, GoldilocksField};
 use boojum::field::traits::field_like::PrimeFieldLikeVectorized;
 use boojum::field::FieldExtension;
+use circuit_definitions::circuit_definitions::aux_layer::{
+    ZkSyncCompressionForWrapperCircuit, ZkSyncCompressionLayerCircuit,
+};
 use circuit_definitions::circuit_definitions::base_layer::ZkSyncBaseLayerCircuit;
 use circuit_definitions::circuit_definitions::recursion_layer::ZkSyncRecursiveLayerCircuit;
 use std::any::TypeId;
 use std::collections::HashMap;
 
 type F = GoldilocksField;
+#[allow(clippy::upper_case_acronyms)]
 type EXT = GoldilocksExt2;
 
 pub(crate) struct EvaluatorData {
@@ -152,12 +157,22 @@ impl GpuProofConfig {
         Self::from_verifier(&get_verifier_for_recursive_layer_circuit(circuit))
     }
 
+    pub fn from_compression_layer_circuit(circuit: &ZkSyncCompressionLayerCircuit) -> Self {
+        Self::from_verifier(&get_verifier_for_compression_layer_circuit(circuit))
+    }
+
+    pub fn from_compression_wrapper_circuit(circuit: &ZkSyncCompressionForWrapperCircuit) -> Self {
+        Self::from_verifier(&get_verifier_for_compression_wrapper_circuit(circuit))
+    }
+
     #[cfg(test)]
     pub(crate) fn from_circuit_wrapper(wrapper: &crate::synthesis_utils::CircuitWrapper) -> Self {
         use crate::synthesis_utils::CircuitWrapper::*;
         match wrapper {
             Base(circuit) => Self::from_base_layer_circuit(circuit),
             Recursive(circuit) => Self::from_recursive_layer_circuit(circuit),
+            CompressionLayer(circuit) => Self::from_compression_layer_circuit(circuit),
+            CompressionWrapper(circuit) => Self::from_compression_wrapper_circuit(circuit),
         }
     }
 }

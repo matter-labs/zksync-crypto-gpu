@@ -6,6 +6,7 @@ use era_cudart::memory::{CudaHostAllocFlags, HostAllocation};
 use era_cudart::slice::DeviceSlice;
 use era_cudart::stream::CudaStreamCreateFlags;
 use era_cudart_sys::CudaDeviceAttr;
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
 
 pub(crate) const NUM_AUX_STREAMS_AND_EVENTS: usize = 4;
@@ -21,8 +22,8 @@ struct ProverContextSingleton {
     small_device_allocator: SmallStaticDeviceAllocator,
     host_allocator: StaticHostAllocator,
     small_host_allocator: SmallStaticHostAllocator,
-    setup_cache: Option<SetupCache>,
-    strategy_cache: HashMap<Vec<[F; 4]>, CacheStrategy>,
+    setup_cache: Option<(TypeId, Box<dyn Any>)>,
+    strategy_cache: HashMap<u64, CacheStrategy>,
     l2_cache_size: usize,
     l2_persist_max: usize,
     compute_capability: (u32, u32),
@@ -53,8 +54,8 @@ impl Default for ProverContextConfig {
             minimum_device_allocation: None,
             maximum_device_allocation: None,
             smallest_supported_domain_size: 1 << ZKSYNC_DEFAULT_TRACE_LOG_LENGTH,
-            powers_of_w_coarse_log_count: 12,
-            powers_of_g_coarse_log_count: 12,
+            powers_of_w_coarse_log_count: 15,
+            powers_of_g_coarse_log_count: 15,
         }
     }
 }
@@ -187,10 +188,7 @@ impl ProverContext {
 
 impl Drop for ProverContext {
     fn drop(&mut self) {
-        _strategy_cache_reset();
-        unsafe {
-            CONTEXT = None;
-        }
+        drop(unsafe { CONTEXT.take() })
     }
 }
 
@@ -296,20 +294,24 @@ pub(crate) fn _small_host_alloc() -> &'static SmallStaticHostAllocator {
     &get_context().small_host_allocator
 }
 
-pub(crate) fn _setup_cache_get() -> Option<&'static mut SetupCache> {
-    get_context_mut().setup_cache.as_mut()
+pub(crate) fn _setup_cache_get<H: GpuTreeHasher>() -> Option<&'static mut SetupCache<H>> {
+    get_context_mut()
+        .setup_cache
+        .as_mut()
+        .filter(|(id, _)| id == &TypeId::of::<H>())
+        .map(|(_, box_any)| box_any.downcast_mut::<SetupCache<H>>().unwrap())
 }
 
-pub(crate) fn _setup_cache_set(value: SetupCache) {
-    assert!(_setup_cache_get().is_none());
-    get_context_mut().setup_cache = Some(value);
+pub(crate) fn _setup_cache_set<H: GpuTreeHasher>(value: SetupCache<H>) {
+    assert!(get_context_mut().setup_cache.is_none());
+    get_context_mut().setup_cache = Some((TypeId::of::<H>(), Box::new(value)));
 }
 
 pub(crate) fn _setup_cache_reset() {
     get_context_mut().setup_cache = None;
 }
 
-pub(crate) fn _strategy_cache_get() -> &'static mut HashMap<Vec<[F; 4]>, CacheStrategy> {
+pub(crate) fn _strategy_cache_get() -> &'static mut HashMap<u64, CacheStrategy> {
     &mut get_context_mut().strategy_cache
 }
 pub(crate) fn _strategy_cache_reset() {

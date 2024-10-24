@@ -46,6 +46,8 @@ mod prover;
 mod quotient;
 #[cfg(feature = "zksync")]
 pub mod synthesis_utils;
+#[cfg(feature = "zksync")]
+pub use circuit_definitions;
 
 use quotient::*;
 type EF = ExtensionField<F, 2, EXT>;

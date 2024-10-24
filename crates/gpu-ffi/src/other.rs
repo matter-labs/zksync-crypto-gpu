@@ -33,20 +33,22 @@ pub fn get_powers_of_coset_gen(
     count: usize,
     inverse: bool,
 ) -> Result<(), GpuError> {
-    unsafe {
-        if ff_get_powers_of_g(
-            d_scalars,
-            offset as u32,
-            count as u32,
-            inverse,
-            ctx.get_exec_stream(),
-        ) != 0
-        {
-            return Err(GpuError::SchedulingErr);
-        }
-    }
+    // unsafe {
+    //     if ff_get_powers_of_g(
+    //         d_scalars,
+    //         offset as u32,
+    //         count as u32,
+    //         inverse,
+    //         ctx.get_exec_stream(),
+    //     ) != 0
+    //     {
+    //         return Err(GpuError::SchedulingErr);
+    //     }
+    // }
 
-    Ok(())
+    // Ok(())
+
+    todo!()
 }
 
 pub fn shift(
@@ -58,21 +60,23 @@ pub fn shift(
     count: usize,
     inverse: bool,
 ) -> Result<(), GpuError> {
-    unsafe {
-        if ff_shift(
-            d_scalars,
-            d_scalars,
-            log_degree as u32,
-            shift as u32,
-            offset as u32,
-            count as u32,
-            inverse,
-            ctx.get_exec_stream(),
-        ) != 0
-        {
-            return Err(GpuError::SchedulingErr);
-        }
-    }
+    // unsafe {
+    //     if ff_shift(
+    //         d_scalars,
+    //         d_scalars,
+    //         log_degree as u32,
+    //         shift as u32,
+    //         offset as u32,
+    //         count as u32,
+    //         inverse,
+    //         ctx.get_exec_stream(),
+    //     ) != 0
+    //     {
+    //         return Err(GpuError::SchedulingErr);
+    //     }
+    // }
 
-    Ok(())
+    // Ok(())
+
+    todo!()
 }

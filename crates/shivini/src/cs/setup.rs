@@ -1,5 +1,8 @@
+use boojum::config::CSConfig;
+use boojum::cs::implementations::reference_cs::CSReferenceAssembly;
 use boojum::cs::implementations::setup::FinalizationHintsForProver;
 use boojum::cs::implementations::verifier::VerificationKey;
+use boojum::field::traits::field_like::PrimeFieldLikeVectorized;
 use boojum::{
     cs::{
         implementations::{
@@ -191,9 +194,18 @@ pub fn transform_witness_indexes<A: GoodAllocator>(
 }
 
 impl<H: GpuTreeHasher, A: GoodAllocator> GpuSetup<H, A> {
-    pub fn from_setup_and_hints<
-        P: boojum::field::traits::field_like::PrimeFieldLikeVectorized<Base = F>,
-    >(
+    pub fn from_assembly(
+        assembly: &CSReferenceAssembly<
+            F,
+            impl PrimeFieldLikeVectorized<Base = F>,
+            impl CSConfig,
+            A,
+        >,
+    ) -> CudaResult<Self> {
+        assembly.get_light_setup();
+    }
+
+    pub fn from_setup_and_hints<P: PrimeFieldLikeVectorized<Base = F>>(
         base_setup: SetupBaseStorage<F, P, Global, Global>,
         setup_tree: MerkleTreeWithCap<F, H>,
         variables_hint: DenseVariablesCopyHint,

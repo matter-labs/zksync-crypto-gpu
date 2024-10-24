@@ -29,7 +29,8 @@ shivini = { version = "=0.150.9", path = "crates/shivini" }
 wrapper-prover = { version = "=0.150.9", path = "crates/wrapper-prover", package = "zksync-wrapper-prover" }
 
 # These dependencies should be shared by all the crates.
-boojum = "=0.30.1"
+#boojum = "=0.30.1"
+boojum = { path = "../zksync-crypto/crates/boojum" }
 circuit_definitions = "=0.150.5"
 franklin-crypto = "=0.30.1"
 snark_wrapper = "=0.30.1"

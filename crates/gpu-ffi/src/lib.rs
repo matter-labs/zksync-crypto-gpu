@@ -5,14 +5,14 @@
 pub mod error;
 pub mod utils;
 
-pub mod other;
 pub mod bindings;
 pub mod bindings_extra;
+pub mod other;
 pub mod wrapper;
 
-pub use other::*;
 pub use bindings::*;
 pub use bindings_extra::*;
+pub use other::*;
 
 pub use error::*;
 pub use utils::*;

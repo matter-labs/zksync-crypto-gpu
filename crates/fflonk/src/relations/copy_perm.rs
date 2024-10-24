@@ -204,11 +204,7 @@ where
 
     // get monomial finally
     ntt::bitreverse(&mut grand_prod_bitreversed, stream)?;
-    ntt::inplace_coset_ifft_for_gen_on(
-        &mut grand_prod_bitreversed,
-        &coset_shift_inv,
-        stream,
-    )?;
+    ntt::inplace_coset_ifft_for_gen_on(&mut grand_prod_bitreversed, &coset_shift_inv, stream)?;
 
     Ok(Poly::from_buffer(grand_prod_bitreversed))
 }

@@ -63,7 +63,7 @@ impl GpuContext {
         if unsafe { ntt_set_up() } != 0 {
             return Err(GpuError::CreateContextErr);
         }
-        
+
         Ok(Self {
             device_id: device_id,
             mem_pool: mem_pool,

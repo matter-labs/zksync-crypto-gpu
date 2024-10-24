@@ -9,12 +9,7 @@ pub fn call_host_fn<F: FnMut()>(stream: bc_stream, cb: &F) -> Result<(), GpuErro
     let callback_data = cb as *const _ as *mut ::std::os::raw::c_void;
 
     unsafe {
-        if bc_launch_host_fn(
-            stream,
-            Some(callback_wrapper::<F>),
-            callback_data,
-        ) != 0
-        {
+        if bc_launch_host_fn(stream, Some(callback_wrapper::<F>), callback_data) != 0 {
             return Err(GpuError::SchedulingErr);
         }
     }
@@ -33,38 +28,28 @@ pub fn malloc_from_pool_async(
     Ok(())
 }
 
-pub fn device_disable_peer_access(
-    device_id: usize,
-) -> Result<(), GpuError> {
+pub fn device_disable_peer_access(device_id: usize) -> Result<(), GpuError> {
     if unsafe { bc_device_disable_peer_access(device_id as i32) } != 0 {
         return Err(GpuError::DevicePeerAccessErr);
     }
     Ok(())
 }
 
-pub fn device_enable_peer_access(
-    device_id: i32,
-) -> Result<(), GpuError> {
+pub fn device_enable_peer_access(device_id: i32) -> Result<(), GpuError> {
     if unsafe { bc_device_enable_peer_access(device_id) } != 0 {
         return Err(GpuError::DevicePeerAccessErr);
     }
     Ok(())
 }
 
-pub fn mem_pool_disable_peer_access(
-    pool: bc_mem_pool,
-    device_id: usize,
-) -> Result<(), GpuError> {
+pub fn mem_pool_disable_peer_access(pool: bc_mem_pool, device_id: usize) -> Result<(), GpuError> {
     if unsafe { bc_mem_pool_disable_peer_access(pool, device_id as i32) } != 0 {
         return Err(GpuError::MemPoolPeerAccessErr);
     }
     Ok(())
 }
 
-pub fn mem_pool_enable_peer_access(
-    pool: bc_mem_pool,
-    device_id: i32,
-) -> Result<(), GpuError> {
+pub fn mem_pool_enable_peer_access(pool: bc_mem_pool, device_id: i32) -> Result<(), GpuError> {
     if unsafe { bc_mem_pool_enable_peer_access(pool, device_id) } != 0 {
         return Err(GpuError::MemPoolPeerAccessErr);
     }
@@ -237,7 +222,7 @@ impl bc_event {
         }
     }
 
-    pub fn sync(self) ->  Result<(), GpuError> {
+    pub fn sync(self) -> Result<(), GpuError> {
         if unsafe { bc_event_synchronize(self) } != 0 {
             return Err(GpuError::EventSyncErr);
         }
@@ -257,7 +242,14 @@ impl ntt_configuration {
     ) -> Self {
         let log_extension_degree = log_2(lde_factor as usize);
         let coset_index = bitreverse(coset_index, log_extension_degree as usize);
-        let mut this = Self::new(ctx, inputs as *mut c_void, outputs, log_values_count, false, false);
+        let mut this = Self::new(
+            ctx,
+            inputs as *mut c_void,
+            outputs,
+            log_values_count,
+            false,
+            false,
+        );
         this.coset_index = coset_index as u32;
         this.log_extension_degree = log_extension_degree;
 

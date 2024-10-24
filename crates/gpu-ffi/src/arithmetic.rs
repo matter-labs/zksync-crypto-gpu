@@ -398,7 +398,6 @@ pub fn raw_evaluate(
         return Err(GpuError::SchedulingErr);
     }
 
-
     Ok(())
 }
 

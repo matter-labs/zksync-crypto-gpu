@@ -51,6 +51,6 @@ pub fn raw_msm(ctx: &GpuContext, d_scalars: *mut c_void, len: usize) -> Result<V
     let mut result = vec![0u8; result_buf_len];
 
     copy_and_free(&mut result[..], d_result, ctx.get_d2h_stream())?;
-    
+
     Ok(result)
 }

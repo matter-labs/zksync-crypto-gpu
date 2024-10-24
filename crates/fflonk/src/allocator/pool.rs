@@ -29,7 +29,7 @@ pub struct PoolAllocator;
 
 impl DeviceAllocator for PoolAllocator {
     fn allocate(&self, layout: std::alloc::Layout) -> CudaResult<std::ptr::NonNull<[u8]>> {
-       unimplemented!("Pool allocator can't do static allocation/deallocation")
+        unimplemented!("Pool allocator can't do static allocation/deallocation")
     }
 
     fn deallocate(&self, ptr: std::ptr::NonNull<u8>, layout: std::alloc::Layout) {

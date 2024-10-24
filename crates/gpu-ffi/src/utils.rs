@@ -16,7 +16,6 @@ pub fn log_2(num: usize) -> u32 {
     pow
 }
 
-
 #[inline(always)]
 pub fn bitreverse(n: usize, l: usize) -> usize {
     let mut r = n.reverse_bits();
@@ -26,7 +25,6 @@ pub fn bitreverse(n: usize, l: usize) -> usize {
 
     r
 }
-
 
 // pub fn decode_projective_point<E: Engine>(encoding: [Vec<u8>; 3]) -> E::G1 {
 //     let [encoding_x, encoding_y, encoding_z] = encoding;
@@ -64,7 +62,7 @@ pub fn bitreverse(n: usize, l: usize) -> usize {
 //     for _ in 0..num_chunks {
 //         let (current_bases, rest) = bases.split_at(chunk_size);
 //         bases = rest;
-        
+
 //         let (mut current_encoding_x, rest) = encoding_x.split_at(chunk_size * 32);
 //         encoding_x = rest;
 //         let (mut current_encoding_y, rest) = encoding_y.split_at(chunk_size * 32);
@@ -95,9 +93,9 @@ pub fn bitreverse(n: usize, l: usize) -> usize {
 //     [final_encoding_x, final_encoding_y]
 // }
 
-// pub fn decode_scalars<E: Engine>(encoding: &[u8]) -> Vec<E::Fr> {    
+// pub fn decode_scalars<E: Engine>(encoding: &[u8]) -> Vec<E::Fr> {
 //     let len = encoding.len() / 32;
-//     let mut result = vec![E::Fr::zero(); len];    
+//     let mut result = vec![E::Fr::zero(); len];
 //     unsafe{std::ptr::copy(encoding.as_ptr() as *const E::Fr, result.as_mut_ptr(), len)};
 //     result
 // }

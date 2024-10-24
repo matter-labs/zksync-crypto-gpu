@@ -1,9 +1,10 @@
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
-#![feature(array_chunks)]
-pub mod error;
-pub mod utils;
+
+// #![feature(array_chunks)]
+// pub mod error;
+// pub mod utils;
 
 pub mod bindings;
 pub mod bindings_extra;

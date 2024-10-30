@@ -1,1 +1,4 @@
 /cmake-build-*/
+gate_kernels.cuh
+poseidon2_bn_constants.cuh
+poseidon2_gl_constants.cuh

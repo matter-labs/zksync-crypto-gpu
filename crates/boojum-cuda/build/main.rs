@@ -3,12 +3,14 @@
 #![feature(generic_const_exprs)]
 
 mod gates;
-mod poseidon_constants;
+mod poseidon2_bn;
+mod poseidon2_gl;
 mod template;
 
 fn main() {
     gates::generate();
-    poseidon_constants::generate();
+    poseidon2_bn::generate();
+    poseidon2_gl::generate();
     println!("cargo::rustc-check-cfg=cfg(no_cuda)");
     if era_cudart_sys::is_no_cuda() {
         println!("cargo::warning={}", era_cudart_sys::no_cuda_message!());

@@ -1,13 +1,12 @@
 #pragma once
 
-#include "goldilocks.cuh"
-#include "memory.cuh"
-#include "poseidon_constants.cuh"
-#include "poseidon_utils.cuh"
+#include "poseidon2_gl.cuh"
 
-namespace poseidon2 {
+namespace poseidon2::goldilocks {
 
-using namespace goldilocks;
+using namespace ::goldilocks;
+
+typedef field<3> poseidon_state[STATE_WIDTH];
 
 template <bool IS_FULL_ROUND> static DEVICE_FORCEINLINE void apply_round_constants(poseidon_state &state, const unsigned round) {
   const auto rc = ALL_ROUND_CONSTANTS[round];
@@ -22,7 +21,7 @@ template <bool IS_FULL_ROUND> static DEVICE_FORCEINLINE void apply_round_constan
 template <bool IS_FULL_ROUND> static DEVICE_FORCEINLINE void apply_non_linearity(poseidon_state &state) {
 #pragma unroll
   for (unsigned i = 0; i < STATE_WIDTH; i++) {
-    if (IS_FULL_ROUND || (i == 0)) {
+    if (IS_FULL_ROUND || i == 0) {
       const base_field f1 = base_field::field3_to_field2(state[i]);
       const base_field f2 = base_field::sqr(f1);
       const base_field f3 = base_field::mul(f1, f2);
@@ -38,7 +37,7 @@ static DEVICE_FORCEINLINE void apply_M_eps_matrix(poseidon_state &state) {
   for (unsigned i = 0; i < STATE_WIDTH; i += TILE) {
     m4_times_tile(&state[i]);
   }
-  field<3> acc_tile[TILE] = {0};
+  field<3> acc_tile[TILE] = {};
 #pragma unroll
   for (unsigned i = 0; i < STATE_WIDTH; i += TILE) {
 #pragma unroll
@@ -65,4 +64,4 @@ static DEVICE_FORCEINLINE void apply_M_I_matrix(poseidon_state &state) {
     state[i] = field<3>::add_limbs(sum, field<3>::shl(state[i], LOG_MU_MINUS_ONE[i]));
 }
 
-} // namespace poseidon2
+} // namespace poseidon2::goldilocks

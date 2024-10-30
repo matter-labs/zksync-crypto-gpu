@@ -15,7 +15,6 @@ cfg_if::cfg_if! {
         pub use cpu::*;
     }
 }
-use shivini::boojum as boojum;
 use boojum::pairing::bn256::{Bn256, Fr};
 use circuit_definitions::circuit_definitions::aux_layer::ZkSyncSnarkWrapperCircuitNoLookupCustomGate;
 use fflonk::{
@@ -23,6 +22,7 @@ use fflonk::{
     fflonk_cpu::franklin_crypto,
 };
 use franklin_crypto::bellman;
+use shivini::boojum;
 
 use bellman::worker::Worker;
 

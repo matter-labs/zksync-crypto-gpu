@@ -27,9 +27,18 @@ gpu-ffi-bindings-generator = { version = "=0.151.0", path = "crates/gpu-ffi", pa
 gpu-prover = { version = "=0.151.0", path = "crates/gpu-prover", package = "zksync-gpu-prover" }
 shivini = { version = "=0.151.0", path = "crates/shivini" }
 wrapper-prover = { version = "=0.151.0", path = "crates/wrapper-prover", package = "zksync-wrapper-prover" }
+fflonk = { version = "=0.151.0", path = "crates/fflonk", package = "fflonk-gpu" }
+proof-compression = { version = "=0.150.9", path = "crates/proof-compression", package = "proof-compression" }
 
 # These dependencies should be shared by all the crates.
-circuit_definitions = { version = "=0.150.6" }
-zkevm_test_harness = { version = "=0.150.6" }
-boojum = "=0.30.1"
-franklin-crypto = "=0.30.1"
+# circuit_definitions = { version = "=0.150.9" }
+# zkevm_test_harness = { version = "=0.150.9" }
+# boojum = "=0.30.3"
+# franklin-crypto = "=0.30.3"
+# fflonk_cpu = "=0.30.3"
+boojum = { path = "../zksync-crypto/crates/boojum", package = "boojum" }
+franklin-crypto = { path = "../zksync-crypto/crates/franklin-crypto", package = "franklin-crypto" }
+snark_wrapper = { path = "../zksync-crypto/crates/snark-wrapper", package = "snark-wrapper" }
+fflonk-cpu = { path = "../zksync-crypto/crates/fflonk", package = "fflonk" }
+circuit_definitions = { path = "../zksync-protocol/crates/circuit_definitions", package = "circuit_definitions" }
+zkevm_test_harness = { path = "../zksync-protocol/crates/zkevm_test_harness", package = "zkevm_test_harness" }

@@ -20,8 +20,12 @@ fn test_snark_circuit_with_naive_main_gate() {
     let circuit = init_snark_wrapper_circuit(&path);
     let (proof, vk) =
         crate::convenience::gpu_prove_fflonk_snark_verifier_circuit_single_shot(&circuit);
-
-    save_fflonk_proof_and_vk_into_file(&proof, &vk, &path);
+    assert!(
+        fflonk_cpu::verify::<Bn256, FflonkSnarkVerifierCircuit, RollingKeccakTranscript<Fr>>(
+            &vk, &proof, None
+        )
+        .unwrap()
+    );
 }
 
 #[test]

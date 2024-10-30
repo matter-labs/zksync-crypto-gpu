@@ -8,11 +8,14 @@
 pub(crate) const SANITY_CHECK: bool = true;
 #[cfg(not(feature = "sanity"))]
 pub(crate) const SANITY_CHECK: bool = false;
-
+pub use fflonk_cpu;
 use bellman::compact_bn256::G1Affine as CompactG1Affine;
 use bellman::{CurveProjective, Engine, Field, PrimeField};
+use circuit_definitions::circuit_definitions::aux_layer::ZkSyncSnarkWrapperCircuitNoLookupCustomGate;
 pub use fflonk::bellman;
 pub use fflonk_cpu as fflonk;
+use fflonk_cpu::bellman::bn256::Bn256;
+use fflonk_cpu::{FflonkProof, FflonkSetup, FflonkVerificationKey};
 
 mod allocator;
 use allocator::*;
@@ -63,12 +66,11 @@ use std::alloc::Allocator;
 pub use context::{DeviceContext, DeviceContextWithSingleDevice};
 pub use fflonk::MAX_COMBINED_DEGREE_FACTOR;
 
-pub use fflonk::{
-    convenience::*, FflonkSnarkVerifierCircuit, FflonkSnarkVerifierCircuitProof,
-    FflonkSnarkVerifierCircuitSetup,
-};
-
 pub use convenience::FflonkSnarkVerifierCircuitDeviceSetup;
 
 // TODO: env variable can configure it
 pub(crate) const DEFAULT_DEVICE_ID: usize = 0;
+pub type FflonkSnarkVerifierCircuit = ZkSyncSnarkWrapperCircuitNoLookupCustomGate;
+pub type FflonkSnarkVerifierCircuitVK = FflonkVerificationKey<Bn256, FflonkSnarkVerifierCircuit>;
+pub type FflonkSnarkVerifierCircuitProof = FflonkProof<Bn256, FflonkSnarkVerifierCircuit>;
+pub type FflonkSnarkVerifierCircuitSetup = FflonkSetup<Bn256, FflonkSnarkVerifierCircuit>;

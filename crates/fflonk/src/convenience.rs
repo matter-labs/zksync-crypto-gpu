@@ -1,5 +1,6 @@
 use bellman::{
     bn256::{Bn256, Fr},
+    kate_commitment::{Crs, CrsForMonomialForm},
     plonk::{
         better_better_cs::cs::{
             Circuit, SynthesisModeGenerateSetup, SynthesisModeProve, SynthesisModeTesting,
@@ -7,15 +8,99 @@ use bellman::{
         commitments::transcript::keccak_transcript::RollingKeccakTranscript,
     },
 };
-use fflonk::{
-    FflonkAssembly, FflonkSnarkVerifierCircuit, FflonkSnarkVerifierCircuitProof,
-    FflonkSnarkVerifierCircuitVK, L1_VERIFIER_DOMAIN_SIZE_LOG,
+use circuit_definitions::circuit_definitions::aux_layer::{
+    wrapper::ZkSyncCompressionWrapper, ZkSyncCompressionProofForWrapper,
+    ZkSyncCompressionVerificationKeyForWrapper,
 };
+use fflonk::{FflonkAssembly, L1_VERIFIER_DOMAIN_SIZE_LOG};
 
 pub type FflonkSnarkVerifierCircuitDeviceSetup =
     FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit>;
 
 use super::*;
+
+pub fn init_crs(
+    worker: &bellman::worker::Worker,
+    domain_size: usize,
+) -> Crs<Bn256, CrsForMonomialForm> {
+    assert!(domain_size <= 1 << L1_VERIFIER_DOMAIN_SIZE_LOG);
+    let num_points = MAX_COMBINED_DEGREE_FACTOR * domain_size;
+    let mon_crs = if let Ok(crs_file_path) = std::env::var("CRS_FILE") {
+        println!("using crs file at {crs_file_path}");
+        let crs_file =
+            std::fs::File::open(&crs_file_path).expect(&format!("crs file at {}", crs_file_path));
+        let mon_crs = Crs::<Bn256, CrsForMonomialForm>::read(crs_file)
+            .expect(&format!("read crs file at {}", crs_file_path));
+        assert!(num_points <= mon_crs.g1_bases.len());
+
+        mon_crs
+    } else {
+        Crs::<Bn256, CrsForMonomialForm>::non_power_of_two_crs_42(num_points, &worker)
+    };
+
+    mon_crs
+}
+
+pub fn init_snark_wrapper_circuit(path: &str) -> FflonkSnarkVerifierCircuit {
+    let compression_wrapper_mode =
+        if let Ok(compression_wrapper_mode) = std::env::var("COMPRESSION_WRAPPER_MODE") {
+            compression_wrapper_mode.parse::<u8>().unwrap()
+        } else {
+            5u8
+        };
+    println!("Compression mode {}", compression_wrapper_mode);
+    let compression_proof_file_path = if let Ok(file_path) = std::env::var("COMPRESSION_PROOF_FILE")
+    {
+        file_path
+    } else {
+        format!(
+            "{}/compression_wrapper_{compression_wrapper_mode}_proof.json",
+            path
+        )
+    };
+    println!("Reading proof file at {compression_proof_file_path}");
+    let compression_vk_file_path = if let Ok(file_path) = std::env::var("COMPRESSION_VK_FILE") {
+        file_path
+    } else {
+        format!(
+            "{}/compression_wrapper_{compression_wrapper_mode}_vk.json",
+            path
+        )
+    };
+    println!("Reading vk file at {compression_vk_file_path}");
+
+    let compression_proof_file = std::fs::File::open(compression_proof_file_path).unwrap();
+    let compression_proof: ZkSyncCompressionProofForWrapper =
+        serde_json::from_reader(&compression_proof_file).unwrap();
+
+    let compression_vk_file = std::fs::File::open(compression_vk_file_path).unwrap();
+    let compression_vk: ZkSyncCompressionVerificationKeyForWrapper =
+        serde_json::from_reader(&compression_vk_file).unwrap();
+
+    init_snark_wrapper_circuit_from_inputs(
+        compression_wrapper_mode,
+        compression_proof,
+        compression_vk,
+    )
+}
+
+pub fn init_snark_wrapper_circuit_from_inputs(
+    compression_wrapper_mode: u8,
+    input_proof: ZkSyncCompressionProofForWrapper,
+    input_vk: ZkSyncCompressionVerificationKeyForWrapper,
+) -> FflonkSnarkVerifierCircuit {
+    let wrapper_function =
+        ZkSyncCompressionWrapper::from_numeric_circuit_type(compression_wrapper_mode);
+    let fixed_parameters = input_vk.fixed_parameters.clone();
+
+    FflonkSnarkVerifierCircuit {
+        witness: Some(input_proof),
+        vk: input_vk,
+        fixed_parameters,
+        transcript_params: (),
+        wrapper_function,
+    }
+}
 
 pub fn gpu_prove_fflonk_snark_verifier_circuit_single_shot(
     circuit: &FflonkSnarkVerifierCircuit,

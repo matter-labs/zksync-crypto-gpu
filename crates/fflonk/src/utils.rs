@@ -448,8 +448,13 @@ where
     let [_, _, omega_copy_perm] = compute_generators::<F>(8usize, 4, 3);
     let inverses_for_setup = fflonk::utils::compute_lagrange_basis_inverses(8, h0, y);
     let inverses_for_trace = fflonk::utils::compute_lagrange_basis_inverses(4, h1, y);
-    let (inverses_for_copy_perm, _) =
-        compute_lagrange_basis_inverses_for_union_set(3, h2, h2_shifted, y, omega_copy_perm);
+    let (inverses_for_copy_perm, _) = fflonk_cpu::compute_lagrange_basis_inverses_for_union_set(
+        3,
+        h2,
+        h2_shifted,
+        y,
+        omega_copy_perm,
+    );
     let mut flattened = inverses_for_setup;
     flattened.extend(inverses_for_trace);
     flattened.extend(inverses_for_copy_perm);

@@ -63,9 +63,6 @@ fn load_scheduler_proof_and_vk(
 fn make_compact_crs_from_original_crs() {
     // This allocates two instances of the CRS in memory
     // and it is around 10GB in total
-    let degree = MAX_COMBINED_DEGREE_FACTOR << L1_VERIFIER_DOMAIN_SIZE_LOG;
-    download_and_transform_ignition_transcripts(degree);
-
     use bellman::compact_bn256::Bn256 as CompactBn256;
     use bellman::compact_bn256::G1Affine as CompactG1Affine;
     use bellman::compact_bn256::G2Affine as CompactG2Affine;

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.152.3](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.2...v0.152.3) (2024-10-31)
+
+
+### Bug Fixes
+
+* **proof-compression:** add missing crate description ([#46](https://github.com/matter-labs/zksync-crypto-gpu/issues/46)) ([ba077db](https://github.com/matter-labs/zksync-crypto-gpu/commit/ba077dbd497310c14bfb574888813e372d0b693a))
+
 ## [0.152.2](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.1...v0.152.2) (2024-10-31)
 
 

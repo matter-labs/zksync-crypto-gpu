@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.152.2](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.1...v0.152.2) (2024-10-31)
+
+
+### Features
+
+* **proof-compression:** release ([#44](https://github.com/matter-labs/zksync-crypto-gpu/issues/44)) ([00ba9a1](https://github.com/matter-labs/zksync-crypto-gpu/commit/00ba9a1ede62e71aa20a3e37870725adad89ba0b))
+
 ## [0.152.1](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.0...v0.152.1) (2024-10-31)
 
 

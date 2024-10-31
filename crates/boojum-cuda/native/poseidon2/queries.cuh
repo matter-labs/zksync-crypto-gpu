@@ -1,14 +1,14 @@
-#include "goldilocks.cuh"
-#include "poseidon_constants.cuh"
+#pragma once
+#include "../common.cuh"
+#include "../memory.cuh"
 
-namespace poseidon {
+namespace poseidon2 {
 
-using namespace goldilocks;
 using namespace memory;
-using namespace poseidon_common;
 
-EXTERN __global__ void gather_rows_kernel(const unsigned *indexes, const unsigned indexes_count, const matrix_getter<base_field, ld_modifier::cs> values,
-                                          matrix_setter<base_field, st_modifier::cs> results) {
+template <class T>
+static DEVICE_FORCEINLINE void gather_rows(const unsigned *indexes, const unsigned indexes_count, const matrix_getter<T, ld_modifier::cs> values,
+                                           const matrix_setter<T, st_modifier::cs> results) {
   const unsigned idx = threadIdx.y + blockIdx.x * blockDim.y;
   if (idx >= indexes_count)
     return;
@@ -19,8 +19,9 @@ EXTERN __global__ void gather_rows_kernel(const unsigned *indexes, const unsigne
   results.set(dst_row, col, values.get(src_row, col));
 }
 
-EXTERN __global__ void gather_merkle_paths_kernel(const unsigned *indexes, const unsigned indexes_count, const base_field *values,
-                                                  const unsigned log_leaves_count, base_field *results) {
+template <class T, unsigned CAPACITY>
+static DEVICE_FORCEINLINE void gather_merkle_paths(const unsigned *indexes, const unsigned indexes_count, const T *values, const unsigned log_leaves_count,
+                                                   T *results) {
   const unsigned idx = threadIdx.x + blockIdx.x * blockDim.x;
   if (idx >= indexes_count)
     return;
@@ -35,4 +36,4 @@ EXTERN __global__ void gather_merkle_paths_kernel(const unsigned *indexes, const
   results[dst_index] = values[src_index];
 }
 
-} // namespace poseidon
+} // namespace poseidon2

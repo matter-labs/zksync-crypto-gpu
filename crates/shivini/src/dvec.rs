@@ -4,9 +4,9 @@ use std::{
     slice::{ChunksExact, ChunksExactMut, ChunksMut},
 };
 
-use boojum::field::U64RawRepresentable;
-
 use super::*;
+use boojum::field::U64RawRepresentable;
+use era_cudart::slice::DeviceSlice;
 
 #[derive(Debug)]
 pub struct DVec<T, A: StaticAllocator = StaticDeviceAllocator> {
@@ -22,26 +22,26 @@ impl<T, A: StaticAllocator> Default for DVec<T, A> {
 impl<T> Clone for DVec<T, StaticDeviceAllocator> {
     fn clone(&self) -> Self {
         let mut new = dvec!(self.len());
-        new.copy_from_device_slice(&self).unwrap();
+        new.copy_from_device_slice(self).unwrap();
 
         new
     }
 }
 
 impl<T, A: StaticAllocator> DVec<T, A> {
-    pub fn chunks<'a>(&'a self, chunk_size: usize) -> Chunks<'a, T> {
+    pub fn chunks(&self, chunk_size: usize) -> Chunks<T> {
         self.data.chunks(chunk_size)
     }
 
-    pub fn chunks_mut<'a>(&'a mut self, chunk_size: usize) -> ChunksMut<'a, T> {
+    pub fn chunks_mut(&mut self, chunk_size: usize) -> ChunksMut<T> {
         self.data.chunks_mut(chunk_size)
     }
 
-    pub fn chunks_exact<'a>(&'a self, chunk_size: usize) -> ChunksExact<'a, T> {
+    pub fn chunks_exact(&self, chunk_size: usize) -> ChunksExact<T> {
         self.data.chunks_exact(chunk_size)
     }
 
-    pub fn chunks_exact_mut<'a>(&'a mut self, chunk_size: usize) -> ChunksExactMut<'a, T> {
+    pub fn chunks_exact_mut(&mut self, chunk_size: usize) -> ChunksExactMut<T> {
         self.data.chunks_exact_mut(chunk_size)
     }
 
@@ -179,15 +179,15 @@ impl<T> DVec<T, StaticDeviceAllocator> {
                 data: Vec::with_capacity_in(0, alloc),
             };
         }
-        // Allocator itself can handle padding but it is okey to do padding here,
+        // Allocator itself can handle padding, but it is ok to do padding here,
         // since DVec is the entrypoint of the all allocations in gpu memory
-        let cap_in_bytes = cap * std::mem::size_of::<T>();
+        let cap_in_bytes = cap * size_of::<T>();
         let block_size_in_bytes = _alloc().block_size_in_bytes();
         let padded_cap_in_bytes = calculate_padded_capacity(cap_in_bytes, block_size_in_bytes);
         assert_eq!(padded_cap_in_bytes % block_size_in_bytes, 0);
-        assert_eq!(padded_cap_in_bytes % std::mem::size_of::<T>(), 0);
-        let mut padded_cap = padded_cap_in_bytes / std::mem::size_of::<T>();
-        if padded_cap_in_bytes % std::mem::size_of::<T>() != 0 {
+        assert_eq!(padded_cap_in_bytes % size_of::<T>(), 0);
+        let mut padded_cap = padded_cap_in_bytes / size_of::<T>();
+        if padded_cap_in_bytes % size_of::<T>() != 0 {
             padded_cap += 1;
         }
 
@@ -229,6 +229,18 @@ impl<T, A: StaticAllocator> Deref for DVec<T, A> {
 impl<T, A: StaticAllocator> DerefMut for DVec<T, A> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.data.deref_mut()
+    }
+}
+
+impl<'a, T, A: StaticAllocator> From<&'a DVec<T, A>> for &'a DeviceSlice<T> {
+    fn from(value: &'a DVec<T, A>) -> Self {
+        unsafe { DeviceSlice::from_slice(value.data.deref()) }
+    }
+}
+
+impl<'a, T, A: StaticAllocator> From<&'a mut DVec<T, A>> for &'a mut DeviceSlice<T> {
+    fn from(value: &'a mut DVec<T, A>) -> Self {
+        unsafe { DeviceSlice::from_mut_slice(value.data.deref_mut()) }
     }
 }
 
@@ -292,13 +304,13 @@ impl<T> SVec<T> {
                 data: Vec::with_capacity_in(0, alloc),
             };
         }
-        let cap_in_bytes = cap * std::mem::size_of::<T>();
+        let cap_in_bytes = cap * size_of::<T>();
         let block_size_in_bytes = _small_alloc().block_size_in_bytes();
         let padded_cap_in_bytes = calculate_padded_capacity(cap_in_bytes, block_size_in_bytes);
         assert_eq!(padded_cap_in_bytes % block_size_in_bytes, 0);
-        assert_eq!(padded_cap_in_bytes % std::mem::size_of::<T>(), 0);
-        let mut padded_cap = padded_cap_in_bytes / std::mem::size_of::<T>();
-        if padded_cap_in_bytes % std::mem::size_of::<T>() != 0 {
+        assert_eq!(padded_cap_in_bytes % size_of::<T>(), 0);
+        let mut padded_cap = padded_cap_in_bytes / size_of::<T>();
+        if padded_cap_in_bytes % size_of::<T>() != 0 {
             padded_cap += 1;
         }
 
@@ -319,9 +331,7 @@ fn calculate_padded_capacity(actual_cap_in_bytes: usize, block_size_in_bytes: us
     if actual_cap_in_bytes % block_size_in_bytes != 0 {
         num_blocks += 1;
     }
-    let padded_cap_in_bytes = num_blocks * block_size_in_bytes;
-
-    padded_cap_in_bytes
+    num_blocks * block_size_in_bytes
 }
 
 pub struct DF {
@@ -338,11 +348,11 @@ impl Clone for DF {
     }
 }
 
-impl std::fmt::Debug for DF {
+impl Debug for DF {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let values = self.inner.to_vec().unwrap();
         assert_eq!(values.len(), 1);
-        write!(f, "{}", values[0]).unwrap();
+        write!(f, "{}", values[0])?;
 
         Ok(())
     }
@@ -382,14 +392,14 @@ impl DF {
     }
 
     pub fn copy_from_host_value(&mut self, value: &F) -> CudaResult<()> {
-        helpers::set_by_value(self.inner.as_mut(), value.clone(), get_stream())?;
+        helpers::set_by_value(self.inner.as_mut(), *value, get_stream())?;
 
         Ok(())
     }
 
     pub fn from_host_value(value: &F) -> CudaResult<Self> {
         let mut storage = svec!(1);
-        helpers::set_by_value(storage.as_mut(), value.clone(), get_stream())?;
+        helpers::set_by_value(storage.as_mut(), *value, get_stream())?;
 
         Ok(Self { inner: storage })
     }
@@ -399,9 +409,9 @@ impl DF {
     }
 }
 
-impl Into<F> for DF {
-    fn into(self) -> F {
-        let mut value = self.inner.to_vec().expect("to host vector");
+impl From<DF> for F {
+    fn from(value: DF) -> Self {
+        let mut value = value.inner.to_vec().expect("to host vector");
         value.pop().unwrap()
     }
 }
@@ -448,7 +458,6 @@ impl DExt {
         Ok(Self { c0, c1 })
     }
 
-    #[allow(dead_code)]
     pub fn zero() -> CudaResult<Self> {
         let c0 = DF::zero()?;
         let c1 = DF::zero()?;
@@ -471,16 +480,15 @@ impl DExt {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn into_coeffs(self) -> [DF; 2] {
         [self.c0, self.c1]
     }
 }
 
-impl Into<EF> for DExt {
-    fn into(self) -> EF {
-        let c0: F = self.c0.into();
-        let c1: F = self.c1.into();
+impl From<DExt> for EF {
+    fn from(value: DExt) -> Self {
+        let c0: F = value.c0.into();
+        let c1: F = value.c1.into();
 
         EF::from_coeff_in_base([c0, c1])
     }

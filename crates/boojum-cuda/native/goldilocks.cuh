@@ -202,7 +202,7 @@ template <unsigned LIMBS_COUNT> struct __align__(LIMBS_ALIGNMENT(LIMBS_COUNT)) f
     return y;
   }
 
-  template <class T> static DEVICE_FORCEINLINE void swap(T & x, T & y) {
+  template <class T> static DEVICE_FORCEINLINE void swap(T &x, T &y) {
     T temp = x;
     x = y;
     y = temp;
@@ -221,7 +221,7 @@ template <unsigned LIMBS_COUNT> struct __align__(LIMBS_ALIGNMENT(LIMBS_COUNT)) f
     return shl(y, s);
   }
 
-  static DEVICE_FORCEINLINE void inv_safe_iteration(uint64_t & f, uint64_t & g, field<4> & c, field<4> & d, unsigned &k) {
+  static DEVICE_FORCEINLINE void inv_safe_iteration(uint64_t &f, uint64_t &g, field<4> &c, field<4> &d, unsigned &k) {
     if (f < g) {
       swap(f, g);
       swap(c, d);
@@ -243,7 +243,7 @@ template <unsigned LIMBS_COUNT> struct __align__(LIMBS_ALIGNMENT(LIMBS_COUNT)) f
     }
   }
 
-  static DEVICE_FORCEINLINE void inv_unsafe_iteration(uint64_t & f, uint64_t & g, field<4> & c, field<4> & d, unsigned &k) {
+  static DEVICE_FORCEINLINE void inv_unsafe_iteration(uint64_t &f, uint64_t &g, field<4> &c, field<4> &d, unsigned &k) {
     if (f < g) {
       swap(f, g);
       swap(c, d);

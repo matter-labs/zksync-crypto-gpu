@@ -1,6 +1,6 @@
 use super::*;
 
-fn make_crs_from_ignition_transcript<S: AsRef<std::ffi::OsStr> + ?Sized>(
+pub fn make_crs_from_ignition_transcript<S: AsRef<std::ffi::OsStr> + ?Sized>(
     path: &S,
     num_chunks: usize,
 ) -> Result<

@@ -16,24 +16,24 @@ version = "0.152.0"
 
 [workspace.dependencies]
 # Local dependencies
-boojum-cuda = { version = "=0.151.1", path = "crates/boojum-cuda" }
-era_criterion_cuda = { version = "=0.151.1", path = "crates/criterion-cuda" }
-era_cudart = { version = "=0.151.1", path = "crates/cudart" }
-era_cudart_sys = { version = "=0.151.1", path = "crates/cudart-sys" }
-era_cudart_sys_bindings_generator = { version = "=0.151.1", path = "crates/cudart-sys-bindings-generator" }
-gpu-ffi = { version = "=0.151.1", path = "crates/gpu-ffi", package = "zksync-gpu-ffi" }
-gpu-ffi-bindings-generator = { version = "=0.151.1", path = "crates/gpu-ffi", package = "zksync-gpu-ffi-bindings-generator" }
-gpu-prover = { version = "=0.151.1", path = "crates/gpu-prover", package = "zksync-gpu-prover" }
-shivini = { version = "=0.151.1", path = "crates/shivini" }
-wrapper-prover = { version = "=0.151.1", path = "crates/wrapper-prover", package = "zksync-wrapper-prover" }
-# fflonk = { version = "=0.151.1", path = "crates/fflonk", package = "fflonk-gpu" }
+boojum-cuda = { version = "=0.152.0", path = "crates/boojum-cuda" }
+era_criterion_cuda = { version = "=0.152.0", path = "crates/criterion-cuda" }
+era_cudart = { version = "=0.152.0", path = "crates/cudart" }
+era_cudart_sys = { version = "=0.152.0", path = "crates/cudart-sys" }
+era_cudart_sys_bindings_generator = { version = "=0.152.0", path = "crates/cudart-sys-bindings-generator" }
+gpu-ffi = { version = "=0.152.0", path = "crates/gpu-ffi", package = "zksync-gpu-ffi" }
+gpu-ffi-bindings-generator = { version = "=0.152.0", path = "crates/gpu-ffi", package = "zksync-gpu-ffi-bindings-generator" }
+gpu-prover = { version = "=0.152.0", path = "crates/gpu-prover", package = "zksync-gpu-prover" }
+shivini = { version = "=0.152.0", path = "crates/shivini" }
+wrapper-prover = { version = "=0.152.0", path = "crates/wrapper-prover", package = "zksync-wrapper-prover" }
+# fflonk = { version = "=0.152.0", path = "crates/fflonk", package = "fflonk-gpu" }
 # proof-compression = { version = "=0.150.1", path = "crates/proof-compression", package = "proof-compression" }
 
 # These dependencies should be shared by all the crates.
-circuit_definitions = { version = "=0.150.10" }
-zkevm_test_harness = { version = "=0.150.10" }
-boojum = "=0.30.5"
-franklin-crypto = "=0.30.5"
-rescue_poseidon = "=0.30.5"
-snark_wrapper = "=0.30.5"
-fflonk-cpu = {package = "fflonk", version = "=0.30.5"}
+circuit_definitions = { version = "=0.150.11" }
+zkevm_test_harness = { version = "=0.150.11" }
+boojum = "=0.30.6"
+franklin-crypto = "=0.30.6"
+rescue_poseidon = "=0.30.6"
+snark_wrapper = "=0.30.6"
+fflonk-cpu = {package = "fflonk", version = "=0.30.6"}

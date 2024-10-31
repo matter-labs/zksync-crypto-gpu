@@ -1,7 +1,6 @@
 [workspace]
-members = [
-    "crates/*"
-]
+members = ["crates/*"]
+exclude = ["crates/proof-compression"]
 resolver = "2"
 
 [workspace.package]
@@ -27,13 +26,17 @@ gpu-ffi-bindings-generator = { version = "=0.152.0", path = "crates/gpu-ffi", pa
 gpu-prover = { version = "=0.152.0", path = "crates/gpu-prover", package = "zksync-gpu-prover" }
 shivini = { version = "=0.152.0", path = "crates/shivini" }
 wrapper-prover = { version = "=0.152.0", path = "crates/wrapper-prover", package = "zksync-wrapper-prover" }
+# fflonk = { version = "=0.152.0", path = "crates/fflonk", package = "fflonk-gpu" }
+# proof-compression = { version = "=0.150.1", path = "crates/proof-compression", package = "proof-compression" }
 
 # These dependencies should be shared by all the crates.
-boojum = "=0.30.5"
-circuit_definitions = "=0.150.10"
-franklin-crypto = "=0.30.5"
-snark_wrapper = "=0.30.5"
-zkevm_test_harness = "=0.150.10"
+circuit_definitions = { version = "=0.150.11" }
+zkevm_test_harness = { version = "=0.150.11" }
+boojum = "=0.30.6"
+franklin-crypto = "=0.30.6"
+rescue_poseidon = "=0.30.6"
+snark_wrapper = "=0.30.6"
+fflonk-cpu = {package = "fflonk", version = "=0.30.6"}
 
 [profile.release]
 debug = "line-tables-only"

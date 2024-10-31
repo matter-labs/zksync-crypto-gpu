@@ -5,7 +5,7 @@
 #![feature(iter_array_chunks)]
 #![feature(get_mut_unchecked)]
 #![feature(generic_const_exprs)]
-
+pub use boojum;
 mod context;
 #[cfg(test)]
 mod test;
@@ -44,6 +44,8 @@ mod prover;
 mod quotient;
 #[cfg(feature = "zksync")]
 pub mod synthesis_utils;
+#[cfg(feature = "zksync")]
+pub use circuit_definitions;
 
 use quotient::*;
 type EF = ExtensionField<F, 2, EXT>;

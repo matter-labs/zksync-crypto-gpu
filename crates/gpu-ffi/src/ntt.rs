@@ -10,7 +10,7 @@ pub fn ntt(
     let d_scalars = alloc_and_copy(ctx, scalars, ctx.get_h2d_stream())?;
     ctx.wait_h2d()?;
 
-    raw_ntt(ctx, d_scalars, len, bits_reversed, inverse,)
+    raw_ntt(ctx, d_scalars, len, bits_reversed, inverse)
 }
 
 pub fn raw_ntt(
@@ -20,7 +20,7 @@ pub fn raw_ntt(
     bits_reversed: bool,
     inverse: bool,
 ) -> Result<(), GpuError> {
-    let log_scalars_count = log_2(len/FIELD_ELEMENT_LEN);
+    let log_scalars_count = log_2(len / FIELD_ELEMENT_LEN);
     let cfg = ntt_configuration::new(
         ctx,
         d_scalars,
@@ -49,7 +49,7 @@ pub fn ifft_then_msm(
     h2d_finished.record(ctx.get_h2d_stream())?;
     ctx.get_exec_stream().wait(h2d_finished)?;
 
-    raw_ntt(ctx, d_scalars, len, bits_reversed, true,)?;
+    raw_ntt(ctx, d_scalars, len, bits_reversed, true)?;
     let result = raw_msm(ctx, d_scalars, len)?;
 
     let exec_finished = bc_event::new()?;
@@ -86,7 +86,7 @@ pub fn raw_coset_ntt(
     coset_idx: usize,
     inverse: bool,
 ) -> Result<(), GpuError> {
-    let log_scalars_count = log_2(len/FIELD_ELEMENT_LEN);
+    let log_scalars_count = log_2(len / FIELD_ELEMENT_LEN);
     let mut cfg = ntt_configuration::new_for_lde(
         ctx,
         d_scalars,
@@ -171,11 +171,7 @@ pub fn lde(
     Ok(result)
 }
 
-pub fn fft(
-    ctx: &GpuContext,
-    scalars: &mut [u8],
-    bits_reversed: bool,    
-) -> Result<(), GpuError> {
+pub fn fft(ctx: &GpuContext, scalars: &mut [u8], bits_reversed: bool) -> Result<(), GpuError> {
     ntt(ctx, scalars, bits_reversed, false)
 }
 
@@ -214,7 +210,7 @@ pub fn multi_ntt(
         h2d_finished.record(ctx.get_h2d_stream())?;
         ctx.get_exec_stream().wait(h2d_finished)?;
 
-        raw_ntt(ctx, d_scalars, len,  bits_reversed, inverse)?;
+        raw_ntt(ctx, d_scalars, len, bits_reversed, inverse)?;
 
         let exec_finished = bc_event::new()?;
         exec_finished.record(ctx.get_exec_stream())?;
@@ -227,10 +223,6 @@ pub fn multi_ntt(
     Ok(())
 }
 
-pub fn ifft(
-    ctx: &GpuContext,
-    scalars: &mut [u8],
-    bits_reversed: bool,
-) -> Result<(), GpuError> {
+pub fn ifft(ctx: &GpuContext, scalars: &mut [u8], bits_reversed: bool) -> Result<(), GpuError> {
     ntt(ctx, scalars, bits_reversed, true)
 }

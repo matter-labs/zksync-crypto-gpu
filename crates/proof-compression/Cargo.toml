@@ -12,7 +12,7 @@ version.workspace = true
 [dependencies]
 circuit_definitions = { package = "circuit_definitions", workspace = true }
 fflonk = { package = "fflonk", workspace = true }
-shivini = { package = "shivini", workspace = true, default-features = false }
+shivini = { package = "shivini", workspace = true }
 serde = "1"
 serde_json = "1"
 bincode = "1.3"

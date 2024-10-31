@@ -1,6 +1,5 @@
 [workspace]
 members = ["crates/*"]
-exclude = ["crates/proof-compression"]
 resolver = "2"
 
 [workspace.package]
@@ -26,8 +25,7 @@ gpu-ffi-bindings-generator = { version = "=0.152.1", path = "crates/gpu-ffi", pa
 gpu-prover = { version = "=0.152.1", path = "crates/gpu-prover", package = "zksync-gpu-prover" }
 shivini = { version = "=0.152.1", path = "crates/shivini" }
 wrapper-prover = { version = "=0.152.1", path = "crates/wrapper-prover", package = "zksync-wrapper-prover" }
-# fflonk = { version = "=0.152.0", path = "crates/fflonk", package = "fflonk-gpu" }
-# proof-compression = { version = "=0.150.1", path = "crates/proof-compression", package = "proof-compression" }
+fflonk = { version = "=0.152.1", path = "crates/fflonk", package = "fflonk-cuda" }
 
 # These dependencies should be shared by all the crates.
 circuit_definitions = { version = "=0.150.11" }

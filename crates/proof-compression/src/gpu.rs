@@ -367,19 +367,21 @@ pub fn inner_prove_compression_layer_circuit<CF: ProofCompressionFunction>(
         proof_cfg.fri_lde_factor,
         proof_cfg.merkle_tree_cap_size,
     );
+    let domain_size = vk_params.domain_size as usize;
+    let config = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
+    let _ctx = ProverContext::create_with_config(config).expect("gpu prover context");
     let (gpu_setup, vk) = shivini::cs::gpu_setup_and_vk_from_base_setup_vk_params_and_hints::<
         CompressionProofsTreeHasher,
         _,
     >(setup_base, vk_params, vars_hint, wits_hint, worker)
     .unwrap();
+    drop(_ctx);
     let (proving_cs, _) = synthesize_compression_circuit::<_, ProvingCSConfig, Global>(
         circuit.clone(),
         true,
         finalization_hint.as_ref(),
     );
     let witness = proving_cs.witness.as_ref().unwrap();
-    let domain_size = vk.fixed_parameters.domain_size as usize;
-    let config = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
     let ctx = ProverContext::create_with_config(config).expect("gpu prover context");
     let cache_strategy = CacheStrategy {
         setup_polynomials: PolynomialsCacheStrategy::CacheMonomialsAndFirstCoset,
@@ -424,19 +426,21 @@ pub fn inner_prove_compression_wrapper_circuit<CF: ProofCompressionFunction>(
         proof_cfg.fri_lde_factor,
         proof_cfg.merkle_tree_cap_size,
     );
+    let domain_size = vk_params.domain_size as usize;
+    let config = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
+    let _ctx = ProverContext::create_with_config(config).expect("gpu prover context");
     let (gpu_setup, vk) = shivini::cs::gpu_setup_and_vk_from_base_setup_vk_params_and_hints::<
         CompressionTreeHasherForWrapper,
         _,
     >(setup_base, vk_params, vars_hint, wits_hint, worker)
     .unwrap();
+    drop(_ctx);
     let (proving_cs, _) = synthesize_compression_circuit::<_, ProvingCSConfig, Global>(
         circuit,
         true,
         finalization_hint.as_ref(),
     );
     let witness = proving_cs.witness.as_ref().unwrap();
-    let domain_size = vk.fixed_parameters.domain_size as usize;
-    let config = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
     let ctx = ProverContext::create_with_config(config).expect("gpu prover context");
     let cache_strategy = CacheStrategy {
         setup_polynomials: PolynomialsCacheStrategy::CacheMonomialsAndFirstCoset,

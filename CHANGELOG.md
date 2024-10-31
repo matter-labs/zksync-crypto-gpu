@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.152.1](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.0...v0.152.1) (2024-10-31)
+
+
+### Features
+
+* fflonk gpu implementation ([#26](https://github.com/matter-labs/zksync-crypto-gpu/issues/26)) ([9d11084](https://github.com/matter-labs/zksync-crypto-gpu/commit/9d11084cec1bd1b88de9a28524923a5217ebd0ad))
+
 ## [0.152.0](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.151.1...v0.152.0) (2024-10-31)
 
 

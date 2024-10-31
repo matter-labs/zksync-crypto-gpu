@@ -1,7 +1,15 @@
 [package]
-name = "fflonk-gpu"
-edition = "2021"
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
 version.workspace = true
+name = "fflonk-cuda"
+description = "CUDA implementation of the fflonk prover"
+exclude = ["/data"]
 
 [dependencies]
 fflonk-cpu = {workspace = true}

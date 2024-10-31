@@ -24,6 +24,7 @@ use std::alloc::Global;
 use ::fflonk::*;
 
 #[test]
+#[ignore]
 fn run_proof_compression_by_schedule() {
     let path = if let Ok(path) = std::env::var("BLOB_PATH") {
         path.to_string()

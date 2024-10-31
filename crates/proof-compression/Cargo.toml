@@ -8,6 +8,7 @@ keywords.workspace = true
 categories.workspace = true
 repository.workspace = true
 version.workspace = true
+description = "Both cuda and cpu based proof compression and wrapping chain"
 exclude = ["/data"]
 
 [dependencies]

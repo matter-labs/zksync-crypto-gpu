@@ -8,11 +8,11 @@
 pub(crate) const SANITY_CHECK: bool = true;
 #[cfg(not(feature = "sanity"))]
 pub(crate) const SANITY_CHECK: bool = false;
-pub use fflonk_cpu;
 use bellman::compact_bn256::G1Affine as CompactG1Affine;
 use bellman::{CurveProjective, Engine, Field, PrimeField};
 use circuit_definitions::circuit_definitions::aux_layer::ZkSyncSnarkWrapperCircuitNoLookupCustomGate;
 pub use fflonk::bellman;
+pub use fflonk_cpu;
 pub use fflonk_cpu as fflonk;
 use fflonk_cpu::bellman::bn256::Bn256;
 use fflonk_cpu::{FflonkProof, FflonkSetup, FflonkVerificationKey};

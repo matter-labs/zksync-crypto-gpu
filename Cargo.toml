@@ -37,3 +37,6 @@ franklin-crypto = "=0.30.6"
 rescue_poseidon = "=0.30.6"
 snark_wrapper = "=0.30.6"
 fflonk-cpu = {package = "fflonk", version = "=0.30.6"}
+
+[profile.release]
+debug = "line-tables-only"

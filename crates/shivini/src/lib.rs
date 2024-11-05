@@ -70,3 +70,4 @@ pub use data_structures::CommitmentCacheStrategy;
 pub use data_structures::PolynomialsCacheStrategy;
 pub use prover::gpu_prove_from_external_witness_data;
 pub use prover::gpu_prove_from_external_witness_data_with_cache_strategy;
+pub use primitives::tree::GpuTreeHasher;

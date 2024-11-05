@@ -17,8 +17,14 @@ use fflonk::{
 };
 use shivini::boojum::{
     algebraic_props::{round_function::AbsorptionModeOverwrite, sponge::GoldilocksPoseidon2Sponge},
-    cs::implementations::{
-        proof::Proof, transcript::GoldilocksPoisedon2Transcript, verifier::Verifier,
+    config::{CSConfig, ProvingCSConfig, SetupCSConfig},
+    cs::{
+        cs_builder::new_builder,
+        cs_builder_reference::CsReferenceImplementationBuilder,
+        implementations::{
+            proof::Proof, reference_cs::CSReferenceAssembly, setup::FinalizationHintsForProver,
+            transcript::GoldilocksPoisedon2Transcript, verifier::Verifier,
+        },
     },
     field::goldilocks::{GoldilocksExt2, GoldilocksField},
 };
@@ -281,4 +287,51 @@ pub fn load_fflonk_setup_and_vk_from_file(
     let vk = FflonkSnarkVerifierCircuitVK::read(&vk_file).unwrap();
 
     (setup, vk)
+}
+
+pub fn synthesize_circuit_for_setup<CF: ProofCompressionFunction>(
+    circuit: CompressionLayerCircuit<CF>,
+) -> (
+    FinalizationHintsForProver,
+    CSReferenceAssembly<F, F, SetupCSConfig>,
+) {
+    let geometry = circuit.geometry();
+    let (max_trace_len, num_vars) = circuit.size_hint();
+
+    let builder_impl = CsReferenceImplementationBuilder::<GoldilocksField, F, SetupCSConfig>::new(
+        geometry,
+        max_trace_len.unwrap(),
+    );
+    let builder = new_builder::<_, GoldilocksField>(builder_impl);
+
+    let builder = circuit.configure_builder_proxy(builder);
+    let mut cs = builder.build(num_vars.unwrap());
+    circuit.add_tables(&mut cs);
+    circuit.synthesize_into_cs(&mut cs);
+    let (_domain_size, finalization_hint) = cs.pad_and_shrink();
+    let cs = cs.into_assembly::<std::alloc::Global>();
+
+    (finalization_hint, cs)
+}
+pub fn synthesize_circuit_for_proving<CF: ProofCompressionFunction>(
+    circuit: CompressionLayerCircuit<CF>,
+    finalization_hint: &FinalizationHintsForProver,
+) -> CSReferenceAssembly<F, F, ProvingCSConfig> {
+    let geometry = circuit.geometry();
+    let (max_trace_len, num_vars) = circuit.size_hint();
+
+    let builder_impl = CsReferenceImplementationBuilder::<GoldilocksField, F, ProvingCSConfig>::new(
+        geometry,
+        max_trace_len.unwrap(),
+    );
+    let builder = new_builder::<_, GoldilocksField>(builder_impl);
+
+    let builder = circuit.configure_builder_proxy(builder);
+    let mut cs = builder.build(num_vars.unwrap());
+    circuit.add_tables(&mut cs);
+    circuit.synthesize_into_cs(&mut cs);
+    let _ = cs.pad_and_shrink_using_hint(&finalization_hint);
+    let cs = cs.into_assembly::<std::alloc::Global>();
+
+    cs
 }

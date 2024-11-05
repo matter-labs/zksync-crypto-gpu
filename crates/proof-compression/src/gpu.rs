@@ -1,7 +1,10 @@
 use super::*;
-use boojum::config::{ProvingCSConfig, SetupCSConfig};
+use ::fflonk::*;
 use boojum::cs::implementations::prover::ProofConfig;
+use boojum::field::goldilocks::GoldilocksField as F;
 use boojum::worker::Worker;
+use shivini::boojum::cs::implementations::setup::FinalizationHintsForProver;
+use shivini::boojum::cs::implementations::verifier::VerificationKey;
 use shivini::circuit_definitions::boojum;
 use shivini::circuit_definitions::circuit_definitions::{
     aux_layer::{
@@ -13,15 +16,14 @@ use shivini::circuit_definitions::circuit_definitions::{
     },
     recursion_layer::{ZkSyncRecursionProof, ZkSyncRecursionVerificationKey},
 };
+use shivini::cs::GpuSetup;
 use shivini::gpu_proof_config::GpuProofConfig;
-use shivini::synthesis_utils::synthesize_compression_circuit;
 use shivini::{
     gpu_prove_from_external_witness_data_with_cache_strategy, CacheStrategy,
-    CommitmentCacheStrategy, PolynomialsCacheStrategy, ProverContext, ProverContextConfig,
+    CommitmentCacheStrategy, GpuTreeHasher, PolynomialsCacheStrategy, ProverContext,
+    ProverContextConfig,
 };
 use std::alloc::Global;
-
-use ::fflonk::*;
 
 #[test]
 #[ignore]
@@ -113,8 +115,26 @@ pub fn process_steps(
             "Proving compression {compression_schedule_name}/{}",
             compression_mode as u8
         );
-        let (output_proof, output_vk) =
-            prove_compression_layer_circuit(compression_circuit.clone(), &worker);
+        let setup_file_path = format!("{path}/compression_{}_setup.bin", compression_mode as u8);
+        let setup_file_path = std::path::Path::new(&setup_file_path);
+        let (device_setup, vk, finalization_hint) = if setup_file_path.exists() {
+            load_compression_precomputations(compression_mode as u8, path)
+        } else {
+            let proof_config = compression_circuit.proof_config_for_compression_step();
+            precompute_and_save_compression_layer_circuit_setup_and_vk::<false>(
+                compression_circuit.clone(),
+                &worker,
+                proof_config,
+                path,
+            )
+        };
+        let (output_proof, output_vk) = prove_compression_layer_circuit_with_precomputations(
+            compression_circuit.clone(),
+            &device_setup,
+            finalization_hint,
+            vk,
+            &worker,
+        );
         println!(
             "Proof for compression {compression_schedule_name}/{} is generated!",
             compression_mode as u8
@@ -158,13 +178,35 @@ pub fn process_steps(
             last_compression_wrapping_mode as u8
         );
     } else {
+        let compression_circuit = input.into_compression_wrapper_circuit();
+        let setup_file_path = format!(
+            "{path}/compression_wrapper_{}_setup.bin",
+            last_compression_wrapping_mode as u8
+        );
+        let setup_file_path = std::path::Path::new(&setup_file_path);
+        let (device_setup, vk, finalization_hint) = if setup_file_path.exists() {
+            load_compression_precomputations(last_compression_wrapping_mode as u8, path)
+        } else {
+            let proof_config = compression_circuit.proof_config_for_compression_step();
+            precompute_and_save_compression_wrapper_circuit_setup_and_vk::<false>(
+                compression_circuit.clone(),
+                &worker,
+                proof_config,
+                path,
+            )
+        };
         println!(
             "Proving compression {compression_schedule_name}/{} for wrapper",
             last_compression_wrapping_mode as u8
         );
-        let compression_circuit = input.into_compression_wrapper_circuit();
         let (compression_wrapper_output_proof, compression_wrapper_output_vk) =
-            prove_compression_wrapper_circuit(compression_circuit, &worker);
+            prove_compression_wrapper_circuit_with_precomputations(
+                compression_circuit,
+                &device_setup,
+                finalization_hint,
+                vk,
+                &worker,
+            );
         println!(
             "Proof for compression wrapper {compression_schedule_name}/{} is generated!",
             last_compression_wrapping_mode as u8
@@ -215,8 +257,11 @@ pub fn process_steps(
     }
 }
 
-pub fn prove_compression_layer_circuit(
+pub fn prove_compression_layer_circuit_with_precomputations(
     circuit: ZkSyncCompressionLayerCircuit,
+    device_setup: &GpuSetup<CompressionProofsTreeHasher>,
+    finalization_hint: FinalizationHintsForProver,
+    vk: VerificationKey<F, CompressionProofsTreeHasher>,
     worker: &Worker,
 ) -> (ZkSyncCompressionProof, ZkSyncCompressionVerificationKey) {
     let proof_config = circuit.proof_config_for_compression_step();
@@ -228,6 +273,9 @@ pub fn prove_compression_layer_circuit(
         ZkSyncCompressionLayerCircuit::CompressionMode1Circuit(inner) => {
             let (proof, vk) = inner_prove_compression_layer_circuit(
                 inner.clone(),
+                device_setup,
+                finalization_hint,
+                vk,
                 proof_config,
                 gpu_proof_config,
                 worker,
@@ -238,6 +286,9 @@ pub fn prove_compression_layer_circuit(
         ZkSyncCompressionLayerCircuit::CompressionMode2Circuit(inner) => {
             let (proof, vk) = inner_prove_compression_layer_circuit(
                 inner.clone(),
+                device_setup,
+                finalization_hint,
+                vk,
                 proof_config,
                 gpu_proof_config,
                 worker,
@@ -248,6 +299,9 @@ pub fn prove_compression_layer_circuit(
         ZkSyncCompressionLayerCircuit::CompressionMode3Circuit(inner) => {
             let (proof, vk) = inner_prove_compression_layer_circuit(
                 inner.clone(),
+                device_setup,
+                finalization_hint,
+                vk,
                 proof_config,
                 gpu_proof_config,
                 worker,
@@ -258,6 +312,9 @@ pub fn prove_compression_layer_circuit(
         ZkSyncCompressionLayerCircuit::CompressionMode4Circuit(inner) => {
             let (proof, vk) = inner_prove_compression_layer_circuit(
                 inner.clone(),
+                device_setup,
+                finalization_hint,
+                vk,
                 proof_config,
                 gpu_proof_config,
                 worker,
@@ -265,16 +322,7 @@ pub fn prove_compression_layer_circuit(
             let is_proof_valid = verify_compression_layer_circuit(inner, &proof, &vk, verifier);
             (proof, vk, is_proof_valid)
         }
-        ZkSyncCompressionLayerCircuit::CompressionMode5Circuit(inner) => {
-            let (proof, vk) = inner_prove_compression_layer_circuit(
-                inner.clone(),
-                proof_config,
-                gpu_proof_config,
-                worker,
-            );
-            let is_proof_valid = verify_compression_layer_circuit(inner, &proof, &vk, verifier);
-            (proof, vk, is_proof_valid)
-        }
+        _ => unreachable!("Only 4 modes of compression is allowed"),
     };
     if !is_proof_valid {
         panic!("Proof is invalid");
@@ -283,8 +331,11 @@ pub fn prove_compression_layer_circuit(
     (proof, vk)
 }
 
-pub fn prove_compression_wrapper_circuit(
+pub fn prove_compression_wrapper_circuit_with_precomputations(
     circuit: ZkSyncCompressionForWrapperCircuit,
+    device_setup: &GpuSetup<CompressionTreeHasherForWrapper>,
+    finalization_hint: FinalizationHintsForProver,
+    vk: VerificationKey<F, CompressionTreeHasherForWrapper>,
     worker: &Worker,
 ) -> (
     ZkSyncCompressionProofForWrapper,
@@ -296,49 +347,12 @@ pub fn prove_compression_wrapper_circuit(
     let gpu_proof_config = GpuProofConfig::from_compression_wrapper_circuit(&circuit);
 
     let (proof, vk, is_proof_valid) = match circuit {
-        ZkSyncCompressionForWrapperCircuit::CompressionMode1Circuit(inner) => {
-            let (proof, vk) = inner_prove_compression_wrapper_circuit(
-                inner.clone(),
-                proof_config,
-                gpu_proof_config,
-                worker,
-            );
-            let is_proof_valid = verify_compression_wrapper_circuit(inner, &proof, &vk, verifier);
-            (proof, vk, is_proof_valid)
-        }
-        ZkSyncCompressionForWrapperCircuit::CompressionMode2Circuit(inner) => {
-            let (proof, vk) = inner_prove_compression_wrapper_circuit(
-                inner.clone(),
-                proof_config,
-                gpu_proof_config,
-                worker,
-            );
-            let is_proof_valid = verify_compression_wrapper_circuit(inner, &proof, &vk, verifier);
-            (proof, vk, is_proof_valid)
-        }
-        ZkSyncCompressionForWrapperCircuit::CompressionMode3Circuit(inner) => {
-            let (proof, vk) = inner_prove_compression_wrapper_circuit(
-                inner.clone(),
-                proof_config,
-                gpu_proof_config,
-                worker,
-            );
-            let is_proof_valid = verify_compression_wrapper_circuit(inner, &proof, &vk, verifier);
-            (proof, vk, is_proof_valid)
-        }
-        ZkSyncCompressionForWrapperCircuit::CompressionMode4Circuit(inner) => {
-            let (proof, vk) = inner_prove_compression_wrapper_circuit(
-                inner.clone(),
-                proof_config,
-                gpu_proof_config,
-                worker,
-            );
-            let is_proof_valid = verify_compression_wrapper_circuit(inner, &proof, &vk, verifier);
-            (proof, vk, is_proof_valid)
-        }
         ZkSyncCompressionForWrapperCircuit::CompressionMode5Circuit(inner) => {
             let (proof, vk) = inner_prove_compression_wrapper_circuit(
                 inner.clone(),
+                device_setup,
+                finalization_hint,
+                vk,
                 proof_config,
                 gpu_proof_config,
                 worker,
@@ -346,6 +360,7 @@ pub fn prove_compression_wrapper_circuit(
             let is_proof_valid = verify_compression_wrapper_circuit(inner, &proof, &vk, verifier);
             (proof, vk, is_proof_valid)
         }
+        _ => unreachable!("Only mode 5 is supported for wrapper"),
     };
     if !is_proof_valid {
         panic!("Proof is invalid");
@@ -356,32 +371,18 @@ pub fn prove_compression_wrapper_circuit(
 
 pub fn inner_prove_compression_layer_circuit<CF: ProofCompressionFunction>(
     circuit: CompressionLayerCircuit<CF>,
+    device_setup: &GpuSetup<CompressionProofsTreeHasher>,
+    finalization_hint: FinalizationHintsForProver,
+    vk: VerificationKey<F, CompressionProofsTreeHasher>,
     proof_cfg: ProofConfig,
     gpu_cfg: GpuProofConfig,
     worker: &Worker,
 ) -> (ZkSyncCompressionProof, ZkSyncCompressionVerificationKey) {
-    let (setup_cs, finalization_hint) =
-        synthesize_compression_circuit::<_, SetupCSConfig, Global>(circuit.clone(), true, None);
-    let (setup_base, vk_params, vars_hint, wits_hint) = setup_cs.get_light_setup(
-        &worker,
-        proof_cfg.fri_lde_factor,
-        proof_cfg.merkle_tree_cap_size,
-    );
-    let domain_size = vk_params.domain_size as usize;
-    let config = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
-    let _ctx = ProverContext::create_with_config(config).expect("gpu prover context");
-    let (gpu_setup, vk) = shivini::cs::gpu_setup_and_vk_from_base_setup_vk_params_and_hints::<
-        CompressionProofsTreeHasher,
-        _,
-    >(setup_base, vk_params, vars_hint, wits_hint, worker)
-    .unwrap();
-    drop(_ctx);
-    let (proving_cs, _) = synthesize_compression_circuit::<_, ProvingCSConfig, Global>(
-        circuit.clone(),
-        true,
-        finalization_hint.as_ref(),
-    );
+    let proving_cs = synthesize_circuit_for_proving(circuit, &finalization_hint);
     let witness = proving_cs.witness.as_ref().unwrap();
+    let domain_size = vk.fixed_parameters.domain_size as usize;
+    assert_eq!(finalization_hint.final_trace_len, domain_size);
+    let config = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
     let ctx = ProverContext::create_with_config(config).expect("gpu prover context");
     let cache_strategy = CacheStrategy {
         setup_polynomials: PolynomialsCacheStrategy::CacheMonomialsAndFirstCoset,
@@ -398,7 +399,7 @@ pub fn inner_prove_compression_layer_circuit<CF: ProofCompressionFunction>(
         &gpu_cfg,
         witness,
         proof_cfg.clone(),
-        &gpu_setup,
+        &device_setup,
         &vk,
         (),
         worker,
@@ -412,6 +413,9 @@ pub fn inner_prove_compression_layer_circuit<CF: ProofCompressionFunction>(
 
 pub fn inner_prove_compression_wrapper_circuit<CF: ProofCompressionFunction>(
     circuit: CompressionLayerCircuit<CF>,
+    device_setup: &GpuSetup<CompressionTreeHasherForWrapper>,
+    finalization_hint: FinalizationHintsForProver,
+    vk: VerificationKey<F, CompressionTreeHasherForWrapper>,
     proof_cfg: ProofConfig,
     gpu_cfg: GpuProofConfig,
     worker: &Worker,
@@ -419,28 +423,11 @@ pub fn inner_prove_compression_wrapper_circuit<CF: ProofCompressionFunction>(
     ZkSyncCompressionProofForWrapper,
     ZkSyncCompressionVerificationKeyForWrapper,
 ) {
-    let (setup_cs, finalization_hint) =
-        synthesize_compression_circuit::<_, SetupCSConfig, Global>(circuit.clone(), true, None);
-    let (setup_base, vk_params, vars_hint, wits_hint) = setup_cs.get_light_setup(
-        &worker,
-        proof_cfg.fri_lde_factor,
-        proof_cfg.merkle_tree_cap_size,
-    );
-    let domain_size = vk_params.domain_size as usize;
-    let config = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
-    let _ctx = ProverContext::create_with_config(config).expect("gpu prover context");
-    let (gpu_setup, vk) = shivini::cs::gpu_setup_and_vk_from_base_setup_vk_params_and_hints::<
-        CompressionTreeHasherForWrapper,
-        _,
-    >(setup_base, vk_params, vars_hint, wits_hint, worker)
-    .unwrap();
-    drop(_ctx);
-    let (proving_cs, _) = synthesize_compression_circuit::<_, ProvingCSConfig, Global>(
-        circuit,
-        true,
-        finalization_hint.as_ref(),
-    );
+    let proving_cs = synthesize_circuit_for_proving(circuit, &finalization_hint);
     let witness = proving_cs.witness.as_ref().unwrap();
+    let domain_size = vk.fixed_parameters.domain_size as usize;
+    assert_eq!(finalization_hint.final_trace_len, domain_size);
+    let config = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
     let ctx = ProverContext::create_with_config(config).expect("gpu prover context");
     let cache_strategy = CacheStrategy {
         setup_polynomials: PolynomialsCacheStrategy::CacheMonomialsAndFirstCoset,
@@ -457,7 +444,7 @@ pub fn inner_prove_compression_wrapper_circuit<CF: ProofCompressionFunction>(
         &gpu_cfg,
         witness,
         proof_cfg.clone(),
-        &gpu_setup,
+        device_setup,
         &vk,
         (),
         worker,
@@ -466,4 +453,161 @@ pub fn inner_prove_compression_wrapper_circuit<CF: ProofCompressionFunction>(
     .expect("gpu proof");
     drop(ctx);
     (gpu_proof.into(), vk)
+}
+
+pub fn precompute_and_save_compression_layer_circuit_setup_and_vk<const SAVE: bool>(
+    circuit: ZkSyncCompressionLayerCircuit,
+    worker: &Worker,
+    proof_cfg: ProofConfig,
+    path: &str,
+) -> (
+    GpuSetup<CompressionProofsTreeHasher>,
+    VerificationKey<F, CompressionProofsTreeHasher>,
+    FinalizationHintsForProver,
+) {
+    match circuit {
+        ZkSyncCompressionLayerCircuit::CompressionMode1Circuit(compression_layer_circuit) => {
+            precompute_and_save_compression_circuit_setup_and_vk::<
+                _,
+                CompressionProofsTreeHasher,
+                SAVE,
+            >(compression_layer_circuit, 1, worker, proof_cfg, path)
+        }
+        ZkSyncCompressionLayerCircuit::CompressionMode2Circuit(compression_layer_circuit) => {
+            precompute_and_save_compression_circuit_setup_and_vk::<
+                _,
+                CompressionProofsTreeHasher,
+                SAVE,
+            >(compression_layer_circuit, 2, worker, proof_cfg, path)
+        }
+        ZkSyncCompressionLayerCircuit::CompressionMode3Circuit(compression_layer_circuit) => {
+            precompute_and_save_compression_circuit_setup_and_vk::<
+                _,
+                CompressionProofsTreeHasher,
+                SAVE,
+            >(compression_layer_circuit, 3, worker, proof_cfg, path)
+        }
+        ZkSyncCompressionLayerCircuit::CompressionMode4Circuit(compression_layer_circuit) => {
+            precompute_and_save_compression_circuit_setup_and_vk::<
+                _,
+                CompressionProofsTreeHasher,
+                SAVE,
+            >(compression_layer_circuit, 4, worker, proof_cfg, path)
+        }
+        _ => unreachable!("Only 4 modes of compression is allowed"),
+    }
+}
+
+pub fn precompute_and_save_compression_wrapper_circuit_setup_and_vk<const SAVE: bool>(
+    circuit: ZkSyncCompressionForWrapperCircuit,
+    worker: &Worker,
+    proof_cfg: ProofConfig,
+    path: &str,
+) -> (
+    GpuSetup<CompressionTreeHasherForWrapper>,
+    VerificationKey<F, CompressionTreeHasherForWrapper>,
+    FinalizationHintsForProver,
+) {
+    match circuit {
+        ZkSyncCompressionForWrapperCircuit::CompressionMode5Circuit(
+            compression_wrapper_circuit,
+        ) => precompute_and_save_compression_circuit_setup_and_vk::<_, _, SAVE>(
+            compression_wrapper_circuit,
+            5,
+            worker,
+            proof_cfg,
+            path,
+        ),
+        _ => unreachable!("Only mode 5 is supported for wrapper"),
+    }
+}
+
+pub fn precompute_and_save_compression_circuit_setup_and_vk<
+    CF: ProofCompressionFunction,
+    H: GpuTreeHasher,
+    const SAVE: bool,
+>(
+    circuit: CompressionLayerCircuit<CF>,
+    compression_mode: usize,
+    worker: &Worker,
+    proof_cfg: ProofConfig,
+    path: &str,
+) -> (
+    GpuSetup<H>,
+    VerificationKey<F, H>,
+    FinalizationHintsForProver,
+) {
+    let (finalization_hint, setup_assembly) = synthesize_circuit_for_setup::<CF>(circuit);
+    let (setup_base, vk_params, vars_hint, wits_hint) = setup_assembly.get_light_setup(
+        &worker,
+        proof_cfg.fri_lde_factor,
+        proof_cfg.merkle_tree_cap_size,
+    );
+    let domain_size = vk_params.domain_size as usize;
+    assert_eq!(finalization_hint.final_trace_len, domain_size);
+    let config = ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
+    let _ctx = ProverContext::create_with_config(config).expect("gpu prover context");
+    let (device_setup, vk) = shivini::cs::gpu_setup_and_vk_from_base_setup_vk_params_and_hints::<
+        H,
+        _,
+    >(setup_base, vk_params, vars_hint, wits_hint, worker)
+    .unwrap();
+    if SAVE {
+        let base_path = if compression_mode == 5 {
+            format!("{path}/compression_wrapper")
+        } else {
+            format!("{path}/compression")
+        };
+        let setup_file_path = format!("{}_device_setup.bin", base_path);
+        println!("Saving setup into file {setup_file_path}");
+        let setup_file = std::fs::File::create(&setup_file_path).unwrap();
+        bincode::serialize_into(&setup_file, &device_setup).unwrap();
+        println!("fflonk device setup saved into {}", setup_file_path);
+
+        let vk_file_path = format!("{}_vk.json", base_path);
+        let vk_file = std::fs::File::create(&vk_file_path).unwrap();
+        serde_json::to_writer(&vk_file, &vk).unwrap();
+        println!("fflonk vk saved into {}", vk_file_path);
+
+        let finalization_hint_file_path = format!("{}_hint.json", base_path);
+        let finalization_hint_file = std::fs::File::create(&finalization_hint_file_path).unwrap();
+        serde_json::to_writer(&finalization_hint_file, &finalization_hint).unwrap();
+        println!(
+            "finalization hint saved into {}",
+            finalization_hint_file_path
+        );
+    }
+
+    (device_setup, vk, finalization_hint)
+}
+
+pub fn load_compression_precomputations<H: GpuTreeHasher>(
+    compression_mode: u8,
+    path: &str,
+) -> (
+    GpuSetup<H>,
+    VerificationKey<F, H>,
+    FinalizationHintsForProver,
+) {
+    let base_path = if compression_mode == 5 {
+        format!("{path}/compression_wrapper")
+    } else {
+        format!("{path}/compression")
+    };
+    let setup_file_path = format!("{base_path}_device_setup.bin",);
+    println!("Loading device setup from file {setup_file_path}");
+    let setup_file = std::fs::File::open(&setup_file_path).unwrap();
+    let device_setup: GpuSetup<H> = bincode::deserialize_from(&setup_file).unwrap();
+
+    let vk_file_path = format!("{base_path}_vk.json");
+    println!("Loading vk from file {vk_file_path}");
+    let vk_file = std::fs::File::open(&vk_file_path).unwrap();
+    let vk = serde_json::from_reader(&vk_file).unwrap();
+
+    let finalization_hint_file_path = format!("{base_path}_hint.json");
+    println!("Loading finalization hint from file {finalization_hint_file_path}");
+    let finalization_hint_file = std::fs::File::open(&finalization_hint_file_path).unwrap();
+    let finalization_hint = serde_json::from_reader(&finalization_hint_file).unwrap();
+
+    (device_setup, vk, finalization_hint)
 }

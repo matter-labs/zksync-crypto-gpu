@@ -17,7 +17,7 @@ use fflonk::{
 };
 use shivini::boojum::{
     algebraic_props::{round_function::AbsorptionModeOverwrite, sponge::GoldilocksPoseidon2Sponge},
-    config::{CSConfig, ProvingCSConfig, SetupCSConfig},
+    config::{CSConfig, DevCSConfig, ProvingCSConfig, SetupCSConfig},
     cs::{
         cs_builder::new_builder,
         cs_builder_reference::CsReferenceImplementationBuilder,
@@ -313,6 +313,7 @@ pub fn synthesize_circuit_for_setup<CF: ProofCompressionFunction>(
 
     (finalization_hint, cs)
 }
+
 pub fn synthesize_circuit_for_proving<CF: ProofCompressionFunction>(
     circuit: CompressionLayerCircuit<CF>,
     finalization_hint: &FinalizationHintsForProver,
@@ -331,6 +332,27 @@ pub fn synthesize_circuit_for_proving<CF: ProofCompressionFunction>(
     circuit.add_tables(&mut cs);
     circuit.synthesize_into_cs(&mut cs);
     let _ = cs.pad_and_shrink_using_hint(&finalization_hint);
+    let cs = cs.into_assembly::<std::alloc::Global>();
+
+    cs
+}
+pub fn synthesize_circuit_for_dev<CF: ProofCompressionFunction>(
+    circuit: CompressionLayerCircuit<CF>,
+) -> CSReferenceAssembly<F, F, DevCSConfig> {
+    let geometry = circuit.geometry();
+    let (max_trace_len, num_vars) = circuit.size_hint();
+
+    let builder_impl = CsReferenceImplementationBuilder::<GoldilocksField, F, DevCSConfig>::new(
+        geometry,
+        max_trace_len.unwrap(),
+    );
+    let builder = new_builder::<_, GoldilocksField>(builder_impl);
+
+    let builder = circuit.configure_builder_proxy(builder);
+    let mut cs = builder.build(num_vars.unwrap());
+    circuit.add_tables(&mut cs);
+    circuit.synthesize_into_cs(&mut cs);
+    let _ = cs.pad_and_shrink();
     let cs = cs.into_assembly::<std::alloc::Global>();
 
     cs

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.152.4](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.3...v0.152.4) (2024-11-06)
+
+
+### Features
+
+* Bump protocol versions ([#49](https://github.com/matter-labs/zksync-crypto-gpu/issues/49)) ([cb24eb6](https://github.com/matter-labs/zksync-crypto-gpu/commit/cb24eb60958d0950d5ff7c772562d92930fa2577))
+
 ## [0.152.3](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.2...v0.152.3) (2024-10-31)
 
 

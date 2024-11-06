@@ -348,22 +348,26 @@ pub fn inner_prove_compression_layer_circuit(
 
     let (proof, vk, is_proof_valid) = match circuit {
         ZkSyncCompressionLayerCircuit::CompressionMode1Circuit(inner) => {
-            let (proof, vk) = prove_compression_circuit(inner.clone(), proof_config, worker);
+            let (proof, vk) =
+                prove_compression_circuit_with_precomputations(inner.clone(), proof_config, worker);
             let is_proof_valid = verify_compression_layer_circuit(inner, &proof, &vk, verifier);
             (proof, vk, is_proof_valid)
         }
         ZkSyncCompressionLayerCircuit::CompressionMode2Circuit(inner) => {
-            let (proof, vk) = prove_compression_circuit(inner.clone(), proof_config, worker);
+            let (proof, vk) =
+                prove_compression_circuit_with_precomputations(inner.clone(), proof_config, worker);
             let is_proof_valid = verify_compression_layer_circuit(inner, &proof, &vk, verifier);
             (proof, vk, is_proof_valid)
         }
         ZkSyncCompressionLayerCircuit::CompressionMode3Circuit(inner) => {
-            let (proof, vk) = prove_compression_circuit(inner.clone(), proof_config, worker);
+            let (proof, vk) =
+                prove_compression_circuit_with_precomputations(inner.clone(), proof_config, worker);
             let is_proof_valid = verify_compression_layer_circuit(inner, &proof, &vk, verifier);
             (proof, vk, is_proof_valid)
         }
         ZkSyncCompressionLayerCircuit::CompressionMode4Circuit(inner) => {
-            let (proof, vk) = prove_compression_circuit(inner.clone(), proof_config, worker);
+            let (proof, vk) =
+                prove_compression_circuit_with_precomputations(inner.clone(), proof_config, worker);
             let is_proof_valid = verify_compression_layer_circuit(inner, &proof, &vk, verifier);
             (proof, vk, is_proof_valid)
         }
@@ -389,31 +393,13 @@ pub fn inner_prove_compression_wrapper_circuit(
     let verifier = verifier_builder.create_verifier();
 
     let (proof, vk, is_proof_valid) = match circuit {
-        ZkSyncCompressionForWrapperCircuit::CompressionMode1Circuit(inner) => {
-            let (proof, vk) = prove_compression_circuit(inner.clone(), proof_config, worker);
-            let is_proof_valid = verify_compression_wrapper_circuit(inner, &proof, &vk, verifier);
-            (proof, vk, is_proof_valid)
-        }
-        ZkSyncCompressionForWrapperCircuit::CompressionMode2Circuit(inner) => {
-            let (proof, vk) = prove_compression_circuit(inner.clone(), proof_config, worker);
-            let is_proof_valid = verify_compression_wrapper_circuit(inner, &proof, &vk, verifier);
-            (proof, vk, is_proof_valid)
-        }
-        ZkSyncCompressionForWrapperCircuit::CompressionMode3Circuit(inner) => {
-            let (proof, vk) = prove_compression_circuit(inner.clone(), proof_config, worker);
-            let is_proof_valid = verify_compression_wrapper_circuit(inner, &proof, &vk, verifier);
-            (proof, vk, is_proof_valid)
-        }
-        ZkSyncCompressionForWrapperCircuit::CompressionMode4Circuit(inner) => {
-            let (proof, vk) = prove_compression_circuit(inner.clone(), proof_config, worker);
-            let is_proof_valid = verify_compression_wrapper_circuit(inner, &proof, &vk, verifier);
-            (proof, vk, is_proof_valid)
-        }
         ZkSyncCompressionForWrapperCircuit::CompressionMode5Circuit(inner) => {
-            let (proof, vk) = prove_compression_circuit(inner.clone(), proof_config, worker);
+            let (proof, vk) =
+                prove_compression_circuit_with_precomputations(inner.clone(), proof_config, worker);
             let is_proof_valid = verify_compression_wrapper_circuit(inner, &proof, &vk, verifier);
             (proof, vk, is_proof_valid)
         }
+        _ => unreachable!("Only mode 5 is supported for wrapper"),
     };
     if is_proof_valid == false {
         println!("Proof is invalid");
@@ -422,29 +408,7 @@ pub fn inner_prove_compression_wrapper_circuit(
     (proof, vk)
 }
 
-pub fn synthesize_circuit<CF: ProofCompressionFunction, CS: CSConfig>(
-    circuit: CompressionLayerCircuit<CF>,
-) -> (FinalizationHintsForProver, CSReferenceAssembly<F, F, CS>) {
-    let geometry = circuit.geometry();
-    let (max_trace_len, num_vars) = circuit.size_hint();
-
-    let builder_impl = CsReferenceImplementationBuilder::<GoldilocksField, F, CS>::new(
-        geometry,
-        max_trace_len.unwrap(),
-    );
-    let builder = new_builder::<_, GoldilocksField>(builder_impl);
-
-    let builder = circuit.configure_builder_proxy(builder);
-    let mut cs = builder.build(num_vars.unwrap());
-    circuit.add_tables(&mut cs);
-    circuit.synthesize_into_cs(&mut cs);
-    let (_domain_size, finalization_hint) = cs.pad_and_shrink();
-    let cs = cs.into_assembly::<std::alloc::Global>();
-
-    (finalization_hint, cs)
-}
-
-pub fn prove_compression_circuit<CF: ProofCompressionFunction>(
+pub fn prove_compression_circuit_with_precomputations<CF: ProofCompressionFunction>(
     circuit: CompressionLayerCircuit<CF>,
     proof_config: ProofConfig,
     worker: &BoojumWorker,
@@ -452,7 +416,7 @@ pub fn prove_compression_circuit<CF: ProofCompressionFunction>(
     BoojumProof<F, CF::ThisLayerHasher, EXT>,
     BoojumVK<GoldilocksField, <CF as ProofCompressionFunction>::ThisLayerHasher>,
 ) {
-    let (_, cs) = synthesize_circuit::<_, DevCSConfig>(circuit);
+    let cs = synthesize_circuit_for_dev(circuit);
     cs.prove_one_shot::<_, CF::ThisLayerTranscript, CF::ThisLayerHasher, CF::ThisLayerPoW>(
         worker,
         proof_config,

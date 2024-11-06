@@ -68,5 +68,6 @@ pub use context::ProverContextConfig;
 pub use data_structures::CacheStrategy;
 pub use data_structures::CommitmentCacheStrategy;
 pub use data_structures::PolynomialsCacheStrategy;
+pub use primitives::tree::GpuTreeHasher;
 pub use prover::gpu_prove_from_external_witness_data;
 pub use prover::gpu_prove_from_external_witness_data_with_cache_strategy;

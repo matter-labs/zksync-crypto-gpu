@@ -7,7 +7,6 @@ use crate::poly::{CosetEvaluations, LagrangeBasis, MonomialBasis};
 use crate::prover::{
     compute_quotient_degree, gpu_prove_from_external_witness_data_with_cache_strategy,
 };
-use boojum::cs::implementations::pow::PoWRunner;
 use boojum::cs::implementations::prover::ProofConfig;
 use boojum::cs::implementations::transcript::Transcript;
 use boojum::cs::implementations::verifier::{VerificationKey, VerificationKeyCircuitGeometry};
@@ -736,7 +735,7 @@ impl CacheStrategy {
     pub(crate) fn get<
         TR: Transcript<F, CompatibleCap: Hash>,
         H: GpuTreeHasher<Output = TR::CompatibleCap>,
-        POW: PoWRunner,
+        POW: GPUPoWRunner,
         A: GoodAllocator,
     >(
         config: &GpuProofConfig,

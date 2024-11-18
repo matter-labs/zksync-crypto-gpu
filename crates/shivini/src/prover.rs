@@ -14,7 +14,6 @@ use boojum::{
         gates::lookup_marker::LookupFormalGate,
         implementations::{
             copy_permutation::non_residues_for_copy_permutation,
-            pow::PoWRunner,
             proof::{OracleQuery, Proof, SingleRoundQueries},
             prover::ProofConfig,
             setup::TreeNode,
@@ -34,7 +33,7 @@ use era_cudart::slice::CudaSlice;
 pub fn gpu_prove_from_external_witness_data<
     TR: Transcript<F, CompatibleCap: Hash>,
     H: GpuTreeHasher<Output = TR::CompatibleCap>,
-    POW: PoWRunner,
+    POW: GPUPoWRunner,
     A: GoodAllocator,
 >(
     config: &GpuProofConfig,
@@ -70,7 +69,7 @@ pub fn gpu_prove_from_external_witness_data<
 pub fn gpu_prove_from_external_witness_data_with_cache_strategy<
     TR: Transcript<F>,
     H: GpuTreeHasher<Output = TR::CompatibleCap>,
-    POW: PoWRunner,
+    POW: GPUPoWRunner,
     A: GoodAllocator,
 >(
     config: &GpuProofConfig,
@@ -262,7 +261,7 @@ pub fn compute_quotient_degree(config: &GpuProofConfig, selectors_placement: &Tr
 fn gpu_prove_from_trace<
     TR: Transcript<F>,
     H: GpuTreeHasher<Output = TR::CompatibleCap>,
-    POW: PoWRunner,
+    POW: GPUPoWRunner,
     A: GoodAllocator,
 >(
     config: &GpuProofConfig,
@@ -796,31 +795,22 @@ fn gpu_prove_from_trace<
     )?;
     assert_eq!(final_fri_monomials[0].len(), final_expected_degree);
     assert_eq!(final_fri_monomials[1].len(), final_expected_degree);
-    let pow_challenge = if new_pow_bits != 0 {
-        println!("Doing PoW");
-
-        let now = std::time::Instant::now();
-
+    let pow_challenge = if new_pow_bits != 0 && !is_dry_run()? {
+        const SEED_BITS: usize = 256;
         // pull enough challenges from the transcript
-        let mut num_challenges = 256 / F::CHAR_BITS;
-        if num_challenges % F::CHAR_BITS != 0 {
-            num_challenges += 1;
-        }
-        let challenges = if is_dry_run()? {
-            vec![F::ZERO; num_challenges]
-        } else {
-            transcript.get_multiple_challenges(num_challenges)
-        };
-        let pow_challenge = POW::run_from_field_elements(challenges, new_pow_bits, worker);
-
+        let num_challenges = SEED_BITS.next_multiple_of(F::CHAR_BITS) / F::CHAR_BITS;
+        let challenges = transcript.get_multiple_challenges(num_challenges);
+        let pow_challenge = POW::run(&challenges, new_pow_bits)?;
+        assert!(POW::verify_from_field_elements(
+            challenges,
+            new_pow_bits,
+            pow_challenge
+        ));
         assert!(F::CAPACITY_BITS >= 32);
         let (low, high) = (pow_challenge as u32, (pow_challenge >> 32) as u32);
         let low = F::from_u64_unchecked(low as u64);
         let high = F::from_u64_unchecked(high as u64);
         transcript.witness_field_elements(&[low, high]);
-
-        println!("PoW for {} bits taken {:?}", new_pow_bits, now.elapsed());
-
         pow_challenge
     } else {
         0

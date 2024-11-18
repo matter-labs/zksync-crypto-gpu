@@ -1,16 +1,14 @@
+use super::*;
 use crate::cs::{
     gpu_setup_and_vk_from_base_setup_vk_params_and_hints,
     materialize_permutation_cols_from_indexes_into,
 };
-
-use super::*;
-use std::{path::Path, sync::Arc};
-
 use crate::gpu_proof_config::GpuProofConfig;
 use boojum::cs::implementations::transcript::GoldilocksPoisedon2Transcript;
 use boojum::cs::oracle::TreeHasher;
 use boojum::cs::{implementations::polynomial_storage::SetupBaseStorage, Variable};
 use boojum::field::traits::field_like::PrimeFieldLikeVectorized;
+use boojum::sha2::{Digest, Sha256};
 use boojum::{
     config::{CSConfig, CSSetupConfig, DevCSConfig, ProvingCSConfig, SetupCSConfig},
     cs::{
@@ -45,6 +43,7 @@ use boojum::{
 };
 use boojum_cuda::poseidon2::GLHasher;
 use serial_test::serial;
+use std::{path::Path, sync::Arc};
 
 #[cfg(test)]
 type DefaultTranscript = GoldilocksPoisedon2Transcript;
@@ -497,7 +496,6 @@ fn init_or_synth_cs_for_sha256<CFG: CSConfig, A: GoodAllocator, const DO_SYNTH: 
     CSReferenceAssembly<F, F, CFG, A>,
     Option<FinalizationHintsForProver>,
 ) {
-    use blake2::Digest;
     // let len = 10 * 64 + 64 - 9;
     // let len = 2 * (1 << 10);
     let len = 2 * (1 << 2);
@@ -510,7 +508,7 @@ fn init_or_synth_cs_for_sha256<CFG: CSConfig, A: GoodAllocator, const DO_SYNTH: 
         input.push(byte);
     }
 
-    let mut hasher = sha2::Sha256::new();
+    let mut hasher = Sha256::new();
     hasher.update(&input);
     let reference_output = hasher.finalize();
 
@@ -1619,16 +1617,8 @@ mod zksync {
                 let is_proof_valid = verify_compression_layer_circuit(inner, &proof, &vk, verifier);
                 (proof, vk, is_proof_valid)
             }
-            ZkSyncCompressionLayerCircuit::CompressionMode5Circuit(inner) => {
-                let (proof, vk) = inner_prove_compression_layer_circuit(
-                    inner.clone(),
-                    proof_config,
-                    gpu_proof_config,
-                    setup_data,
-                    worker,
-                );
-                let is_proof_valid = verify_compression_layer_circuit(inner, &proof, &vk, verifier);
-                (proof, vk, is_proof_valid)
+            ZkSyncCompressionLayerCircuit::CompressionMode5Circuit(_inner) => {
+                unimplemented!()
             }
         };
         if !is_proof_valid {
@@ -1720,7 +1710,9 @@ mod zksync {
         (proof, vk)
     }
 
-    pub fn inner_prove_compression_layer_circuit<CF: ProofCompressionFunction>(
+    pub fn inner_prove_compression_layer_circuit<
+        CF: ProofCompressionFunction<ThisLayerPoW: GPUPoWRunner>,
+    >(
         circuit: CompressionLayerCircuit<CF>,
         proof_cfg: ProofConfig,
         gpu_cfg: GpuProofConfig,
@@ -1804,7 +1796,9 @@ mod zksync {
         (proof, vk)
     }
 
-    pub fn inner_prove_compression_wrapper_circuit<CF: ProofCompressionFunction>(
+    pub fn inner_prove_compression_wrapper_circuit<
+        CF: ProofCompressionFunction<ThisLayerPoW: GPUPoWRunner>,
+    >(
         circuit: CompressionLayerCircuit<CF>,
         proof_cfg: ProofConfig,
         gpu_cfg: GpuProofConfig,

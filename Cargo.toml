@@ -28,13 +28,13 @@ wrapper-prover = { version = "=0.152.5", path = "crates/wrapper-prover", package
 fflonk = { version = "=0.152.5", path = "crates/fflonk", package = "fflonk-cuda" }
 
 # These dependencies should be shared by all the crates.
-circuit_definitions = { version = "=0.150.13" }
-zkevm_test_harness = { version = "=0.150.13" }
-boojum = "=0.30.7"
-franklin-crypto = "=0.30.7"
-rescue_poseidon = "=0.30.7"
-snark_wrapper = "=0.30.7"
-fflonk-cpu = {package = "fflonk", version = "=0.30.7"}
+circuit_definitions = { version = "=0.150.14" }
+zkevm_test_harness = { version = "=0.150.14" }
+boojum = "=0.30.8"
+franklin-crypto = "=0.30.8"
+rescue_poseidon = "=0.30.8"
+snark_wrapper = "=0.30.8"
+fflonk-cpu = {package = "fflonk", version = "=0.30.8"}
 
 [profile.release]
 debug = "line-tables-only"

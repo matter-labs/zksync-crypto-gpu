@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.152.6](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.5...v0.152.6) (2024-11-19)
+
+
+### Miscellaneous Chores
+
+* bump crypto crates to 0.30.8 and protocol crates to 0.150.14 ([#55](https://github.com/matter-labs/zksync-crypto-gpu/issues/55)) ([9eff2ac](https://github.com/matter-labs/zksync-crypto-gpu/commit/9eff2ac658376e85c2fa333b168b699885b9cda5))
+
 ## [0.152.5](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.4...v0.152.5) (2024-11-18)
 
 

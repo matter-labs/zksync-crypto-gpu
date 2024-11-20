@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.152.7](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.6...v0.152.7) (2024-11-20)
+
+
+### Features
+
+* **boojum-cuda,shivini:** implement GPU PoW ([#54](https://github.com/matter-labs/zksync-crypto-gpu/issues/54)) ([67f4c46](https://github.com/matter-labs/zksync-crypto-gpu/commit/67f4c46b762ee82672b6298416c5815e700561c8))
+
 ## [0.152.6](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.5...v0.152.6) (2024-11-19)
 
 

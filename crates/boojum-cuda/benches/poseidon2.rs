@@ -2,7 +2,7 @@
 #![test_runner(criterion::runner)]
 
 use boojum::field::goldilocks::GoldilocksField;
-use boojum_cuda::poseidon2::{BNHasher, GLHasher, GpuTreeHasher};
+use boojum_cuda::poseidon2::{poseidon2_bn_pow, BNHasher, GLHasher, GpuTreeHasher};
 use criterion::{
     criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode, Throughput,
 };
@@ -161,10 +161,29 @@ fn bn_merkle_tree(c: &mut Criterion<CudaMeasurement>) {
     bench_merkle_tree::<BNHasher, 47>(c, String::from("bn_merkle_tree")).unwrap();
 }
 
+fn bn_pow(c: &mut Criterion<CudaMeasurement>) {
+    const MIN_BITS_COUNT: u32 = 15;
+    const MAX_BITS_COUNT: u32 = 26;
+    let d_seed = DeviceAllocation::alloc(4).unwrap();
+    let mut d_result = DeviceAllocation::alloc(1).unwrap();
+    let stream = CudaStream::default();
+    let mut group = c.benchmark_group("bn_pow");
+    for bits_count in MIN_BITS_COUNT..=MAX_BITS_COUNT {
+        let max_nonce = 1 << bits_count;
+        group.throughput(Throughput::Elements(max_nonce));
+        group.bench_function(BenchmarkId::from_parameter(bits_count), |b| {
+            b.iter(|| {
+                poseidon2_bn_pow(&d_seed, u32::MAX, max_nonce, &mut d_result[0], &stream).unwrap();
+            })
+        });
+    }
+    group.finish();
+}
+
 criterion_group!(
     name = bench_poseidon2;
     config = Criterion::default().with_measurement::<CudaMeasurement>(CudaMeasurement{});
-    targets = gl_leafs, bn_leafs, gl_nodes, bn_nodes, gl_merkle_tree, bn_merkle_tree
+    targets = gl_leafs, bn_leafs, gl_nodes, bn_nodes, gl_merkle_tree, bn_merkle_tree, bn_pow
 );
 
 criterion_main!(bench_poseidon2);

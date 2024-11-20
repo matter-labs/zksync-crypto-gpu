@@ -20,7 +20,7 @@ use shivini::cs::GpuSetup;
 use shivini::gpu_proof_config::GpuProofConfig;
 use shivini::{
     gpu_prove_from_external_witness_data_with_cache_strategy, CacheStrategy,
-    CommitmentCacheStrategy, GpuTreeHasher, PolynomialsCacheStrategy, ProverContext,
+    CommitmentCacheStrategy, GPUPoWRunner, GpuTreeHasher, PolynomialsCacheStrategy, ProverContext,
     ProverContextConfig,
 };
 use std::alloc::Global;
@@ -369,7 +369,9 @@ pub fn prove_compression_wrapper_circuit_with_precomputations(
     (proof, vk)
 }
 
-pub fn inner_prove_compression_layer_circuit<CF: ProofCompressionFunction>(
+pub fn inner_prove_compression_layer_circuit<
+    CF: ProofCompressionFunction<ThisLayerPoW: GPUPoWRunner>,
+>(
     circuit: CompressionLayerCircuit<CF>,
     device_setup: &GpuSetup<CompressionProofsTreeHasher>,
     finalization_hint: FinalizationHintsForProver,
@@ -411,7 +413,9 @@ pub fn inner_prove_compression_layer_circuit<CF: ProofCompressionFunction>(
     (proof, vk)
 }
 
-pub fn inner_prove_compression_wrapper_circuit<CF: ProofCompressionFunction>(
+pub fn inner_prove_compression_wrapper_circuit<
+    CF: ProofCompressionFunction<ThisLayerPoW: GPUPoWRunner>,
+>(
     circuit: CompressionLayerCircuit<CF>,
     device_setup: &GpuSetup<CompressionTreeHasherForWrapper>,
     finalization_hint: FinalizationHintsForProver,

@@ -6,12 +6,18 @@ use boojum::algebraic_props::round_function::AbsorptionModeOverwrite;
 use boojum::algebraic_props::sponge::GoldilocksPoseidon2Sponge;
 use boojum::cs::oracle::TreeHasher;
 use boojum::field::goldilocks::GoldilocksField;
+use era_cudart::device::{device_get_attribute, get_device};
 use era_cudart::execution::{CudaLaunchConfig, Dim3, KernelFunction};
+use era_cudart::memory::memory_set_async;
+use era_cudart::occupancy::max_active_blocks_per_multiprocessor;
 use era_cudart::paste::paste;
 use era_cudart::result::CudaResult;
-use era_cudart::slice::DeviceSlice;
+use era_cudart::slice::{DeviceSlice, DeviceVariable};
 use era_cudart::stream::CudaStream;
-use era_cudart::{cuda_kernel_declaration, cuda_kernel_signature_arguments_and_function};
+use era_cudart::{
+    cuda_kernel, cuda_kernel_declaration, cuda_kernel_signature_arguments_and_function,
+};
+use era_cudart_sys::CudaDeviceAttr;
 use snark_wrapper::franklin_crypto::bellman::bn256::{Bn256, Fr};
 use snark_wrapper::implementations::poseidon2::tree_hasher::AbsorptionModeReplacement;
 use snark_wrapper::rescue_poseidon::poseidon2::Poseidon2Sponge;
@@ -494,12 +500,44 @@ impl GpuTreeHasher for BNHasher {
         GatherMerklePathsKernelFunction(poseidon2_bn_gather_merkle_paths_kernel);
 }
 
+cuda_kernel!(Poseidon2Pow, poseidon2_bn_pow_kernel(seed: *const GL, bits_count: u32, max_nonce: u64, result: *mut u64));
+
+pub fn poseidon2_bn_pow(
+    seed: &DeviceSlice<GL>,
+    bits_count: u32,
+    max_nonce: u64,
+    result: &mut DeviceVariable<u64>,
+    stream: &CudaStream,
+) -> CudaResult<()> {
+    assert_eq!(seed.len(), 4);
+    unsafe {
+        memory_set_async(result.transmute_mut(), 0xff, stream)?;
+    }
+    const BLOCK_SIZE: u32 = WARP_SIZE * 4;
+    let device_id = get_device()?;
+    let mpc = device_get_attribute(CudaDeviceAttr::MultiProcessorCount, device_id)?;
+    let kernel_function = Poseidon2PowFunction::default();
+    let max_blocks = max_active_blocks_per_multiprocessor(&kernel_function, BLOCK_SIZE as i32, 0)?;
+    let num_blocks = (mpc * max_blocks) as u32;
+    let config = CudaLaunchConfig::basic(num_blocks, BLOCK_SIZE, stream);
+    let seed = seed.as_ptr();
+    let result = result.as_mut_ptr();
+    let args = Poseidon2PowArguments {
+        seed,
+        bits_count,
+        max_nonce,
+        result,
+    };
+    kernel_function.launch(&config, &args)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::device_structures::{DeviceMatrix, DeviceMatrixMut};
     use crate::ops_simple::set_to_zero;
     use crate::tests_helpers::RandomIterator;
+    use boojum::cs::implementations::pow::PoWRunner;
     use era_cudart::memory::{memory_copy_async, DeviceAllocation};
     use itertools::Itertools;
     use rand::{thread_rng, Rng};
@@ -897,5 +935,23 @@ mod tests {
     #[test]
     fn bn_gather_merkle_paths() -> CudaResult<()> {
         BNHasher::test_gather_merkle_paths()
+    }
+
+    #[test]
+    fn poseidon2_bn_pow() {
+        const BITS_COUNT: u32 = 26;
+        let seed = GL::get_random_iterator().take(4).collect_vec();
+        let mut h_result = [0u64; 1];
+        let mut d_seed = DeviceAllocation::alloc(4).unwrap();
+        let mut d_result = DeviceAllocation::alloc(1).unwrap();
+        let stream = CudaStream::default();
+        memory_copy_async(&mut d_seed, &seed, &stream).unwrap();
+        super::poseidon2_bn_pow(&d_seed, BITS_COUNT, u64::MAX, &mut d_result[0], &stream).unwrap();
+        memory_copy_async(&mut h_result, &d_result, &stream).unwrap();
+        stream.synchronize().unwrap();
+        let challenge = h_result[0];
+        assert!(BNHasher::verify_from_field_elements(
+            seed, BITS_COUNT, challenge
+        ));
     }
 }

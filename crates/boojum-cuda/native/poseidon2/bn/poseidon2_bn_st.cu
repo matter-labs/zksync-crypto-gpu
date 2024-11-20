@@ -120,4 +120,35 @@ EXTERN __global__ void poseidon2_bn_st_nodes_kernel(const bn *values, bn *result
     store_cs(results, state[i]);
 }
 
+EXTERN __global__ void poseidon2_bn_pow_kernel(const gl *seed, const uint32_t bits_count, const uint64_t max_nonce, volatile uint64_t *result) {
+  const unsigned SEED_SIZE = 4;
+  static_assert(RATE == 2);
+  static_assert(CAPACITY == 1);
+  static_assert(CHUNK_BY == 3);
+  static_assert(SEED_SIZE + 2 == RATE * CHUNK_BY);
+  const uint32_t digest_mask = (1 << bits_count) - 1;
+  __align__(8) poseidon_state base_state{};
+#pragma unroll
+  for (unsigned i = 0; i < CHUNK_BY; i++)
+    reinterpret_cast<gl *>(&base_state[0])[i] = load_ca(seed + i);
+  base_state[0] = fr::to_montgomery(base_state[0]);
+  reinterpret_cast<gl *>(&base_state[1])[0] = load_ca(seed + CHUNK_BY);
+  for (uint64_t nonce = threadIdx.x + blockIdx.x * blockDim.x; nonce < max_nonce && *result == UINT64_MAX; nonce += blockDim.x * gridDim.x) {
+    poseidon_state state{};
+#pragma unroll
+    for (unsigned i = 0; i < STATE_WIDTH; i++)
+      state[i] = base_state[i];
+    state[1].limbs[2] = nonce;
+    state[1].limbs[4] = nonce >> 32;
+    state[1] = fr::to_montgomery(state[1]);
+    permutation(state);
+    state[0] = fr::get_one();
+    state[1] = {};
+    permutation(state);
+    const uint32_t digest = fr::from_montgomery(state[0]).limbs[0];
+    if (!(digest & digest_mask))
+      atomicCAS(reinterpret_cast<unsigned long long *>(const_cast<uint64_t *>(result)), UINT64_MAX, nonce);
+  }
+}
+
 } // namespace poseidon2::bn254

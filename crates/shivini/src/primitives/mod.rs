@@ -15,4 +15,3 @@ use era_cudart::slice::CudaSlice;
 use era_cudart::slice::DeviceSlice;
 pub use era_cudart::stream::CudaStream;
 use serde::{Deserialize, Serialize};
-pub use tree::GpuTreeHasher;

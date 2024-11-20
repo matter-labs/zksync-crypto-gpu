@@ -54,6 +54,7 @@ DEVICE_FORCEINLINE uint64_t get_digest(const uint32_t input[10]) {
 }
 
 EXTERN __global__ void blake2s_pow_kernel(const uint64_t *seed, const uint32_t bits_count, const uint64_t max_nonce, volatile uint64_t *result) {
+  const uint32_t digest_mask = (1 << bits_count) - 1;
   __align__(8) uint32_t input_u32[10];
   auto input_u64 = reinterpret_cast<uint64_t *>(input_u32);
 #pragma unroll
@@ -62,7 +63,7 @@ EXTERN __global__ void blake2s_pow_kernel(const uint64_t *seed, const uint32_t b
   for (uint64_t nonce = threadIdx.x + blockIdx.x * blockDim.x; nonce < max_nonce && *result == UINT64_MAX; nonce += blockDim.x * gridDim.x) {
     input_u64[4] = nonce;
     uint64_t digest = get_digest(input_u32);
-    if (__clzll((long long)__brevll(digest)) >= bits_count)
+    if (!(digest & digest_mask))
       atomicCAS(reinterpret_cast<unsigned long long *>(const_cast<uint64_t *>(result)), UINT64_MAX, nonce);
   }
 }

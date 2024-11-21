@@ -1,6 +1,11 @@
 use super::*;
 use bellman::plonk::domains::Domain;
 use fflonk::utils::*;
+use memmap2::Mmap;
+use std::fs::File;
+use std::ops::Deref;
+use std::path::Path;
+use std::slice::{ChunksExact, Iter};
 
 pub(crate) fn commit_monomial<E: Engine>(
     monomial: &Poly<E::Fr, MonomialBasis>,
@@ -326,6 +331,7 @@ where
 {
     assert!(denum_coeffs.len() < num_monomial.size());
 
+    let padding = DVec::<F>::allocate_zeroed(16 * domain_size - num_monomial.size());
     let mut padded_num = DVec::allocate_zeroed(16 * domain_size);
     mem::d2d_on(
         num_monomial.as_ref(),
@@ -333,7 +339,7 @@ where
         stream,
     )?;
     drop(num_monomial);
-
+    drop(padding);
     let mut padded_denum = DVec::allocate_zeroed(16 * domain_size);
     mem::h2d_on(
         &denum_coeffs,
@@ -350,6 +356,7 @@ where
 
     let quotient = Poly::from_buffer(padded_denum);
     let quotient_monomial = quotient.trim_to_degree(9 * domain_size, stream)?;
+    drop(padded_num);
 
     Ok(quotient_monomial)
 }
@@ -514,3 +521,170 @@ pub fn get_g2_elems_from_compact_crs<E: Engine>() -> [E::G2Affine; 2] {
 
     [g2_bases[0], g2_bases[1]]
 }
+
+fn transmuted_len<T, U>(len: usize) -> usize {
+    let size_of_t = size_of::<T>();
+    let size_of_u = size_of::<U>();
+    if size_of_t > size_of_u {
+        assert_eq!(size_of_t % size_of_u, 0);
+        len * (size_of_t / size_of_u)
+    } else {
+        assert_eq!(size_of_u % size_of_t, 0);
+        len / (size_of_u / size_of_t)
+    }
+}
+
+pub(crate) unsafe fn transmute_slice<T, U>(slice: &[T]) -> &[U] {
+    let ptr = slice.as_ptr();
+    assert_eq!(ptr.align_offset(align_of::<U>()), 0);
+    let ptr = ptr as *const U;
+    let len = transmuted_len::<T, U>(slice.len());
+    std::slice::from_raw_parts(ptr, len)
+}
+
+pub(crate) unsafe fn transmute_slice_mut<T, U>(slice: &mut [T]) -> &mut [U] {
+    let ptr = slice.as_mut_ptr();
+    assert_eq!(ptr.align_offset(align_of::<U>()), 0);
+    let ptr = ptr as *mut U;
+    let len = transmuted_len::<T, U>(slice.len());
+    std::slice::from_raw_parts_mut(ptr, len)
+}
+
+pub enum BigArrayStorage<T> {
+    Vector(Vec<T>),
+    Mmap(MmapStorage<T>),
+}
+
+impl<T> BigArrayStorage<T> {
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Vector(v) => v.len(),
+            Self::Mmap(m) => m.len(),
+        }
+    }
+}
+
+impl<T> Deref for BigArrayStorage<T> {
+    type Target = [T];
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Vector(v) => v.as_slice(),
+            Self::Mmap(m) => m.deref(),
+        }
+    }
+}
+
+pub struct Big2DArrayStorage<T, const N: usize> {
+    pub(crate) inner: BigArrayStorage<T>,
+}
+
+impl<T, const N: usize> Big2DArrayStorage<T, N> {
+    pub fn new(storage: BigArrayStorage<T>) -> Self {
+        assert_eq!(storage.len() % N, 0);
+        Self{ inner: storage}
+    }
+
+    pub fn len(&self) -> usize {
+        N
+    }
+    
+    pub fn iter(&self) -> ChunksExact<'_, T> {
+        let chunk_size = self.inner.len() / N;
+        self.inner.deref().chunks_exact(chunk_size)
+    }
+}
+
+pub(crate) struct MmapStorage<T> {
+    file: File,
+    map: Mmap,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T> MmapStorage<T> {
+    pub fn new<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+        let file = File::open(path)?;
+        let map = unsafe { Mmap::map(&file)? };
+        assert_eq!(map.as_ref().len() % size_of::<T>(), 0);
+        assert_eq!(map.as_ptr().align_offset(align_of::<T>()), 0);
+        let result = Self {
+            file,
+            map,
+            _marker: std::marker::PhantomData,
+        };
+        
+        Ok(result)
+    }
+    
+    pub fn len(&self) -> usize {
+        self.deref().len()
+    }
+}
+
+impl<T> Deref for MmapStorage<T> {
+    type Target = [T];
+    fn deref(&self) -> &Self::Target {
+        unsafe { transmute_slice(&*self.map) }
+    }
+}
+
+// pub(crate) struct MmapArrayStorage<T, const N: usize>(MmapStorage<T>);
+// 
+// pub struct BufferedTransferBatch<'a> {
+//     functions: Vec<HostFn<'a>>,
+// }
+//
+// impl<'a> BufferedTransferBatch<'a> {
+//     pub fn new() -> Self {
+//         Self { functions: vec![] }
+//     }
+// }
+//
+// pub(crate) struct TransferBuffer {
+//     pub buffer: Mutex<HostAllocation<u8>>,
+//     pub stream: CudaStream,
+//     pub event: CudaEvent,
+// }
+//
+// impl TransferBuffer {
+//     pub fn new(size: usize) -> era_cudart::result::CudaResult<Self> {
+//         let allocation = HostAllocation::alloc(size, CudaHostAllocFlags::DEFAULT)?;
+//         let buffer = Mutex::new(allocation);
+//         let stream = CudaStream::create()?;
+//         let event = CudaEvent::create_with_flags(CudaEventCreateFlags::DISABLE_TIMING)?;
+//         Ok(Self {
+//             buffer,
+//             stream,
+//             event,
+//         })
+//     }
+// }
+//
+// pub struct BufferedCudaTransferEngine {
+//     pub(crate) buffer_size: usize,
+//     pub(crate) buffers: [TransferBuffer; 2],
+//     next_buffer: usize,
+// }
+//
+// impl BufferedCudaTransferEngine {
+//     pub fn new(buffer_size: usize) -> era_cudart::result::CudaResult<Self> {
+//         let buffers = [
+//             TransferBuffer::new(buffer_size)?,
+//             TransferBuffer::new(buffer_size)?,
+//         ];
+//         Ok(Self { buffer_size, buffers, next_buffer: 0 })
+//     }
+//
+//     pub fn h2d<'a, T>(
+//         &'a mut self,
+//         src: &'a [T],
+//         dst: &'a mut DeviceSlice<T>,
+//         stream: &'a CudaStream,
+//         batch: &mut BufferedTransferBatch<'a>,
+//     ) -> CudaResult<()> {
+//         assert_eq!(src.len(), dst.len());
+//         let src = unsafe { transmute_slice(src) };
+//         let dst = unsafe { transmute_slice_mut(dst.as_mut()) };
+//
+//         Ok(())
+//     }
+// }

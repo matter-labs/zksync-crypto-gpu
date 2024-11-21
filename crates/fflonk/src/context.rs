@@ -1,8 +1,11 @@
-use std::mem::ManuallyDrop;
-
 use super::*;
 use bellman::compact_bn256::Bn256 as CompactBn256;
 use gpu_ffi::bc_mem_pool;
+use std::fs::File;
+use std::io::Write;
+use std::mem::{transmute, ManuallyDrop};
+use std::path::Path;
+use std::slice;
 
 static mut _MSM_BASES_MEMPOOL: Option<bc_mem_pool> = None;
 static mut _TMP_MEMPOOL: Option<bc_mem_pool> = None;
@@ -55,9 +58,16 @@ pub(crate) fn init_tmp_mempool() {
     unsafe {
         _TMP_MEMPOOL = Some(bc_mem_pool::new(DEFAULT_DEVICE_ID).unwrap());
     }
-    let num_tmp_bytes = 1_100_000_000;
+    let num_tmp_bytes = 3 << 29; // 1.5 GB
     let stream = bc_stream::new().unwrap();
-    DVec::<u8, PoolAllocator>::allocate_on(num_tmp_bytes, _tmp_mempool(), stream);
+    drop(DVec::<u8, PoolAllocator>::allocate_on(
+        num_tmp_bytes,
+        _tmp_mempool(),
+        stream,
+    ));
+    // let mem_pool = unsafe { transmute::<_, CudaMemPool>(_tmp_mempool()) };
+    // mem_pool.set_attribute_value(AttrUsedMemHigh, 0).unwrap();
+    // _print_tmp_mempool_stats();
 }
 
 pub(crate) fn is_tmp_mempool_initialized() -> bool {
@@ -67,6 +77,18 @@ pub(crate) fn is_tmp_mempool_initialized() -> bool {
 pub(crate) fn _tmp_mempool() -> bc_mem_pool {
     unsafe { _TMP_MEMPOOL.expect("tmp mempool intialized") }
 }
+
+// pub(crate) fn _print_tmp_mempool_stats() {
+//     let mem_pool = unsafe { transmute::<_, CudaMemPool>(_tmp_mempool()) };
+//     let reserved_high = mem_pool.get_attribute(AttrReservedMemHigh).unwrap();
+//     let reserved_current = mem_pool.get_attribute(AttrReservedMemCurrent).unwrap();
+//     let used_high = mem_pool.get_attribute(AttrUsedMemHigh).unwrap();
+//     let used_current = mem_pool.get_attribute(AttrUsedMemCurrent).unwrap();
+//     println!(
+//         "MEMPOOL: reserved high: {}, reserved current: {}, used high: {}, used current: {}",
+//         reserved_high, reserved_current, used_high, used_current
+//     );
+// }
 
 pub(crate) fn destroy_tmp_mempool() {
     unsafe {
@@ -147,8 +169,8 @@ pub type DeviceContextWithSingleDevice = DeviceContext<1>;
 
 impl<const N: usize> DeviceContext<N> {
     pub fn init(domain_size: usize) -> CudaResult<Self> {
-        let context = Self::init_no_msm(domain_size)?;
         Self::init_msm_on_static_memory(domain_size)?;
+        let context = Self::init_no_msm(domain_size)?;
         // Self::init_msm_on_pool(domain_size)?;
 
         Ok(context)
@@ -205,21 +227,39 @@ impl<const N: usize> DeviceContext<N> {
         init_msm_result_mempool();
         // MSM impl requires bases to be located in a buffer that is
         // multiple of the domain_size
-        let crs = init_compact_crs(&bellman::worker::Worker::new(), domain_size);
+        range_push!("init_compact_crs");
         let num_bases = MAX_COMBINED_DEGREE_FACTOR * domain_size;
-        assert!(crs.g1_bases.len() >= num_bases);
+        dbg!(num_bases);
+        let bases_path = Path::new("./data/fflonk_bases.bin");
+        if !bases_path.exists() {
+            let crs = init_compact_crs(&bellman::worker::Worker::new(), domain_size);
+            assert!(crs.g1_bases.len() >= num_bases);
+            let buf = unsafe { transmute_slice(&crs.g1_bases[..num_bases]) };
+            File::create_new(bases_path)
+                .unwrap()
+                .write_all(buf)
+                .unwrap();
+            println!("saved bases to {}", bases_path.display());
+        } else {
+            println!("using bases from {}", bases_path.display());
+        };
+        range_pop!();
+        let file = File::open(bases_path).unwrap();
+        let map = unsafe { memmap2::Mmap::map(&file).unwrap() };
+        let h_bases = unsafe { transmute_slice(map.as_ref()) };
+        assert_eq!(h_bases.len(), num_bases);
         let bases = match (pool, stream) {
             (Some(pool), Some(stream)) => {
                 println!("Transferring bases to the pool");
                 let mut bases = DVec::allocate_zeroed_on(num_bases, pool, stream);
-                mem::h2d_on(&crs.g1_bases, &mut bases, stream)?;
+                mem::h2d_on(h_bases, &mut bases, stream)?;
                 stream.sync().unwrap();
                 MSMBases::Pool(bases)
             }
             (None, None) => {
                 println!("Transferring bases to the static memory of device");
                 let mut bases = StaticBasesStorage::allocate(num_bases)?;
-                mem::memcopy_from_host(&mut bases.0, &crs.g1_bases[..num_bases])?;
+                mem::memcopy_from_host(&mut bases.0, h_bases)?;
                 MSMBases::Static(bases)
             }
             _ => unreachable!(),
@@ -239,8 +279,8 @@ impl<const N: usize> DeviceContext<N> {
 
 pub fn init_allocations(domain_size: usize) {
     init_static_alloc(domain_size);
-    init_small_scalar_mempool();
     init_tmp_mempool();
+    init_small_scalar_mempool();
 }
 
 pub fn free_allocations() {
@@ -284,6 +324,11 @@ pub(crate) fn _bases() -> &'static DSlice<CompactG1Affine> {
 }
 
 use bellman::kate_commitment::{Crs, CrsForMonomialForm};
+use era_cudart::memory_pools::CudaMemPoolAttributeU64::{
+    AttrReservedMemCurrent, AttrReservedMemHigh, AttrUsedMemCurrent, AttrUsedMemHigh,
+};
+use era_cudart::memory_pools::{AttributeHandler, CudaMemPool};
+use nvtx::{range_pop, range_push};
 
 pub fn init_compact_crs(
     worker: &bellman::worker::Worker,

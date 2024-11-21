@@ -1,3 +1,4 @@
+use std::alloc::Global;
 use bellman::{
     bn256::Fr,
     plonk::{
@@ -35,7 +36,7 @@ fn test_simple_circuit_with_naive_main_gate() {
     type C = FflonkTestCircuit;
     let circuit = C {};
 
-    let mut assembly = FflonkAssembly::<Bn256, SynthesisModeTesting, GlobalHost>::new();
+    let mut assembly = FflonkAssembly::<Bn256, SynthesisModeTesting, Global>::new();
     circuit.synthesize(&mut assembly).expect("must work");
     assert!(assembly.is_satisfied());
     let raw_trace_len = assembly.n();
@@ -57,7 +58,6 @@ fn test_simple_circuit_with_naive_main_gate() {
         _,
         RollingKeccakTranscript<Fr>,
         CombinedMonomialDeviceStorage<Fr>,
-        GlobalHost,
     >(&assembly, &setup, raw_trace_len)
     .expect("proof");
 

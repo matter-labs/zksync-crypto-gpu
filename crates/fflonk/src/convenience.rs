@@ -1,3 +1,6 @@
+use std::alloc::Global;
+use std::fs::File;
+use std::path::Path;
 use bellman::{
     bn256::{Bn256, Fr},
     kate_commitment::{Crs, CrsForMonomialForm},
@@ -13,6 +16,7 @@ use circuit_definitions::circuit_definitions::aux_layer::{
     ZkSyncCompressionVerificationKeyForWrapper,
 };
 use fflonk::{FflonkAssembly, L1_VERIFIER_DOMAIN_SIZE_LOG};
+use nvtx::{range_pop, range_push};
 
 pub type FflonkSnarkVerifierCircuitDeviceSetup =
     FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit>;
@@ -108,26 +112,51 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_single_shot(
     FflonkSnarkVerifierCircuitProof,
     FflonkSnarkVerifierCircuitVK,
 ) {
-    let mut assembly = FflonkAssembly::<Bn256, SynthesisModeTesting, GlobalHost>::new();
+    range_push!("prove");
+    range_push!("setup");
+    let setup_path = Path::new("./data");
+    let setup = if FflonkDeviceSetup::<Bn256, FflonkSnarkVerifierCircuit>::is_saved(setup_path) {
+        println!("loading setup from {}", setup_path.display());
+        FflonkDeviceSetup::load(setup_path).unwrap()
+    } else {
+        let setup = FflonkDeviceSetup::create_setup_on_device(circuit)
+            .unwrap();
+        println!("saving setup to {}", setup_path.display());
+        setup.save(setup_path).unwrap();
+        setup
+    };
+    range_pop!();
+    range_push!("vk");
+    println!("generating vk");
+    let vk = setup.get_verification_key();
+    range_pop!();
+    range_push!("assembly");
+    let mut assembly = FflonkAssembly::<Bn256, SynthesisModeTesting, Global>::new();
+    range_pop!();
+    range_push!("synthesize");
+    println!("synthesizing");
     circuit.synthesize(&mut assembly).expect("must work");
-    assert!(assembly.is_satisfied());
+    // dbg!(assembly.n());
+    range_pop!();
+    // range_push!("satisfied");
+    // println!("checking satisfied");
+    // assert!(assembly.is_satisfied());
+    // range_pop!();
     let raw_trace_len = assembly.n();
     let domain_size = (raw_trace_len + 1).next_power_of_two();
-    let _context = DeviceContextWithSingleDevice::init(domain_size)
-        .expect("Couldn't create fflonk GPU Context");
-
-    let setup =
-        FflonkDeviceSetup::<_, FflonkSnarkVerifierCircuit, GlobalHost>::create_setup_from_assembly_on_device(
-            &assembly,
-        )
-        .unwrap();
-    let vk = setup.get_verification_key();
-
+    range_push!("finalize");
+    println!("finalizing");
     assembly.finalize();
+    dbg!(assembly.n());
+    range_pop!();
+    assert!(domain_size <= 1 << L1_VERIFIER_DOMAIN_SIZE_LOG);
     assert_eq!(assembly.n(), vk.n);
     assert_eq!(assembly.n() + 1, domain_size);
-    assert!(domain_size <= 1 << L1_VERIFIER_DOMAIN_SIZE_LOG);
-
+    range_push!("context");
+    let _context = DeviceContextWithSingleDevice::init(domain_size)
+        .expect("Couldn't create fflonk GPU Context");
+    range_pop!();
+    range_push!("create_proof");
     let start = std::time::Instant::now();
     let proof = create_proof::<
         _,
@@ -135,14 +164,14 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_single_shot(
         _,
         RollingKeccakTranscript<_>,
         CombinedMonomialDeviceStorage<Fr>,
-        _,
     >(&assembly, &setup, raw_trace_len)
     .unwrap();
     println!("proof generation takes {} ms", start.elapsed().as_millis());
+    range_pop!();
 
     let valid = fflonk::verify::<_, _, RollingKeccakTranscript<Fr>>(&vk, &proof, None).unwrap();
     assert!(valid, "proof verification fails");
-
+    range_pop!();
     (proof, vk)
 }
 
@@ -152,7 +181,7 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_with_precomputation(
     vk: &FflonkSnarkVerifierCircuitVK,
 ) -> FflonkSnarkVerifierCircuitProof {
     println!("Synthesizing for fflonk proving");
-    let mut proving_assembly = FflonkAssembly::<Bn256, SynthesisModeProve, GlobalHost>::new();
+    let mut proving_assembly = FflonkAssembly::<Bn256, SynthesisModeProve, Global>::new();
     circuit
         .synthesize(&mut proving_assembly)
         .expect("must work");
@@ -170,7 +199,6 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_with_precomputation(
         _,
         RollingKeccakTranscript<_>,
         CombinedMonomialDeviceStorage<Fr>,
-        _,
     >(&proving_assembly, setup, raw_trace_len)
     .unwrap();
     println!("proof generation takes {} ms", start.elapsed().as_millis());
@@ -187,20 +215,17 @@ pub fn precompute_and_save_setup_and_vk_for_fflonk_snark_circuit(
 ) {
     let compression_wrapper_mode = circuit.wrapper_function.numeric_circuit_type();
     println!("Compression mode: {compression_wrapper_mode}");
-
     println!("Generating fflonk setup data on the device");
     let device_setup =
         FflonkSnarkVerifierCircuitDeviceSetup::create_setup_on_device(&circuit).unwrap();
-    let setup_file_path = format!("{}/final_snark_device_setup.bin", path);
-    println!("Saving setup into file {setup_file_path}");
-    let device_setup_file = std::fs::File::create(&setup_file_path).unwrap();
-    device_setup.write(&device_setup_file).unwrap();
-    println!("fflonk device setup saved into {}", setup_file_path);
-
-    let vk_file_path = format!("{}/final_vk.json", path);
-    let vk_file = std::fs::File::create(&vk_file_path).unwrap();
+    println!("Saving fflonk setup into {path}");
+    device_setup.save(path).unwrap();
+    println!("Saved fflonk setup into {path}");
+    let vk_file_path = Path::new(path).join("fflonk_vk.json");
+    println!("Saving fflonk vk into {path}");
+    let vk_file = File::create(&vk_file_path).unwrap();
     serde_json::to_writer(&vk_file, &device_setup.get_verification_key()).unwrap();
-    println!("fflonk vk saved into {}", vk_file_path);
+    println!("Saved fflonk vk into {path}");
 }
 
 pub fn load_device_setup_and_vk_of_fflonk_snark_circuit(
@@ -209,15 +234,14 @@ pub fn load_device_setup_and_vk_of_fflonk_snark_circuit(
     FflonkSnarkVerifierCircuitDeviceSetup,
     FflonkSnarkVerifierCircuitVK,
 ) {
-    println!("Loading fflonk setup for snark circuit");
-    let setup_file_path = format!("{}/final_snark_device_setup.bin", path);
-    let setup_file = std::fs::File::open(setup_file_path).unwrap();
-    let device_setup = FflonkDeviceSetup::read(&setup_file).unwrap();
-
+    println!("Loading fflonk setup from {path}");
+    let setup = FflonkDeviceSetup::load(path).unwrap();
+    println!("Loaded fflonk setup from {path}");
+    println!("Loading fflonk vk from {path}");
     let vk_file_path = format!("{}/final_vk.json", path);
-    let vk_file_path = std::path::Path::new(&vk_file_path);
-    let vk_file = std::fs::File::open(&vk_file_path).unwrap();
+    let vk_file_path = Path::new(&vk_file_path);
+    let vk_file = File::open(&vk_file_path).unwrap();
     let vk = serde_json::from_reader(&vk_file).unwrap();
-
-    (device_setup, vk)
+    println!("Loaded fflonk vk from {path}");
+    (setup, vk)
 }

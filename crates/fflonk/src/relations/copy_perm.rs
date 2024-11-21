@@ -176,14 +176,16 @@ where
 
     // evaluate grand prod over shifted coset first
     let mut grand_prod_bitreversed = grand_product_monomial.as_ref().to_dvec(stream)?;
-    ntt::inplace_coset_fft_for_gen_on(&mut grand_prod_bitreversed, &coset_shift, stream)?;
+    // ntt::inplace_coset_fft_for_gen_on(&mut grand_prod_bitreversed, &coset_shift, stream)?;
+    ntt::inplace_coset_fft_on(&mut grand_prod_bitreversed, 0, 2, stream)?;
     let one = DScalar::one(stream)?;
     arithmetic::sub_constant(&mut grand_prod_bitreversed, &one, stream)?;
 
     let mut l0_bitreversed = DVec::allocate_zeroed(domain_size);
     mem::set_one(&mut l0_bitreversed[..1], stream)?;
     ntt::inplace_ifft_on(&mut l0_bitreversed, stream)?;
-    ntt::inplace_coset_fft_for_gen_on(&mut l0_bitreversed, &coset_shift, stream)?;
+    // ntt::inplace_coset_fft_for_gen_on(&mut l0_bitreversed, &coset_shift, stream)?;
+    ntt::inplace_coset_fft_on(&mut l0_bitreversed, 0, 2, stream)?;
 
     arithmetic::mul_assign(&mut grand_prod_bitreversed, &l0_bitreversed, stream)?;
 
@@ -204,7 +206,8 @@ where
 
     // get monomial finally
     ntt::bitreverse(&mut grand_prod_bitreversed, stream)?;
-    ntt::inplace_coset_ifft_for_gen_on(&mut grand_prod_bitreversed, &coset_shift_inv, stream)?;
+    // ntt::inplace_coset_ifft_for_gen_on(&mut grand_prod_bitreversed, &coset_shift_inv, stream)?;
+    ntt::inplace_coset_ifft_on(&mut grand_prod_bitreversed, 0, 2, stream)?;
 
     Ok(Poly::from_buffer(grand_prod_bitreversed))
 }

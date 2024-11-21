@@ -59,31 +59,32 @@ where
     }
 }
 
-pub fn inplace_coset_fft_for_gen_on<F>(
-    coeffs: &mut DSlice<F>,
-    coset_gen: &DScalar<F>,
-    stream: bc_stream,
-) -> CudaResult<()>
-where
-    F: PrimeField,
-{
-    let inverse = false;
-    mul_assign_by_powers(coeffs, coset_gen, stream)?;
-    unsafe { inplace_ntt(coeffs, inverse, None, None, stream) }
-}
-
-pub fn inplace_coset_ifft_for_gen_on<F>(
-    values: &mut DSlice<F>,
-    coset_gen_inv: &DScalar<F>,
-    stream: bc_stream,
-) -> CudaResult<()>
-where
-    F: PrimeField,
-{
-    let inverse = true;
-    unsafe { inplace_ntt(values, inverse, None, None, stream)? }
-    mul_assign_by_powers(values, coset_gen_inv, stream)
-}
+// pub fn inplace_coset_fft_for_gen_on<F>(
+//     coeffs: &mut DSlice<F>,
+//     coset_gen: &DScalar<F>,
+//     stream: bc_stream,
+// ) -> CudaResult<()>
+// where
+//     F: PrimeField,
+// {
+//     let inverse = false;
+//     mul_assign_by_powers(coeffs, coset_gen, stream)?;
+//     unsafe { inplace_ntt(coeffs, inverse, None, None, stream) }
+// }
+// 
+// pub fn inplace_coset_ifft_for_gen_on<F>(
+//     values: &mut DSlice<F>,
+//     coset_gen_inv: &DScalar<F>,
+//     stream: bc_stream,
+// ) -> CudaResult<()>
+// where
+//     F: PrimeField,
+// {
+//     let inverse = true;
+//     unsafe { inplace_ntt(values, inverse, None, None, stream)? }
+//     _print_tmp_mempool_stats();
+//     mul_assign_by_powers(values, coset_gen_inv, stream)
+// }
 
 pub fn inplace_coset_fft_on<F>(
     coeffs: &mut DSlice<F>,
@@ -97,6 +98,21 @@ where
     assert!(coset_idx < lde_factor);
 
     let inverse = false;
+    unsafe { inplace_ntt(coeffs, inverse, Some(coset_idx), Some(lde_factor), stream) }
+}
+
+pub fn inplace_coset_ifft_on<F>(
+    coeffs: &mut DSlice<F>,
+    coset_idx: usize,
+    lde_factor: usize,
+    stream: bc_stream,
+) -> CudaResult<()>
+where
+    F: PrimeField,
+{
+    assert!(coset_idx < lde_factor);
+
+    let inverse = true;
     unsafe { inplace_ntt(coeffs, inverse, Some(coset_idx), Some(lde_factor), stream) }
 }
 

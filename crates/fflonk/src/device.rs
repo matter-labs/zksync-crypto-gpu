@@ -20,6 +20,8 @@ impl Device {
             .unwrap();
         let total_in_bytes = memory_info.total;
         dbg!(total_in_bytes);
+        let free_in_bytes = memory_info.free;
+        dbg!(free_in_bytes);
 
         let mut config = DeviceConfig::default();
 
@@ -27,6 +29,8 @@ impl Device {
         let block_size_in_bytes = 32 << 23;
         let total_num_blocks = total_in_bytes as usize / block_size_in_bytes;
         dbg!(total_num_blocks);
+        let free_num_blocks = free_in_bytes as usize / block_size_in_bytes;
+        dbg!(free_num_blocks);
         let model = if total_num_blocks < 64 {
             todo!("T4 support is in progress");
             // T4
@@ -37,7 +41,7 @@ impl Device {
             // L4
             dbg!("L4");
             config.msm_chunk_size = 1 << 23;
-            config.static_alloc_num_blocks = 50;
+            config.static_alloc_num_blocks = 59;
             Device::L4(config)
         } else if total_num_blocks < 160 {
             dbg!("A100 40");

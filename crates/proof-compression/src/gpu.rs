@@ -1,8 +1,8 @@
 use super::*;
-use ::fflonk::*;
 use boojum::cs::implementations::prover::ProofConfig;
 use boojum::field::goldilocks::GoldilocksField as F;
 use boojum::worker::Worker;
+use ::fflonk::*;
 use shivini::boojum::cs::implementations::setup::FinalizationHintsForProver;
 use shivini::boojum::cs::implementations::verifier::VerificationKey;
 use shivini::circuit_definitions::boojum;
@@ -115,13 +115,16 @@ pub fn process_steps(
             "Proving compression {compression_schedule_name}/{}",
             compression_mode as u8
         );
-        let setup_file_path = format!("{path}/compression_{}_setup.bin", compression_mode as u8);
+        let setup_file_path = format!(
+            "{path}/compression_{}_device_setup.bin",
+            compression_mode as u8
+        );
         let setup_file_path = std::path::Path::new(&setup_file_path);
         let (device_setup, vk, finalization_hint) = if setup_file_path.exists() {
             load_compression_precomputations(compression_mode as u8, path)
         } else {
             let proof_config = compression_circuit.proof_config_for_compression_step();
-            precompute_and_save_compression_layer_circuit_setup_and_vk::<false>(
+            precompute_and_save_compression_layer_circuit_setup_and_vk::<true>(
                 compression_circuit.clone(),
                 &worker,
                 proof_config,
@@ -179,16 +182,13 @@ pub fn process_steps(
         );
     } else {
         let compression_circuit = input.into_compression_wrapper_circuit();
-        let setup_file_path = format!(
-            "{path}/compression_wrapper_{}_setup.bin",
-            last_compression_wrapping_mode as u8
-        );
+        let setup_file_path = format!("{path}/compression_wrapper_{}_device_setup.bin", last_compression_wrapping_mode as u8);
         let setup_file_path = std::path::Path::new(&setup_file_path);
         let (device_setup, vk, finalization_hint) = if setup_file_path.exists() {
             load_compression_precomputations(last_compression_wrapping_mode as u8, path)
         } else {
             let proof_config = compression_circuit.proof_config_for_compression_step();
-            precompute_and_save_compression_wrapper_circuit_setup_and_vk::<false>(
+            precompute_and_save_compression_wrapper_circuit_setup_and_vk::<true>(
                 compression_circuit.clone(),
                 &worker,
                 proof_config,
@@ -557,23 +557,24 @@ pub fn precompute_and_save_compression_circuit_setup_and_vk<
     >(setup_base, vk_params, vars_hint, wits_hint, worker)
     .unwrap();
     if SAVE {
-        let base_path = if compression_mode == 5 {
-            format!("{path}/compression_wrapper")
+        let mode_path = if compression_mode == 5 {
+            "compression_wrapper"
         } else {
-            format!("{path}/compression")
+            "compression"
         };
+        let base_path = format!("{path}/{mode_path}_{compression_mode}",);
         let setup_file_path = format!("{}_device_setup.bin", base_path);
         println!("Saving setup into file {setup_file_path}");
         let setup_file = std::fs::File::create(&setup_file_path).unwrap();
         bincode::serialize_into(&setup_file, &device_setup).unwrap();
         println!("fflonk device setup saved into {}", setup_file_path);
 
-        let vk_file_path = format!("{}_vk.json", base_path);
+        let vk_file_path = format!("{base_path}_vk.json");
         let vk_file = std::fs::File::create(&vk_file_path).unwrap();
         serde_json::to_writer(&vk_file, &vk).unwrap();
         println!("fflonk vk saved into {}", vk_file_path);
 
-        let finalization_hint_file_path = format!("{}_hint.json", base_path);
+        let finalization_hint_file_path = format!("{base_path}_hint.json");
         let finalization_hint_file = std::fs::File::create(&finalization_hint_file_path).unwrap();
         serde_json::to_writer(&finalization_hint_file, &finalization_hint).unwrap();
         println!(
@@ -593,11 +594,12 @@ pub fn load_compression_precomputations<H: GpuTreeHasher>(
     VerificationKey<F, H>,
     FinalizationHintsForProver,
 ) {
-    let base_path = if compression_mode == 5 {
-        format!("{path}/compression_wrapper")
+    let mode_path = if compression_mode == 5 {
+        "compression_wrapper"
     } else {
-        format!("{path}/compression")
+        "compression"
     };
+    let base_path = format!("{path}/{mode_path}_{compression_mode}",);
     let setup_file_path = format!("{base_path}_device_setup.bin",);
     println!("Loading device setup from file {setup_file_path}");
     let setup_file = std::fs::File::open(&setup_file_path).unwrap();

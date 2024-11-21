@@ -235,9 +235,10 @@ impl<F: PrimeField, A: DeviceAllocator> Poly<F, LDE, A> {
     }
 
     pub fn coset_ifft_on(mut self, stream: bc_stream) -> CudaResult<Poly<F, MonomialBasis, A>> {
-        let gen_inv = DScalar::inv_multiplicative_generator(stream)?;
-
-        ntt::inplace_coset_ifft_for_gen_on(self.as_mut(), &gen_inv, stream)?;
+        // let gen_inv = DScalar::inv_multiplicative_generator(stream)?;
+        // 
+        // ntt::inplace_coset_ifft_for_gen_on(self.as_mut(), &gen_inv, stream)?;
+        ntt::inplace_coset_ifft_on(self.as_mut(), 0, 2, stream)?;
         let monomial = self.into_buffer();
 
         Ok(Poly::from_buffer(monomial))

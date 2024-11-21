@@ -141,6 +141,30 @@ impl GlobalDeviceStatic {
         dealloc(memory.as_ptr().cast())?;
         Ok(())
     }
+
+    // pub fn get_free_count(&self) -> usize {
+    //     self.bitmap.borrow().iter().filter(|&&b| !b).count()
+    // }
+    // 
+    // pub fn get_allocated_count(&self) -> usize {
+    //     self.bitmap.borrow().iter().filter(|&&b| b).count()
+    // }
+    // 
+    // pub fn print_map(&self) {
+    //     print!("[");
+    //     let mut free = 0;
+    //     let mut allocated = 0;
+    //     for &b in self.bitmap.borrow().iter() {
+    //         if b {
+    //             print!("▇");
+    //             allocated += 1;
+    //         } else {
+    //             print!("_");
+    //             free += 1;
+    //         };
+    //     }
+    //     println!("] {}/{}", allocated, free);
+    // }
 }
 
 impl Default for GlobalDeviceStatic {

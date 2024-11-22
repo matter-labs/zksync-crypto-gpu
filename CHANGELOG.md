@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.152.8](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.7...v0.152.8) (2024-11-22)
+
+
+### Miscellaneous Chores
+
+* release 0.152.8 ([#59](https://github.com/matter-labs/zksync-crypto-gpu/issues/59)) ([4cc3905](https://github.com/matter-labs/zksync-crypto-gpu/commit/4cc3905d914de4335049c0ae5e81dafc0f9885d3))
+
 ## [0.152.7](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.6...v0.152.7) (2024-11-20)
 
 

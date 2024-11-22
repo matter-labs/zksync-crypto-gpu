@@ -29,14 +29,14 @@ fflonk = { version = "=0.152.7", path = "crates/fflonk", package = "fflonk-cuda"
 
 # These dependencies should be shared by all the crates.
 # zksync-crypto repository
-boojum = "=0.30.9"
-fflonk-cpu = {package = "fflonk", version = "=0.30.9"}
-franklin-crypto = "=0.30.9"
-rescue_poseidon = "=0.30.9"
-snark_wrapper = "=0.30.9"
+boojum = { git = "https://github.com/matter-labs/zksync-crypto", branch = "fflonk", package = "boojum" }
+fflonk-cpu = {git = "https://github.com/matter-labs/zksync-crypto", branch = "fflonk", package = "fflonk"}
+franklin-crypto = { git = "https://github.com/matter-labs/zksync-crypto", branch = "fflonk", package = "franklin-crypto" }
+rescue_poseidon = { git = "https://github.com/matter-labs/zksync-crypto", branch = "fflonk", package = "rescue_poseidon" }
+snark_wrapper = { git = "https://github.com/matter-labs/zksync-crypto", branch = "fflonk", package = "snark_wrapper" }
 # zksync-protocol repository
-circuit_definitions = { version = "=0.150.16" }
-zkevm_test_harness = { version = "=0.150.16" }
+circuit_definitions = { git = "https://github.com/matter-labs/zksync-protocol", branch = "fflonk", package = "circuit_definitions" }
+zkevm_test_harness = { git = "https://github.com/matter-labs/zksync-protocol", branch = "fflonk", package = "zkevm_test_harness" }
 
 [profile.release]
 debug = "line-tables-only"

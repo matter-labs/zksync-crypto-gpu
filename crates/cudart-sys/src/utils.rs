@@ -4,12 +4,15 @@ use std::path::{Path, PathBuf};
 pub fn get_cuda_path() -> Option<&'static Path> {
     #[cfg(target_os = "linux")]
     {
-        let path = Path::new("/usr/local/cuda");
-        if path.exists() {
-            Some(path)
-        } else {
-            None
+        for path_name in [option_env!("CUDA_PATH"), Some("/usr/local/cuda")].iter().flatten() {
+            println!("trying {path_name}...");
+            let path = Path::new(path_name);
+            if path.exists() {
+                println!("CUDA installation found at `{}`", path.display());
+                return Some(path)
+            }
         }
+        None
     }
     #[cfg(target_os = "windows")]
     {
@@ -42,12 +45,24 @@ pub fn get_cuda_lib_path() -> Option<PathBuf> {
 
 pub fn get_cuda_version() -> Option<String> {
     if let Some(version) = option_env!("CUDA_VERSION") {
+        println!("CUDA version defined in CUDA_VERSION as `{}`", version);
         Some(version.to_string())
     } else if let Some(path) = get_cuda_path() {
-        let file = File::open(path.join("version.json")).expect("CUDA Toolkit should be installed");
-        let reader = std::io::BufReader::new(file);
-        let value: serde_json::Value = serde_json::from_reader(reader).unwrap();
-        Some(value["cuda"]["version"].as_str().unwrap().to_string())
+        println!("inferring CUDA version from nvcc output...");
+        let re = regex_lite::Regex::new(r"V(?<version>\d{2}\.\d+\.\d+)").unwrap();
+        let nvcc_out = std::process::Command::new("nvcc")
+            .arg("--version")
+            .output()
+            .expect("failed to start `nvcc`");
+        let nvcc_str = std::str::from_utf8(&nvcc_out.stdout).expect("`nvcc` output is not UTF8");
+        let captures = re.captures(&nvcc_str).unwrap();
+        let version = captures
+            .get(0)
+            .expect("unable to find nvcc version in the form VMM.mm.pp in the output of `nvcc --version`:\n{nvcc_str}")
+            .as_str()
+            .to_string();
+        println!("CUDA version inferred to be `{version}`.");
+        Some(version)
     } else {
         None
     }

@@ -29,14 +29,14 @@ fflonk = { version = "=0.152.8", path = "crates/fflonk", package = "fflonk-cuda"
 
 # These dependencies should be shared by all the crates.
 # zksync-crypto repository
-boojum = "=0.30.9"
-fflonk-cpu = {package = "fflonk", version = "=0.30.9"}
-franklin-crypto = "=0.30.9"
-rescue_poseidon = "=0.30.9"
-snark_wrapper = "=0.30.9"
+boojum = "=0.30.11"
+fflonk-cpu = {package = "fflonk", version = "=0.30.11"}
+franklin-crypto = "=0.30.11"
+rescue_poseidon = "=0.30.11"
+snark_wrapper = "=0.30.11"
 # zksync-protocol repository
-circuit_definitions = { version = "=0.150.16" }
-zkevm_test_harness = { version = "=0.150.16" }
+circuit_definitions = { version = "=0.150.18" }
+zkevm_test_harness = { version = "=0.150.18" }
 
 [profile.release]
 debug = "line-tables-only"

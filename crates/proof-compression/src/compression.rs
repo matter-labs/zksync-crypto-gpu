@@ -1,25 +1,30 @@
 use super::*;
 
+use boojum::cs::{
+    implementations::{
+        fast_serialization::MemcopySerializable, proof::Proof, verifier::VerificationKey,
+    },
+    oracle::TreeHasher,
+};
 use circuit_definitions::circuit_definitions::{
     aux_layer::{
-        compression::ProofCompressionFunction,
-        compression_modes::{
-            CompressionMode1, CompressionMode1ForWrapper, CompressionMode2, CompressionMode3,
-            CompressionMode4, CompressionMode5ForWrapper, CompressionTreeHasherForWrapper,
-        },
-        CompressionProofsTreeHasher,
+        compression::{CompressionLayerCircuit, ProofCompressionFunction},
+        ZkSyncCompressionForWrapperCircuit, ZkSyncCompressionLayerCircuit,
     },
     recursion_layer::RecursiveProofsTreeHasher,
 };
 
-pub trait CompressionStep:
-    ProofCompressionFunction + StepDefinition<ThisProofSystem: CompressionProofSystem>
-{
+pub trait CompressionStep: CompressionProofSystem {
+    type PreviousStepTreeHasher: TreeHasher<
+        GoldilocksField,
+        Output: serde::Serialize + serde::de::DeserializeOwned,
+    >;
+
     const MODE: u8;
     const IS_WRAPPER: bool;
     fn load_finalization_hint<AL>(
         artifact_loader: &AL,
-    ) -> <Self::ThisProofSystem as ProofSystemDefinition>::FinalizationHint
+    ) -> <Self as ProofSystemDefinition>::FinalizationHint
     where
         AL: ArtifactLoader,
     {
@@ -33,7 +38,7 @@ pub trait CompressionStep:
 
     fn load_previous_vk<AL>(
         artifact_loader: &AL,
-    ) -> <Self::PreviousProofSystem as ProofSystemDefinition>::VK
+    ) -> VerificationKey<GoldilocksField, Self::PreviousStepTreeHasher>
     where
         AL: ArtifactLoader,
     {
@@ -50,9 +55,7 @@ pub trait CompressionStep:
         serde_json::from_reader(reader).unwrap()
     }
 
-    fn load_this_vk<AL>(
-        artifact_loader: &AL,
-    ) -> <Self::ThisProofSystem as ProofSystemDefinition>::VK
+    fn load_this_vk<AL>(artifact_loader: &AL) -> <Self as ProofSystemDefinition>::VK
     where
         AL: ArtifactLoader,
     {
@@ -67,121 +70,157 @@ pub trait CompressionStep:
 
     fn get_precomputation<AL>(
         artifact_loader: &AL,
-    ) -> AsyncHandler<<Self::ThisProofSystem as ProofSystemDefinition>::Precomputation>
+    ) -> AsyncHandler<<Self as ProofSystemDefinition>::Precomputation>
     where
         AL: ArtifactLoader,
     {
-        todo!()
+        // TODO
+        let reader = if Self::IS_WRAPPER {
+            artifact_loader.get_compression_layer_precomputation(Self::MODE)
+        } else {
+            artifact_loader.get_compression_layer_precomputation(Self::MODE)
+        };
+        let f = move || {
+            let (sender, receiver) = std::sync::mpsc::channel();
+
+            let precomputation =
+                <<Self as ProofSystemDefinition>::Precomputation as MemcopySerializable>::read_from_buffer(
+                    reader,
+                )
+                .unwrap();
+
+            sender.send(precomputation).unwrap();
+            receiver
+        };
+
+        AsyncHandler::spawn(f)
     }
 
     fn prove_compression_step<AL, CI>(
-        input_proof: <Self::PreviousProofSystem as ProofSystemDefinition>::Proof,
+        input_proof: Proof<GoldilocksField, Self::PreviousStepTreeHasher, GoldilocksExt2>,
         artifact_loader: &AL,
-    ) -> <Self::ThisProofSystem as ProofSystemDefinition>::Proof
+    ) -> <Self as ProofSystemDefinition>::Proof
     where
         AL: ArtifactLoader,
         CI: ContextInitializator,
     {
         let input_vk = Self::load_previous_vk(artifact_loader);
+        let vk = Self::load_this_vk(artifact_loader);
         let precomputation = Self::get_precomputation(artifact_loader);
-        let config = <Self::ThisProofSystem as ProofSystemDefinition>::get_context_config();
-        let ctx = CI::init::<Self::ThisProofSystem>(config);
+        let config = <Self as ProofSystemDefinition>::get_context_config();
+        let ctx = CI::init::<Self>(config);
         let finalization_hint = Self::load_finalization_hint(artifact_loader);
-        let proving_assembly =
-            <Self::ThisProofSystem as CompressionProofSystem>::synthesize_for_proving::<
-                Self::PreviousProofSystem,
-            >(input_vk, input_proof, Self::MODE);
-        let proof_config =
-            <Self::ThisProofSystem as CompressionProofSystem>::proof_config_for_compression_step::<
-                Self,
-            >();
-        Self::prove_step(
+        let circuit = Self::build_circuit(input_vk, Some(input_proof));
+        let proving_assembly = <Self as CompressionProofSystem>::synthesize_for_proving(
+            circuit,
+            finalization_hint.clone(),
+        );
+        let aux_config =
+            <Self as CompressionProofSystem>::aux_config_from_assembly(&proving_assembly);
+        <Self as CompressionProofSystem>::prove(
             ctx,
             proving_assembly,
-            proof_config,
+            aux_config,
             precomputation,
             finalization_hint,
+            vk,
         )
     }
+
+    // CompressionLayerCircuit is unified type for both compression circuits
+    fn build_circuit(
+        input_vk: VerificationKey<GoldilocksField, Self::PreviousStepTreeHasher>,
+        input_proof: Option<Proof<GoldilocksField, Self::PreviousStepTreeHasher, GoldilocksExt2>>,
+    ) -> CompressionLayerCircuit<Self>;
 }
 
-pub trait CompressionStepExt: CompressionStep<ThisProofSystem: CompressionProofSystemExt> {
+pub trait CompressionStepExt: CompressionProofSystemExt + CompressionStep {
     fn run_precomputation_for_compression<AL>(
         artifact_loader: &AL,
-    ) -> <Self::ThisProofSystem as ProofSystemDefinition>::Proof
+    ) -> (
+        <Self as ProofSystemDefinition>::Precomputation,
+        <Self as ProofSystemDefinition>::VK,
+    )
     where
         AL: ArtifactLoader,
     {
         let input_vk = Self::load_previous_vk(artifact_loader);
-        let finalization_hint = Self::load_finalization_hint(artifact_loader);
-        let setup_assembly =
-            <Self::ThisProofSystem as CompressionProofSystemExt>::synthesize_for_setup::<
-                Self::PreviousProofSystem,
-            >(input_vk, Self::MODE);
-        <Self::ThisProofSystem as ProofSystemExt>::generate_precomputation_and_vk(
+        let circuit = Self::build_circuit(input_vk, None);
+        let (finalization_hint, setup_assembly) =
+            <Self as CompressionProofSystemExt>::synthesize_for_setup(circuit);
+        let data = <Self as CompressionProofSystemExt>::generate_precomputation_and_vk(
             setup_assembly,
             finalization_hint,
         );
-        todo!()
+        data.wait()
     }
 }
 
-impl StepDefinition for CompressionMode1 {
-    type PreviousProofSystem = BoojumProofSystem<RecursiveProofsTreeHasher>;
-    type ThisProofSystem = BoojumProofSystem<CompressionProofsTreeHasher>;
+macro_rules! impl_compression_circuit {
+    ($type:ty,$mode:expr, $is_wrapper:expr, $enum:ident::$variant:ident, $hasher:ty) => {
+        impl CompressionStep for $type {
+            const MODE: u8 = $mode;
+            const IS_WRAPPER: bool = $is_wrapper;
+            type PreviousStepTreeHasher = $hasher;
+            fn build_circuit(
+                input_vk: VerificationKey<GoldilocksField, Self::PreviousStepTreeHasher>,
+                input_proof: Option<
+                    Proof<GoldilocksField, Self::PreviousStepTreeHasher, GoldilocksExt2>,
+                >,
+            ) -> CompressionLayerCircuit<Self> {
+                let circuit = $enum::from_witness_and_vk(input_proof, input_vk, Self::MODE);
+                match circuit {
+                    $enum::$variant(compression_layer_circuit) => compression_layer_circuit,
+                    _ => unreachable!(),
+                }
+            }
+        }
+    };
 }
 
-impl CompressionStep for CompressionMode1 {
-    const MODE: u8 = 1;
-    const IS_WRAPPER: bool = false;
-}
+impl_compression_circuit!(
+    CompressionMode1,
+    1,
+    false,
+    ZkSyncCompressionLayerCircuit::CompressionMode1Circuit,
+    RecursiveProofsTreeHasher
+);
+impl_compression_circuit!(
+    CompressionMode2,
+    2,
+    false,
+    ZkSyncCompressionLayerCircuit::CompressionMode2Circuit,
+    <CompressionMode1 as ProofCompressionFunction>::ThisLayerHasher
+);
 
-impl StepDefinition for CompressionMode2 {
-    type PreviousProofSystem = BoojumProofSystem<CompressionProofsTreeHasher>;
-    type ThisProofSystem = BoojumProofSystem<CompressionProofsTreeHasher>;
-}
+impl_compression_circuit!(
+    CompressionMode3,
+    3,
+    false,
+    ZkSyncCompressionLayerCircuit::CompressionMode3Circuit,
+    <CompressionMode2 as ProofCompressionFunction>::ThisLayerHasher
+);
 
-impl CompressionStep for CompressionMode2 {
-    const MODE: u8 = 2;
-    const IS_WRAPPER: bool = false;
-}
+impl_compression_circuit!(
+    CompressionMode4,
+    4,
+    false,
+    ZkSyncCompressionLayerCircuit::CompressionMode4Circuit,
+    <CompressionMode3 as ProofCompressionFunction>::ThisLayerHasher
+);
 
-impl StepDefinition for CompressionMode3 {
-    type PreviousProofSystem = BoojumProofSystem<CompressionProofsTreeHasher>;
-    type ThisProofSystem = BoojumProofSystem<CompressionProofsTreeHasher>;
-}
+impl_compression_circuit!(
+    CompressionMode1ForWrapper,
+    1,
+    true,
+    ZkSyncCompressionForWrapperCircuit::CompressionMode1Circuit,
+    RecursiveProofsTreeHasher
+);
 
-impl CompressionStep for CompressionMode3 {
-    const MODE: u8 = 3;
-    const IS_WRAPPER: bool = false;
-}
-
-impl StepDefinition for CompressionMode4 {
-    type PreviousProofSystem = BoojumProofSystem<CompressionProofsTreeHasher>;
-    type ThisProofSystem = BoojumProofSystem<CompressionProofsTreeHasher>;
-}
-
-impl CompressionStep for CompressionMode4 {
-    const MODE: u8 = 4;
-    const IS_WRAPPER: bool = false;
-}
-
-impl StepDefinition for CompressionMode1ForWrapper {
-    type PreviousProofSystem = BoojumProofSystem<CompressionProofsTreeHasher>;
-    type ThisProofSystem = BoojumProofSystem<CompressionTreeHasherForWrapper>;
-}
-
-impl CompressionStep for CompressionMode1ForWrapper {
-    const MODE: u8 = 1;
-    const IS_WRAPPER: bool = true;
-}
-
-impl StepDefinition for CompressionMode5ForWrapper {
-    type PreviousProofSystem = BoojumProofSystem<CompressionProofsTreeHasher>;
-    type ThisProofSystem = BoojumProofSystem<CompressionTreeHasherForWrapper>;
-}
-
-impl CompressionStep for CompressionMode5ForWrapper {
-    const MODE: u8 = 5;
-    const IS_WRAPPER: bool = true;
-}
+impl_compression_circuit!(
+    CompressionMode5ForWrapper,
+    5,
+    true,
+    ZkSyncCompressionForWrapperCircuit::CompressionMode5Circuit,
+    <CompressionMode4 as ProofCompressionFunction>::ThisLayerHasher
+);

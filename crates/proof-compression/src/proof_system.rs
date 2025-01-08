@@ -8,9 +8,13 @@ use bellman::plonk::better_better_cs::{
         selector_optimized_with_d_next::SelectorOptimizedWidth4MainGateWithDNext,
     },
 };
+use bellman::plonk::commitments::transcript::keccak_transcript::RollingKeccakTranscript;
 use boojum::config::SetupCSConfig;
-use boojum::cs::implementations::prover::ProofConfig;
-use boojum::cs::oracle::TreeHasher;
+use boojum::cs::implementations::transcript::Transcript;
+use boojum::cs::implementations::witness::WitnessVec;
+use boojum::cs::traits::circuit::CircuitBuilderProxy;
+use boojum::cs::traits::GoodAllocator;
+use boojum::worker::Worker;
 use boojum::{
     config::ProvingCSConfig,
     cs::implementations::{
@@ -19,199 +23,304 @@ use boojum::{
     },
     field::goldilocks::GoldilocksExt2,
 };
-use circuit_definitions::circuit_definitions::aux_layer::compression::ProofCompressionFunction;
-use fflonk::DeviceContextWithSingleDevice;
-use gpu_prover::{DeviceMemoryManager, ManagerConfigs};
-use shivini::ProverContextConfig;
-use shivini::{cs::GpuSetup, GpuTreeHasher, ProverContext};
+use circuit_definitions::circuit_definitions::aux_layer::compression::{
+    CompressionLayerCircuit, ProofCompressionFunction,
+};
 
-// We can't have circuit interface as part of the proof system
-// definition due to type dependency between step inputs
-// circuit(input_vk, input_proof), however we can synthesize it
-// through aux interface
+use fflonk::bellman::plonk::better_better_cs::cs::Circuit;
+use fflonk::{CombinedMonomialDeviceStorage, DeviceContextWithSingleDevice};
+use gpu_prover::{DeviceMemoryManager, ManagerConfigs};
+use shivini::gpu_proof_config::GpuProofConfig;
+use shivini::{cs::GpuSetup, GpuTreeHasher, ProverContext};
+use shivini::{
+    CacheStrategy, CommitmentCacheStrategy, GPUPoWRunner, PolynomialsCacheStrategy,
+    ProverContextConfig,
+};
 pub trait ProofSystemDefinition: Sized {
     type FieldElement;
-    type Precomputation: MemcopySerializable;
+    type ExternalWitnessData;
+    type Precomputation: MemcopySerializable + Send + Sync + 'static;
     type Proof: serde::Serialize + serde::de::DeserializeOwned;
-    type VK: serde::Serialize + serde::de::DeserializeOwned;
-    type FinalizationHint: serde::Serialize + serde::de::DeserializeOwned;
+    type VK: serde::Serialize + serde::de::DeserializeOwned + Send + Sync + Clone + 'static;
+    type FinalizationHint: serde::Serialize + serde::de::DeserializeOwned + Clone;
     type Allocator: std::alloc::Allocator;
     type ProvingAssembly: Sized + Send + Sync + 'static;
     type ContextConfig;
     type Context;
-    type ProofConfig: 'static;
-    fn get_context_config() -> Self::ContextConfig {
-        todo!()
-    }
+    fn get_context_config() -> Self::ContextConfig;
     fn init_context(config: Self::ContextConfig) -> AsyncHandler<Self::Context>;
-    fn build_proving_assembly() -> Self::ProvingAssembly;
-
-    fn prove(
-        _: Self::ProvingAssembly,
-        _: Self::Precomputation,
-        _: Self::FinalizationHint,
-        _: Self::ProofConfig,
-    ) -> Self::Proof;
-
-    fn take_witnesses(
-        proving_assembly: &mut Self::ProvingAssembly,
-    ) -> Vec<Self::FieldElement, Self::Allocator>;
-
-    fn prove_from_witnesses(
-        _: Vec<Self::FieldElement, Self::Allocator>,
-        _: Self::Precomputation,
-        _: Self::FinalizationHint,
-        _: Self::ProofConfig,
-    ) -> Self::Proof;
-
+    fn take_witnesses(proving_assembly: &mut Self::ProvingAssembly) -> Self::ExternalWitnessData;
     fn verify(_: &Self::Proof, _: &Self::VK) -> bool;
 }
 
-pub trait CompressionProofSystem: ProofSystemDefinition {
-    fn proof_config_for_compression_step<CF>() -> Self::ProofConfig
-    where
-        CF: ProofCompressionFunction;
+pub trait CompressionProofSystem:
+    ProofCompressionFunction<
+        ThisLayerHasher: GpuTreeHasher,
+        ThisLayerTranscript: Transcript<GoldilocksField, TransciptParameters = ()>,
+        ThisLayerPoW: GPUPoWRunner,
+    > + ProofSystemDefinition
+{
+    type AuxConfig;
 
-    fn synthesize_for_proving<P>(
-        input_vk: P::VK,
-        input_proof: P::Proof,
-        compression_mode: u8,
-    ) -> Self::ProvingAssembly
-    where
-        P: ProofSystemDefinition,
-    {
-        todo!()
-    }
+    fn aux_config_from_assembly(proving_assembly: &Self::ProvingAssembly) -> Self::AuxConfig;
+
+    fn synthesize_for_proving(
+        circuit: CompressionLayerCircuit<Self>,
+        finalization_hint: Self::FinalizationHint,
+    ) -> Self::ProvingAssembly;
+
+    fn prove(
+        _: AsyncHandler<Self::Context>,
+        _: Self::ProvingAssembly,
+        _: Self::AuxConfig,
+        _: AsyncHandler<Self::Precomputation>,
+        _: Self::FinalizationHint,
+        _: Self::VK,
+    ) -> Self::Proof;
+
+    fn prove_from_witnesses(
+        _: AsyncHandler<Self::Context>,
+        _: Self::ExternalWitnessData,
+        _: Self::AuxConfig,
+        _: AsyncHandler<Self::Precomputation>,
+        _: Self::FinalizationHint,
+        _: Self::VK,
+    ) -> Self::Proof;
 }
 
-pub trait CompressionProofSystemExt: ProofSystemExt {
-    fn synthesize_for_setup<P>(input_vk: P::VK, mode: u8) -> Self::SetupAssembly
-    where
-        P: ProofSystemDefinition;
-}
-
-pub trait SnarkWrapperProofSystem: ProofSystemDefinition {
-    fn proof_config() -> Self::ProofConfig;
-    fn synthesize_for_proving<P>(input_vk: P::VK, input_proof: P::Proof) -> Self::ProvingAssembly
-    where
-        P: ProofSystemDefinition;
-}
-
-pub trait SnarkWrapperProofSystemExt: ProofSystemExt {
-    fn synthesize_for_setup<P>(input_vk: P::VK) -> Self::SetupAssembly
-    where
-        P: ProofSystemDefinition;
-}
-
-pub trait ProofSystemExt: ProofSystemDefinition {
-    type SetupAssembly: Sized + Send + Sync + 'static;
+pub trait CompressionProofSystemExt: CompressionProofSystem {
+    type SetupAssembly;
     fn generate_precomputation_and_vk(
         _: Self::SetupAssembly,
         _: Self::FinalizationHint,
-    ) -> (AsyncHandler<Self::Precomputation>, Self::VK);
+    ) -> AsyncHandler<(Self::Precomputation, Self::VK)>;
+    fn synthesize_for_setup(
+        circuit: CompressionLayerCircuit<Self>,
+    ) -> (Self::FinalizationHint, Self::SetupAssembly);
 }
-pub struct BoojumProofSystem<H: TreeHasher<GoldilocksField>> {
-    _hasher: std::marker::PhantomData<H>,
+
+pub trait SnarkWrapperProofSystem: ProofSystemDefinition {
+    type Circuit;
+    fn synthesize_for_proving(circuit: Self::Circuit) -> Self::ProvingAssembly;
+    fn prove(
+        _: AsyncHandler<Self::Context>,
+        _: Self::ProvingAssembly,
+        _: AsyncHandler<Self::Precomputation>,
+        _: Self::FinalizationHint,
+    ) -> Self::Proof;
+
+    fn prove_from_witnesses(
+        _: AsyncHandler<Self::Context>,
+        _: Vec<Self::FieldElement, Self::Allocator>,
+        _: AsyncHandler<Self::Precomputation>,
+        _: Self::FinalizationHint,
+    ) -> Self::Proof;
+}
+
+pub trait SnarkWrapperProofSystemExt: SnarkWrapperProofSystem {
+    type SetupAssembly;
+    fn synthesize_for_setup(circuit: Self::Circuit) -> Self::SetupAssembly;
+    fn generate_precomputation_and_vk(
+        _: Self::SetupAssembly,
+        _: Self::FinalizationHint,
+    ) -> AsyncHandler<(Self::Precomputation, Self::VK)>;
 }
 
 type BoojumAssembly<CSConfig, A> =
     CSReferenceAssembly<GoldilocksField, GoldilocksField, CSConfig, A>;
 
-pub struct TreeHasherCompatibleGpuSetup<H: TreeHasher<GoldilocksField>>(
-    std::marker::PhantomData<H>,
-);
-
-impl<H> ProofSystemDefinition for BoojumProofSystem<H>
+impl<CF> ProofSystemDefinition for CF
 where
-    H: TreeHasher<GoldilocksField, Output: serde::Serialize + serde::de::DeserializeOwned>,
+    CF: ProofCompressionFunction<
+            ThisLayerHasher: GpuTreeHasher,
+            ThisLayerTranscript: Transcript<
+                GoldilocksField,
+                TransciptParameters = (),
+                CompatibleCap: Send + Sync + 'static,
+            >,
+            ThisLayerPoW: GPUPoWRunner,
+        > + 'static,
 {
     type FieldElement = GoldilocksField;
-    type Precomputation = TreeHasherCompatibleGpuSetup<H>;
-    type Proof = Proof<Self::FieldElement, H, GoldilocksExt2>;
-    type VK = VerificationKey<Self::FieldElement, H>;
+    type ExternalWitnessData = WitnessVec<Self::FieldElement, Self::Allocator>;
+    type Precomputation = GpuSetup<CF::ThisLayerHasher>;
+    type Proof = Proof<Self::FieldElement, CF::ThisLayerHasher, GoldilocksExt2>;
+    type VK = VerificationKey<Self::FieldElement, CF::ThisLayerHasher>;
     type FinalizationHint = FinalizationHintsForProver;
     type Allocator = std::alloc::Global;
     type ProvingAssembly = BoojumAssembly<ProvingCSConfig, Self::Allocator>;
     type ContextConfig = usize; // domain_size
     type Context = ProverContext;
-    type ProofConfig = ProofConfig;
-    // type Circuit = ZkSyncCompressionLayerCircuit;
-    fn init_context(domain_size: Self::ContextConfig) -> AsyncHandler<Self::Context> {
-        let config =
-            ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
-        let context = Self::Context::create_with_config(config).expect("gpu prover context");
-        todo!()
+    fn get_context_config() -> Self::ContextConfig {
+        todo!("domain size")
     }
 
-    fn build_proving_assembly() -> Self::ProvingAssembly {
-        todo!()
+    fn init_context(domain_size: Self::ContextConfig) -> AsyncHandler<Self::Context> {
+        let f = move || {
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let config =
+                ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
+            let context = Self::Context::create_with_config(config).expect("gpu prover context");
+            sender.send(context).unwrap();
+
+            receiver
+        };
+
+        AsyncHandler::spawn(f)
+    }
+
+    fn verify(proof: &Self::Proof, vk: &Self::VK) -> bool {
+        let verifier_builder =
+            CircuitBuilderProxy::<GoldilocksField, CompressionLayerCircuit<CF>>::dyn_verifier_builder::<GoldilocksExt2>();
+        let verifier = verifier_builder.create_verifier();
+        verifier.verify::<CF::ThisLayerHasher, CF::ThisLayerTranscript, CF::ThisLayerPoW>(
+            (),
+            vk,
+            proof,
+        )
+    }
+
+    fn take_witnesses(proving_assembly: &mut Self::ProvingAssembly) -> Self::ExternalWitnessData {
+        proving_assembly.witness.take().unwrap()
+    }
+}
+
+impl<CF> CompressionProofSystem for CF
+where
+    CF: ProofCompressionFunction<
+            ThisLayerHasher: GpuTreeHasher,
+            ThisLayerTranscript: Transcript<
+                GoldilocksField,
+                TransciptParameters = (),
+                CompatibleCap: Send + Sync + 'static,
+            >,
+            ThisLayerPoW: GPUPoWRunner,
+        > + 'static,
+{
+    type AuxConfig = GpuProofConfig;
+
+    fn aux_config_from_assembly(proving_assembly: &Self::ProvingAssembly) -> Self::AuxConfig {
+        GpuProofConfig::from_assembly(proving_assembly)
+    }
+
+    fn synthesize_for_proving(
+        circuit: CompressionLayerCircuit<CF>,
+        finalization_hint: Self::FinalizationHint,
+    ) -> Self::ProvingAssembly {
+        synthesize_circuit_for_proving(circuit, &finalization_hint)
     }
 
     fn prove(
-        _: Self::ProvingAssembly,
-        _: Self::Precomputation,
-        _: Self::FinalizationHint,
-        _: Self::ProofConfig,
+        ctx: AsyncHandler<Self::Context>,
+        proving_assembly: Self::ProvingAssembly,
+        aux_config: Self::AuxConfig,
+        precomputation: AsyncHandler<Self::Precomputation>,
+        finalization_hint: Self::FinalizationHint,
+        vk: Self::VK,
     ) -> Self::Proof {
-        todo!()
+        Self::prove_from_witnesses(
+            ctx,
+            proving_assembly.witness.unwrap(),
+            aux_config,
+            precomputation,
+            finalization_hint,
+            vk,
+        )
     }
+
     fn prove_from_witnesses(
-        _: Vec<Self::FieldElement, Self::Allocator>,
-        _: Self::Precomputation,
-        _: Self::FinalizationHint,
-        _: Self::ProofConfig,
+        ctx: AsyncHandler<Self::Context>,
+        witness: Self::ExternalWitnessData,
+        aux_config: Self::AuxConfig,
+        precomputation: AsyncHandler<Self::Precomputation>,
+        finalization_hint: Self::FinalizationHint,
+        vk: Self::VK,
     ) -> Self::Proof {
-        todo!()
-    }
+        let domain_size = vk.fixed_parameters.domain_size as usize;
+        assert_eq!(finalization_hint.final_trace_len, domain_size);
+        let cache_strategy = CacheStrategy {
+            setup_polynomials: PolynomialsCacheStrategy::CacheMonomialsAndFirstCoset,
+            trace_polynomials: PolynomialsCacheStrategy::CacheMonomialsAndFirstCoset,
+            other_polynomials: PolynomialsCacheStrategy::CacheMonomialsAndFirstCoset,
+            commitment: CommitmentCacheStrategy::CacheCosetCaps,
+        };
+        let worker = Worker::new();
+        let precomputation = precomputation.wait();
+        let ctx = ctx.wait();
+        let gpu_proof = shivini::gpu_prove_from_external_witness_data_with_cache_strategy::<
+            CF::ThisLayerTranscript,
+            CF::ThisLayerHasher,
+            CF::ThisLayerPoW,
+            Self::Allocator,
+        >(
+            &aux_config,
+            &witness,
+            CF::proof_config_for_compression_step(),
+            &precomputation,
+            &vk,
+            (),
+            &worker,
+            cache_strategy,
+        )
+        .expect("gpu proof");
+        drop(ctx);
+        let proof = gpu_proof.into();
 
-    fn verify(_: &Self::Proof, _: &Self::VK) -> bool {
-        todo!()
-    }
-
-    fn take_witnesses(
-        proving_assembly: &mut Self::ProvingAssembly,
-    ) -> Vec<Self::FieldElement, Self::Allocator> {
-        todo!()
-    }
-}
-
-impl<H: TreeHasher<GoldilocksField>> CompressionProofSystem for BoojumProofSystem<H>
-where
-    H: TreeHasher<GoldilocksField, Output: serde::Serialize + serde::de::DeserializeOwned>,
-{
-    fn proof_config_for_compression_step<CF>() -> Self::ProofConfig
-    where
-        CF: ProofCompressionFunction,
-    {
-        CF::proof_config_for_compression_step()
-    }
-
-    fn synthesize_for_proving<P>(
-        input_vk: P::VK,
-        input_proof: P::Proof,
-        compression_mode: u8,
-    ) -> Self::ProvingAssembly
-    where
-        P: ProofSystemDefinition,
-    {
-        todo!()
+        proof
     }
 }
 
-impl<H> ProofSystemExt for BoojumProofSystem<H>
+impl<CF> CompressionProofSystemExt for CF
 where
-    H: TreeHasher<GoldilocksField, Output: serde::Serialize + serde::de::DeserializeOwned>,
+    CF: ProofCompressionFunction<
+            ThisLayerHasher: GpuTreeHasher,
+            ThisLayerTranscript: Transcript<
+                GoldilocksField,
+                TransciptParameters = (),
+                CompatibleCap: Send + Sync + 'static,
+            >,
+            ThisLayerPoW: GPUPoWRunner,
+        > + 'static,
+    Self::Allocator: GoodAllocator,
 {
     type SetupAssembly = BoojumAssembly<SetupCSConfig, Self::Allocator>;
     fn generate_precomputation_and_vk(
-        _: Self::SetupAssembly,
-        _: Self::FinalizationHint,
-    ) -> (AsyncHandler<Self::Precomputation>, Self::VK) {
-        todo!()
+        setup_assembly: Self::SetupAssembly,
+        finalization_hint: Self::FinalizationHint,
+    ) -> AsyncHandler<(Self::Precomputation, Self::VK)> {
+        let f = move || {
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let worker = Worker::new();
+            let proof_config = CF::proof_config_for_compression_step();
+            let (setup_base, vk_params, vars_hint, wits_hint) = setup_assembly.get_light_setup(
+                &worker,
+                proof_config.fri_lde_factor,
+                proof_config.merkle_tree_cap_size,
+            );
+            let domain_size = vk_params.domain_size as usize;
+            assert_eq!(finalization_hint.final_trace_len, domain_size);
+            let config =
+                ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
+            let _ctx = ProverContext::create_with_config(config).expect("gpu prover context");
+            let (device_setup, vk) =
+                shivini::cs::gpu_setup_and_vk_from_base_setup_vk_params_and_hints::<
+                    CF::ThisLayerHasher,
+                    _,
+                >(setup_base, vk_params, vars_hint, wits_hint, &worker)
+                .unwrap();
+            sender.send((device_setup, vk)).unwrap();
+
+            receiver
+        };
+
+        AsyncHandler::spawn(f)
+    }
+    fn synthesize_for_setup(
+        circuit: CompressionLayerCircuit<Self>,
+    ) -> (Self::FinalizationHint, Self::SetupAssembly) {
+        synthesize_circuit_for_setup(circuit)
     }
 }
-
-pub struct PlonkProofSystem;
 
 type PlonkAssembly<CSConfig, A> = Assembly<
     Bn256,
@@ -230,9 +339,10 @@ impl ManagerConfigs for PlonkProverDeviceMemoryManager {
     const NUM_HOST_SLOTS: usize = 2;
 }
 
-impl ProofSystemDefinition for PlonkProofSystem {
+impl ProofSystemDefinition for PlonkSnarkWrapper {
     type FieldElement = Fr;
     type Precomputation = PlonkSnarkVerifierCircuitDeviceSetupWrapper;
+    type ExternalWitnessData = Vec<Self::FieldElement, Self::Allocator>;
     type Proof = PlonkSnarkVerifierCircuitProof;
     type VK = PlonkSnarkVerifierCircuitVK;
     type FinalizationHint = usize;
@@ -240,77 +350,73 @@ impl ProofSystemDefinition for PlonkProofSystem {
     type ProvingAssembly = PlonkAssembly<SynthesisModeProve, Self::Allocator>;
     type ContextConfig = (Vec<usize>, Vec<CompactG1Affine>);
     type Context = DeviceMemoryManager<Fr, PlonkProverDeviceMemoryManager>;
-    type ProofConfig = ();
+    fn get_context_config() -> Self::ContextConfig {
+        todo!()
+    }
     fn init_context(config: Self::ContextConfig) -> AsyncHandler<Self::Context> {
         let (device_ids, compact_crs) = config;
         let ctx = Self::Context::init(&device_ids, &compact_crs[..]);
         todo!()
     }
-
-    fn build_proving_assembly() -> Self::ProvingAssembly {
-        todo!()
-    }
-
-    fn prove(
-        _: Self::ProvingAssembly,
-        _: Self::Precomputation,
-        _: Self::FinalizationHint,
-        _: Self::ProofConfig,
-    ) -> Self::Proof {
-        todo!()
-    }
-
     fn take_witnesses(
         proving_assembly: &mut Self::ProvingAssembly,
     ) -> Vec<Self::FieldElement, Self::Allocator> {
         todo!()
     }
-
-    fn prove_from_witnesses(
-        _: Vec<Self::FieldElement, Self::Allocator>,
-        _: Self::Precomputation,
-        _: Self::FinalizationHint,
-        _: Self::ProofConfig,
-    ) -> Self::Proof {
-        todo!()
-    }
-
     fn verify(_: &Self::Proof, _: &Self::VK) -> bool {
         todo!()
     }
 }
 
-impl SnarkWrapperProofSystem for PlonkProofSystem {
-    fn synthesize_for_proving<P>(input_vk: P::VK, input_proof: P::Proof) -> Self::ProvingAssembly
-    where
-        P: ProofSystemDefinition,
-    {
+impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
+    type Circuit = PlonkSnarkVerifierCircuit;
+    fn synthesize_for_proving(circuit: Self::Circuit) -> Self::ProvingAssembly {
         todo!()
     }
 
-    fn proof_config() -> Self::ProofConfig {
+    fn prove(
+        _: AsyncHandler<Self::Context>,
+        _: Self::ProvingAssembly,
+        _: AsyncHandler<Self::Precomputation>,
+        _: Self::FinalizationHint,
+    ) -> Self::Proof {
+        todo!()
+    }
+
+    fn prove_from_witnesses(
+        _: AsyncHandler<Self::Context>,
+        _: Vec<Self::FieldElement, Self::Allocator>,
+        _: AsyncHandler<Self::Precomputation>,
+        _: Self::FinalizationHint,
+    ) -> Self::Proof {
         todo!()
     }
 }
 
-impl ProofSystemExt for PlonkProofSystem {
+impl SnarkWrapperProofSystemExt for PlonkSnarkWrapper {
     type SetupAssembly = PlonkAssembly<SynthesisModeGenerateSetup, Self::Allocator>;
+
+    fn synthesize_for_setup(circuit: Self::Circuit) -> Self::SetupAssembly {
+        todo!()
+    }
 
     fn generate_precomputation_and_vk(
         _: Self::SetupAssembly,
         _: Self::FinalizationHint,
-    ) -> (AsyncHandler<Self::Precomputation>, Self::VK) {
+    ) -> AsyncHandler<(Self::Precomputation, Self::VK)> {
         todo!()
     }
 }
 
-pub struct FflonkProofSystem;
-
 type FflonkAssembly<CSConfig, A> = Assembly<Bn256, PlonkCsWidth3Params, NaiveMainGate, CSConfig, A>;
 
-impl ProofSystemDefinition for FflonkProofSystem {
+impl ProofSystemDefinition for FflonkSnarkWrapper {
     type FieldElement = Fr;
     type Precomputation = FflonkSnarkVerifierCircuitDeviceSetupWrapper;
+    type ExternalWitnessData = (
+        Vec<Self::FieldElement>,
+        Vec<Self::FieldElement, Self::Allocator>,
+    );
     type Proof = FflonkSnarkVerifierCircuitProof;
     type VK = FflonkSnarkVerifierCircuitVK;
     type FinalizationHint = usize;
@@ -318,71 +424,123 @@ impl ProofSystemDefinition for FflonkProofSystem {
     type ProvingAssembly = FflonkAssembly<SynthesisModeProve, Self::Allocator>;
     type ContextConfig = usize; // domain_size
     type Context = DeviceContextWithSingleDevice;
-    type ProofConfig = ();
-    // type Circuit = ();
+
     fn get_context_config() -> Self::ContextConfig {
-        todo!()
+        fflonk::fflonk::L1_VERIFIER_DOMAIN_SIZE_LOG
     }
     fn init_context(log_domain_size: Self::ContextConfig) -> AsyncHandler<Self::Context> {
-        let domain_size = 1 << log_domain_size;
-        let context = Self::Context::init(domain_size).unwrap();
+        let f = move || {
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let domain_size = 1 << log_domain_size;
+            let context = Self::Context::init(domain_size).unwrap();
+            sender.send(context).unwrap();
 
-        todo!()
+            receiver
+        };
+
+        AsyncHandler::spawn(f)
+    }
+    fn take_witnesses(proving_assembly: &mut Self::ProvingAssembly) -> Self::ExternalWitnessData {
+        let input_assignments =
+            std::mem::replace(&mut proving_assembly.input_assingments, Vec::new());
+        let aux_assignments = std::mem::replace(
+            &mut proving_assembly.aux_assingments,
+            Vec::new_in(Self::Allocator::default()),
+        );
+
+        (input_assignments, aux_assignments)
     }
 
-    fn build_proving_assembly() -> Self::ProvingAssembly {
-        todo!()
+    fn verify(proof: &Self::Proof, vk: &Self::VK) -> bool {
+        fflonk::fflonk_cpu::verify::<_, FflonkSnarkVerifierCircuit, RollingKeccakTranscript<Fr>>(
+            vk, proof, None,
+        )
+        .unwrap()
+    }
+}
+
+impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
+    type Circuit = FflonkSnarkVerifierCircuit;
+    fn synthesize_for_proving(circuit: Self::Circuit) -> Self::ProvingAssembly {
+        let mut proving_assembly = FflonkAssembly::<SynthesisModeProve, Self::Allocator>::new();
+        circuit
+            .synthesize(&mut proving_assembly)
+            .expect("must work");
+        proving_assembly
     }
 
     fn prove(
-        _: Self::ProvingAssembly,
-        _: Self::Precomputation,
-        _: Self::FinalizationHint,
-        _: Self::ProofConfig,
+        ctx: AsyncHandler<Self::Context>,
+        mut proving_assembly: Self::ProvingAssembly,
+        precomputation: AsyncHandler<Self::Precomputation>,
+        finalization_hint: Self::FinalizationHint,
     ) -> Self::Proof {
-        todo!()
-    }
+        assert!(proving_assembly.is_satisfied());
+        let raw_trace_len = proving_assembly.n();
+        proving_assembly.finalize_to_size_log_2(1 << finalization_hint);
+        let domain_size = proving_assembly.n() + 1;
+        assert!(domain_size.is_power_of_two());
+        assert!(domain_size <= 1 << Self::get_context_config());
 
-    fn take_witnesses(
-        proving_assembly: &mut Self::ProvingAssembly,
-    ) -> Vec<Self::FieldElement, Self::Allocator> {
-        todo!()
+        let ctx = ctx.wait();
+        let precomputation = precomputation.wait().into_inner();
+        let proof = fflonk::create_proof::<
+            _,
+            _,
+            _,
+            RollingKeccakTranscript<_>,
+            CombinedMonomialDeviceStorage<Fr>,
+            _,
+        >(&proving_assembly, &precomputation, raw_trace_len)
+        .unwrap();
+        drop(ctx);
+        proof
     }
 
     fn prove_from_witnesses(
+        _: AsyncHandler<Self::Context>,
         _: Vec<Self::FieldElement, Self::Allocator>,
-        _: Self::Precomputation,
+        _: AsyncHandler<Self::Precomputation>,
         _: Self::FinalizationHint,
-        _: Self::ProofConfig,
     ) -> Self::Proof {
-        todo!()
-    }
-
-    fn verify(_: &Self::Proof, _: &Self::VK) -> bool {
-        todo!()
+        unimplemented!()
     }
 }
 
-impl SnarkWrapperProofSystem for FflonkProofSystem {
-    fn synthesize_for_proving<P>(input_vk: P::VK, input_proof: P::Proof) -> Self::ProvingAssembly
-    where
-        P: ProofSystemDefinition,
-    {
-        todo!()
-    }
-
-    fn proof_config() -> Self::ProofConfig {
-        todo!()
-    }
-}
-
-impl ProofSystemExt for FflonkProofSystem {
+impl SnarkWrapperProofSystemExt for FflonkSnarkWrapper {
     type SetupAssembly = FflonkAssembly<SynthesisModeGenerateSetup, Self::Allocator>;
+
+    fn synthesize_for_setup(circuit: Self::Circuit) -> Self::SetupAssembly {
+        let mut setup_assembly =
+            FflonkAssembly::<SynthesisModeGenerateSetup, Self::Allocator>::new();
+        circuit.synthesize(&mut setup_assembly).unwrap();
+
+        setup_assembly
+    }
+
     fn generate_precomputation_and_vk(
-        _: Self::SetupAssembly,
-        _: Self::FinalizationHint,
-    ) -> (AsyncHandler<Self::Precomputation>, Self::VK) {
-        todo!()
+        setup_assembly: Self::SetupAssembly,
+        finalization_hint: Self::FinalizationHint,
+    ) -> AsyncHandler<(Self::Precomputation, Self::VK)> {
+        let f = move || {
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let device_setup =
+                FflonkSnarkVerifierCircuitDeviceSetup::create_setup_from_assembly_on_device(
+                    &setup_assembly,
+                )
+                .unwrap();
+            let vk = device_setup.get_verification_key();
+            sender
+                .send((
+                    FflonkSnarkVerifierCircuitDeviceSetupWrapper(device_setup),
+                    vk,
+                ))
+                .unwrap();
+
+            receiver
+        };
+
+        AsyncHandler::spawn(f)
     }
 }
 
@@ -392,13 +550,12 @@ impl ProofSystemDefinition for MarkerProofSystem {
     type Precomputation = MarkerPrecomputation;
     type Proof = ();
     type VK = ();
+    type ExternalWitnessData = ();
     type FinalizationHint = ();
     type Allocator = std::alloc::Global;
     type ProvingAssembly = ();
     type ContextConfig = ();
     type Context = ();
-    type ProofConfig = ();
-    // type Circuit = ();
     fn get_context_config() -> Self::ContextConfig {
         todo!()
     }
@@ -406,35 +563,11 @@ impl ProofSystemDefinition for MarkerProofSystem {
         todo!()
     }
 
-    fn build_proving_assembly() -> Self::ProvingAssembly {
-        todo!()
-    }
-
-    fn prove(
-        _: Self::ProvingAssembly,
-        _: Self::Precomputation,
-        _: Self::FinalizationHint,
-        _: Self::ProofConfig,
-    ) -> Self::Proof {
-        todo!()
-    }
-
-    fn prove_from_witnesses(
-        _: Vec<Self::FieldElement, Self::Allocator>,
-        _: Self::Precomputation,
-        _: Self::FinalizationHint,
-        _: Self::ProofConfig,
-    ) -> Self::Proof {
-        todo!()
-    }
-
     fn verify(_: &Self::Proof, _: &Self::VK) -> bool {
         todo!()
     }
 
-    fn take_witnesses(
-        proving_assembly: &mut Self::ProvingAssembly,
-    ) -> Vec<Self::FieldElement, Self::Allocator> {
+    fn take_witnesses(proving_assembly: &mut Self::ProvingAssembly) -> Self::ExternalWitnessData {
         todo!()
     }
 }

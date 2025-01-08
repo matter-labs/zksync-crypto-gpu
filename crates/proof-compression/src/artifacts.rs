@@ -3,31 +3,44 @@ use std::io::Read;
 use boojum::cs::implementations::fast_serialization::MemcopySerializable;
 use boojum::cs::implementations::setup::FinalizationHintsForProver;
 use boojum::cs::traits::gate::FinalizationHintSerialized;
-use circuit_definitions::circuit_definitions::aux_layer::compression_modes::CompressionTreeHasherForWrapper;
-use circuit_definitions::circuit_definitions::aux_layer::{
-    CompressionProofsTreeHasher, ZkSyncCompressionVerificationKey,
-};
+use circuit_definitions::circuit_definitions::aux_layer::ZkSyncCompressionVerificationKey;
 use circuit_definitions::circuit_definitions::recursion_layer::ZkSyncRecursionVerificationKey;
-use shivini::cs::GpuSetup as BoojumDeviceSetup;
 
 use super::*;
 
 pub trait BlobStorage {
-    fn save<T>(artifact: T)
+    fn save<W>(data: W)
     where
-        T: MemcopySerializable;
+        W: std::io::Write;
 }
 
 pub struct AsyncHandler<T> {
-    precomputation: std::sync::mpsc::Receiver<T>, // This is indeed a receiver
+    receiver: std::sync::mpsc::Receiver<T>,
 }
 
-impl<T> AsyncHandler<T> {
-    pub fn into_inner(self) -> T {
-        todo!()
+impl<T> AsyncHandler<T>
+where
+    T: Send + Sync + 'static,
+{
+    pub fn spawn<F>(f: F) -> Self
+    where
+        F: FnOnce() -> std::sync::mpsc::Receiver<T> + Send + Sync + 'static,
+    {
+        let receiver = std::thread::spawn(f);
+
+        Self {
+            receiver: receiver.join().unwrap(),
+        }
+    }
+
+    pub fn wait(self) -> T {
+        self.receiver.recv().unwrap()
     }
 }
-pub trait ArtifactLoader: Sized {
+
+use shivini::cs::GpuSetup;
+
+pub trait ArtifactLoader: Sized + Send + Sync {
     fn init<BS>(bs: BS) -> Self
     where
         BS: BlobStorage;
@@ -54,18 +67,16 @@ pub trait ArtifactLoader: Sized {
     fn get_compression_layer_precomputation(
         &self,
         circuit_id: u8,
-    ) -> AsyncHandler<TreeHasherCompatibleGpuSetup<CompressionProofsTreeHasher>>;
+    ) -> Box<dyn Read + Send + Sync + 'static>;
     fn get_compression_wrapper_precomputation(
         &self,
         circuit_id: u8,
-    ) -> AsyncHandler<TreeHasherCompatibleGpuSetup<CompressionTreeHasherForWrapper>>;
+    ) -> Box<dyn Read + Send + Sync + 'static>;
     fn get_plonk_snark_wrapper_precomputation(
         &self,
         circuit_id: u8,
-    ) -> AsyncHandler<PlonkSnarkVerifierCircuitDeviceSetupWrapper>;
-    fn get_fflonk_snark_wrapper_precomputation(
-        &self,
-    ) -> AsyncHandler<FflonkSnarkVerifierCircuitDeviceSetupWrapper>;
+    ) -> Box<dyn Read + Send + Sync + 'static>;
+    fn get_fflonk_snark_wrapper_precomputation(&self) -> Box<dyn Read + Send + Sync + 'static>;
 }
 
 pub struct SimpleArtifactLoader;
@@ -139,27 +150,25 @@ impl ArtifactLoader for SimpleArtifactLoader {
     fn get_compression_layer_precomputation(
         &self,
         circuit_id: u8,
-    ) -> AsyncHandler<TreeHasherCompatibleGpuSetup<CompressionProofsTreeHasher>> {
+    ) -> Box<dyn Read + Send + Sync + 'static> {
         todo!()
     }
 
     fn get_compression_wrapper_precomputation(
         &self,
         circuit_id: u8,
-    ) -> AsyncHandler<TreeHasherCompatibleGpuSetup<CompressionTreeHasherForWrapper>> {
+    ) -> Box<dyn Read + Send + Sync + 'static> {
         todo!()
     }
 
     fn get_plonk_snark_wrapper_precomputation(
         &self,
         circuit_id: u8,
-    ) -> AsyncHandler<PlonkSnarkVerifierCircuitDeviceSetupWrapper> {
+    ) -> Box<dyn Read + Send + Sync + 'static> {
         todo!()
     }
 
-    fn get_fflonk_snark_wrapper_precomputation(
-        &self,
-    ) -> AsyncHandler<FflonkSnarkVerifierCircuitDeviceSetupWrapper> {
+    fn get_fflonk_snark_wrapper_precomputation(&self) -> Box<dyn Read + Send + Sync + 'static> {
         todo!()
     }
 }

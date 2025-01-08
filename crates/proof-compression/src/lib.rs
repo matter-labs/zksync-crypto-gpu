@@ -1,7 +1,6 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 #![feature(allocator_api)]
-#![feature(associated_type_defaults)] // TODO
 
 mod artifacts;
 use artifacts::*;
@@ -81,3 +80,12 @@ pub type SchedulerProof = boojum::cs::implementations::proof::Proof<
     RecursiveProofsTreeHasher,
     GoldilocksExt2,
 >;
+
+use circuit_definitions::circuit_definitions::aux_layer::{
+    compression::{CompressionLayerCircuit, ProofCompressionFunction},
+    compression_modes::{
+        CompressionMode1, CompressionMode1ForWrapper, CompressionMode2, CompressionMode3,
+        CompressionMode4, CompressionMode5ForWrapper, CompressionTranscriptForWrapper,
+        CompressionTreeHasherForWrapper,
+    },
+};

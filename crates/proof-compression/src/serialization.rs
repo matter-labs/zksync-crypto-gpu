@@ -1,10 +1,9 @@
 use super::*;
 
-use boojum::cs::oracle::TreeHasher;
 use fflonk::FflonkSnarkVerifierCircuitDeviceSetup;
 use shivini::boojum::cs::implementations::fast_serialization::MemcopySerializable;
 
-use crate::{PlonkSnarkVerifierCircuitDeviceSetup, TreeHasherCompatibleGpuSetup};
+use crate::PlonkSnarkVerifierCircuitDeviceSetup;
 
 pub struct PlonkSnarkVerifierCircuitDeviceSetupWrapper(PlonkSnarkVerifierCircuitDeviceSetup);
 
@@ -39,7 +38,13 @@ impl<'de> serde::Deserialize<'de> for PlonkSnarkVerifierCircuitDeviceSetupWrappe
     }
 }
 
-pub struct FflonkSnarkVerifierCircuitDeviceSetupWrapper(FflonkSnarkVerifierCircuitDeviceSetup);
+impl PlonkSnarkVerifierCircuitDeviceSetupWrapper {
+    pub fn into_inner(self) -> PlonkSnarkVerifierCircuitDeviceSetup {
+        self.0
+    }
+}
+
+pub struct FflonkSnarkVerifierCircuitDeviceSetupWrapper(pub FflonkSnarkVerifierCircuitDeviceSetup);
 
 impl MemcopySerializable for FflonkSnarkVerifierCircuitDeviceSetupWrapper {
     fn write_into_buffer<W: std::io::Write>(
@@ -72,25 +77,15 @@ impl<'de> serde::Deserialize<'de> for FflonkSnarkVerifierCircuitDeviceSetupWrapp
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
-pub struct MarkerPrecomputation;
-impl MemcopySerializable for MarkerPrecomputation {
-    fn write_into_buffer<W: std::io::Write>(
-        &self,
-        dst: W,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        todo!()
-    }
-
-    fn read_from_buffer<R: std::io::Read>(src: R) -> Result<Self, Box<dyn std::error::Error>> {
-        todo!()
+impl FflonkSnarkVerifierCircuitDeviceSetupWrapper {
+    pub fn into_inner(self) -> FflonkSnarkVerifierCircuitDeviceSetup {
+        self.0
     }
 }
 
-impl<H> MemcopySerializable for TreeHasherCompatibleGpuSetup<H>
-where
-    H: TreeHasher<GoldilocksField>,
-{
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct MarkerPrecomputation;
+impl MemcopySerializable for MarkerPrecomputation {
     fn write_into_buffer<W: std::io::Write>(
         &self,
         dst: W,

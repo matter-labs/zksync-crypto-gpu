@@ -1,7 +1,6 @@
+use super::*;
 use circuit_definitions::circuit_definitions::{
     aux_layer::{
-        compression::{CompressionLayerCircuit, ProofCompressionFunction},
-        compression_modes::CompressionTranscriptForWrapper,
         CompressionProofsTreeHasher, CompressionProofsTreeHasherForWrapper,
         ZkSyncCompressionForWrapperCircuit, ZkSyncCompressionLayerCircuit, ZkSyncCompressionProof,
         ZkSyncCompressionProofForWrapper, ZkSyncCompressionVerificationKey,

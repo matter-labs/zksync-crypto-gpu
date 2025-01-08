@@ -9,7 +9,6 @@ use shivini::circuit_definitions::boojum;
 use shivini::circuit_definitions::circuit_definitions::{
     aux_layer::{
         compression::{CompressionLayerCircuit, ProofCompressionFunction},
-        compression_modes::{CompressionTranscriptForWrapper, CompressionTreeHasherForWrapper},
         CompressionProofsTreeHasher, ZkSyncCompressionForWrapperCircuit,
         ZkSyncCompressionLayerCircuit, ZkSyncCompressionProof, ZkSyncCompressionProofForWrapper,
         ZkSyncCompressionVerificationKey, ZkSyncCompressionVerificationKeyForWrapper,

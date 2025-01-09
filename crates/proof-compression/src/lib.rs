@@ -2,14 +2,11 @@
 #![feature(generic_const_exprs)]
 #![feature(allocator_api)]
 
-mod artifacts;
-use artifacts::*;
+mod blob_storage;
+use blob_storage::*;
 
 mod chain;
 use chain::*;
-
-mod common;
-use common::*;
 
 mod compression;
 use compression::*;
@@ -29,17 +26,15 @@ use step::*;
 mod serialization;
 use serialization::*;
 
-mod task;
-use task::*;
+#[cfg(test)]
+mod test;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "gpu")] {
-        mod gpu;
-        pub use gpu::*;
+        //
 
     } else {
-        mod cpu;
-        pub use cpu::*;
+        //
     }
 }
 use bellman::worker::Worker;

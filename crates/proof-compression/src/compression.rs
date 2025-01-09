@@ -22,63 +22,60 @@ pub trait CompressionStep: CompressionProofSystem {
 
     const MODE: u8;
     const IS_WRAPPER: bool;
-    fn load_finalization_hint<AL>(
-        artifact_loader: &AL,
+    fn load_finalization_hint<BS>(
+        blob_storage: &BS,
     ) -> <Self as ProofSystemDefinition>::FinalizationHint
     where
-        AL: ArtifactLoader,
+        BS: BlobStorage,
     {
         let reader = if Self::IS_WRAPPER {
-            artifact_loader.read_compression_wrapper_finalization_hint(Self::MODE)
+            blob_storage.read_compression_wrapper_finalization_hint(Self::MODE)
         } else {
-            artifact_loader.read_compression_layer_finalization_hint(Self::MODE)
+            blob_storage.read_compression_layer_finalization_hint(Self::MODE)
         };
         serde_json::from_reader(reader).unwrap()
     }
 
-    fn load_previous_vk<AL>(
-        artifact_loader: &AL,
+    fn load_previous_vk<BS>(
+        blob_storage: &BS,
     ) -> VerificationKey<GoldilocksField, Self::PreviousStepTreeHasher>
     where
-        AL: ArtifactLoader,
+        BS: BlobStorage,
     {
         assert!(Self::MODE >= 1);
 
         let reader = if Self::MODE == 1 {
-            artifact_loader.read_scheduler_vk()
-        } else if Self::IS_WRAPPER {
-            artifact_loader.read_compression_wrapper_vk(Self::MODE)
+            blob_storage.read_scheduler_vk()
         } else {
-            artifact_loader.read_compression_layer_vk(Self::MODE - 1)
+            blob_storage.read_compression_layer_vk(Self::MODE - 1)
         };
 
         serde_json::from_reader(reader).unwrap()
     }
 
-    fn load_this_vk<AL>(artifact_loader: &AL) -> <Self as ProofSystemDefinition>::VK
+    fn load_this_vk<BS>(blob_storage: &BS) -> <Self as ProofSystemDefinition>::VK
     where
-        AL: ArtifactLoader,
+        BS: BlobStorage,
     {
         let reader = if Self::IS_WRAPPER {
-            artifact_loader.read_compression_wrapper_vk(Self::MODE)
+            blob_storage.read_compression_wrapper_vk(Self::MODE)
         } else {
-            artifact_loader.read_compression_layer_vk(Self::MODE)
+            blob_storage.read_compression_layer_vk(Self::MODE)
         };
 
         serde_json::from_reader(reader).unwrap()
     }
 
-    fn get_precomputation<AL>(
-        artifact_loader: &AL,
+    fn get_precomputation<BS>(
+        blob_storage: &BS,
     ) -> AsyncHandler<<Self as ProofSystemDefinition>::Precomputation>
     where
-        AL: ArtifactLoader,
+        BS: BlobStorage,
     {
-        // TODO
         let reader = if Self::IS_WRAPPER {
-            artifact_loader.get_compression_layer_precomputation(Self::MODE)
+            blob_storage.read_compression_layer_precomputation(Self::MODE)
         } else {
-            artifact_loader.get_compression_layer_precomputation(Self::MODE)
+            blob_storage.read_compression_wrapper_precomputation(Self::MODE)
         };
         let f = move || {
             let (sender, receiver) = std::sync::mpsc::channel();
@@ -96,20 +93,20 @@ pub trait CompressionStep: CompressionProofSystem {
         AsyncHandler::spawn(f)
     }
 
-    fn prove_compression_step<AL, CI>(
+    fn prove_compression_step<BS, CI>(
         input_proof: Proof<GoldilocksField, Self::PreviousStepTreeHasher, GoldilocksExt2>,
-        artifact_loader: &AL,
+        blob_storage: &BS,
+        context_handler: &CI,
     ) -> <Self as ProofSystemDefinition>::Proof
     where
-        AL: ArtifactLoader,
-        CI: ContextInitializator,
+        BS: BlobStorage,
+        CI: ContextManagerInterface,
     {
-        let input_vk = Self::load_previous_vk(artifact_loader);
-        let vk = Self::load_this_vk(artifact_loader);
-        let precomputation = Self::get_precomputation(artifact_loader);
-        let config = <Self as ProofSystemDefinition>::get_context_config();
-        let ctx = CI::init::<Self>(config);
-        let finalization_hint = Self::load_finalization_hint(artifact_loader);
+        let input_vk = Self::load_previous_vk(blob_storage);
+        let vk = Self::load_this_vk(blob_storage);
+        let precomputation = Self::get_precomputation(blob_storage);
+        let ctx = context_handler.init_context::<Self>();
+        let finalization_hint = Self::load_finalization_hint(blob_storage);
         let circuit = Self::build_circuit(input_vk, Some(input_proof));
         let proving_assembly = <Self as CompressionProofSystem>::synthesize_for_proving(
             circuit,
@@ -117,14 +114,18 @@ pub trait CompressionStep: CompressionProofSystem {
         );
         let aux_config =
             <Self as CompressionProofSystem>::aux_config_from_assembly(&proving_assembly);
-        <Self as CompressionProofSystem>::prove(
+        let proof = <Self as CompressionProofSystem>::prove(
             ctx,
             proving_assembly,
             aux_config,
             precomputation,
             finalization_hint,
-            vk,
-        )
+            &vk,
+        );
+
+        assert!(<Self as ProofSystemDefinition>::verify(&proof, &vk));
+
+        proof
     }
 
     // CompressionLayerCircuit is unified type for both compression circuits
@@ -135,24 +136,44 @@ pub trait CompressionStep: CompressionProofSystem {
 }
 
 pub trait CompressionStepExt: CompressionProofSystemExt + CompressionStep {
-    fn run_precomputation_for_compression<AL>(
-        artifact_loader: &AL,
-    ) -> (
-        <Self as ProofSystemDefinition>::Precomputation,
-        <Self as ProofSystemDefinition>::VK,
-    )
+    fn precomputae_and_store_compression_circuits<BS, CM>(blob_storage: &BS, context_manager: &CM)
     where
-        AL: ArtifactLoader,
+        BS: BlobStorageExt,
+        CM: ContextManagerInterface,
     {
-        let input_vk = Self::load_previous_vk(artifact_loader);
+        let input_vk = Self::load_previous_vk(blob_storage);
         let circuit = Self::build_circuit(input_vk, None);
+        let ctx = context_manager.init_context::<Self>();
         let (finalization_hint, setup_assembly) =
             <Self as CompressionProofSystemExt>::synthesize_for_setup(circuit);
-        let data = <Self as CompressionProofSystemExt>::generate_precomputation_and_vk(
-            setup_assembly,
-            finalization_hint,
+        let (precomputation, vk) =
+            <Self as CompressionProofSystemExt>::generate_precomputation_and_vk(
+                ctx,
+                setup_assembly,
+                &finalization_hint,
+            );
+        let (precompuatation_writer, vk_writer, hint_writer) = if Self::IS_WRAPPER {
+            (
+                blob_storage.write_compression_wrapper_precomputation(Self::MODE),
+                blob_storage.write_compression_wrapper_vk(Self::MODE),
+                blob_storage.write_compression_wrapper_finalization_hint(Self::MODE),
+            )
+        } else {
+            (
+                blob_storage.write_compression_layer_precomputation(Self::MODE),
+                blob_storage.write_compression_layer_vk(Self::MODE),
+                blob_storage.write_compression_layer_finalization_hint(Self::MODE),
+            )
+        };
+        precomputation
+            .write_into_buffer(precompuatation_writer)
+            .unwrap();
+        serde_json::to_writer(vk_writer, &vk).unwrap();
+        serde_json::to_writer(hint_writer, &finalization_hint).unwrap();
+        println!(
+            "Precomputation and vk of compression circuit {} saved into blob storage",
+            Self::MODE
         );
-        data.wait()
     }
 }
 
@@ -175,6 +196,8 @@ macro_rules! impl_compression_circuit {
                 }
             }
         }
+
+        impl CompressionStepExt for $type {}
     };
 }
 

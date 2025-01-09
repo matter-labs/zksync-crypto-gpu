@@ -1,5 +1,7 @@
 use boojum::cs::{
-    implementations::{proof::Proof, verifier::VerificationKey},
+    implementations::{
+        fast_serialization::MemcopySerializable, proof::Proof, verifier::VerificationKey,
+    },
     oracle::TreeHasher,
 };
 use circuit_definitions::circuit_definitions::aux_layer::{
@@ -16,76 +18,100 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
         GoldilocksField,
         Output: serde::Serialize + serde::de::DeserializeOwned,
     >;
-    fn load_finalization_hint<AL>(
-        artifact_loader: &AL,
+    fn load_finalization_hint<BS>(
+        blob_storage: &BS,
     ) -> <Self as ProofSystemDefinition>::FinalizationHint
     where
-        AL: ArtifactLoader,
+        BS: BlobStorage,
     {
         assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
         let hint = if Self::IS_PLONK { &[26u8] } else { &[24] };
         serde_json::from_reader(&hint[..]).unwrap()
     }
 
-    fn load_previous_vk<AL>(
-        artifact_loader: &AL,
+    fn load_previous_vk<BS>(
+        blob_storage: &BS,
     ) -> VerificationKey<GoldilocksField, Self::PreviousStepTreeHasher>
     where
-        AL: ArtifactLoader,
+        BS: BlobStorage,
     {
         assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
         let previous_compression_mode = Self::PREVIOUS_COMPRESSION_MODE;
-        let reader = artifact_loader.read_compression_wrapper_vk(previous_compression_mode);
+        let reader = blob_storage.read_compression_wrapper_vk(previous_compression_mode);
         serde_json::from_reader(reader).unwrap()
     }
 
-    fn load_this_vk<AL>(artifact_loader: &AL) -> <Self as ProofSystemDefinition>::VK
+    fn load_this_vk<BS>(blob_storage: &BS) -> <Self as ProofSystemDefinition>::VK
     where
-        AL: ArtifactLoader,
+        BS: BlobStorage,
     {
         assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
         let reader = if Self::IS_FFLONK {
             assert_eq!(Self::IS_PLONK, false);
-            artifact_loader.read_fflonk_vk()
+            blob_storage.read_fflonk_vk()
         } else {
             assert_eq!(Self::IS_PLONK, true);
-            artifact_loader.read_plonk_vk()
+            blob_storage.read_plonk_vk()
         };
 
         serde_json::from_reader(reader).unwrap()
     }
 
-    fn get_precomputation<AL>(
-        artifact_loader: &AL,
+    fn get_precomputation<BS>(
+        blob_storage: &BS,
     ) -> AsyncHandler<<Self as ProofSystemDefinition>::Precomputation>
     where
-        AL: ArtifactLoader,
+        BS: BlobStorage,
     {
-        todo!()
+        let reader = if Self::IS_FFLONK {
+            blob_storage.read_fflonk_precomputation()
+        } else {
+            blob_storage.read_plonk_precomputation()
+        };
+        let f = move || {
+            let (sender, receiver) = std::sync::mpsc::channel();
+
+            let precomputation =
+                <<Self as ProofSystemDefinition>::Precomputation as MemcopySerializable>::read_from_buffer(
+                    reader,
+                )
+                .unwrap();
+
+            sender.send(precomputation).unwrap();
+            receiver
+        };
+
+        AsyncHandler::spawn(f)
     }
 
-    fn prove_snark_wrapper_step<AL, CI>(
+    fn prove_snark_wrapper_step<BS, CI>(
         input_proof: Proof<GoldilocksField, Self::PreviousStepTreeHasher, GoldilocksExt2>,
-        artifact_loader: &AL,
+        blob_storage: &BS,
+        context_handler: &CI,
     ) -> <Self as ProofSystemDefinition>::Proof
     where
-        AL: ArtifactLoader,
-        CI: ContextInitializator,
+        BS: BlobStorage,
+        CI: ContextManagerInterface,
     {
         assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
-        let input_vk = Self::load_previous_vk(artifact_loader);
-        let precomputation = Self::get_precomputation(artifact_loader);
-        let config = <Self as ProofSystemDefinition>::get_context_config();
-        let ctx = CI::init::<Self>(config);
-        let finalization_hint = Self::load_finalization_hint(artifact_loader);
+        let input_vk = Self::load_previous_vk(blob_storage);
+        let vk = Self::load_this_vk(blob_storage);
+        let precomputation = Self::get_precomputation(blob_storage);
+        let ctx = context_handler.init_context::<Self>();
+        let finalization_hint = Self::load_finalization_hint(blob_storage);
         let circuit = Self::build_circuit(input_vk, Some(input_proof));
         let proving_assembly = <Self as SnarkWrapperProofSystem>::synthesize_for_proving(circuit);
-        <Self as SnarkWrapperProofSystem>::prove(
+        let proof = <Self as SnarkWrapperProofSystem>::prove(
             ctx,
             proving_assembly,
             precomputation,
             finalization_hint,
-        )
+            &vk,
+        );
+
+        assert!(<Self as ProofSystemDefinition>::verify(&proof, &vk));
+
+        proof
     }
 
     fn build_circuit(
@@ -95,26 +121,40 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
 }
 
 pub trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperStep {
-    fn run_precomputation_for_compression<AL>(
-        artifact_loader: &AL,
-    ) -> (
-        <Self as ProofSystemDefinition>::Precomputation,
-        <Self as ProofSystemDefinition>::VK,
-    )
+    fn precompute_and_store_snark_wrapper_circuit<BS, CM>(blob_storage: &BS, context_manager: &CM)
     where
-        AL: ArtifactLoader,
+        BS: BlobStorageExt,
+        CM: ContextManagerInterface,
         <Self as ProofSystemDefinition>::VK: 'static,
     {
-        let input_vk = Self::load_previous_vk(artifact_loader);
-        let finalization_hint = Self::load_finalization_hint(artifact_loader);
+        let input_vk = Self::load_previous_vk(blob_storage);
+        let finalization_hint = Self::load_finalization_hint(blob_storage);
         let circuit = Self::build_circuit(input_vk, None);
+        let ctx = context_manager.init_context::<Self>();
         let setup_assembly = <Self as SnarkWrapperProofSystemExt>::synthesize_for_setup(circuit);
-        let data = <Self as SnarkWrapperProofSystemExt>::generate_precomputation_and_vk(
-            setup_assembly,
-            finalization_hint,
-        );
 
-        data.wait()
+        let (precomputation, vk) =
+            <Self as SnarkWrapperProofSystemExt>::generate_precomputation_and_vk(
+                ctx,
+                setup_assembly,
+                finalization_hint,
+            );
+        let (precompuatation_writer, vk_writer) = if Self::IS_FFLONK {
+            (
+                blob_storage.write_fflonk_precomputation(),
+                blob_storage.write_fflonk_vk(),
+            )
+        } else {
+            (
+                blob_storage.write_plonk_precomputation(),
+                blob_storage.write_plonk_vk(),
+            )
+        };
+        precomputation
+            .write_into_buffer(precompuatation_writer)
+            .unwrap();
+        serde_json::to_writer(vk_writer, &vk).unwrap();
+        println!("Pecomputation and vk of snark wrapper circuit saved into blob storage");
     }
 }
 
@@ -141,6 +181,8 @@ impl SnarkWrapperStep for FflonkSnarkWrapper {
         }
     }
 }
+impl SnarkWrapperStepExt for FflonkSnarkWrapper {}
+
 pub struct PlonkSnarkWrapper;
 impl SnarkWrapperStep for PlonkSnarkWrapper {
     const IS_PLONK: bool = true;
@@ -165,3 +207,4 @@ impl SnarkWrapperStep for PlonkSnarkWrapper {
         }
     }
 }
+impl SnarkWrapperStepExt for PlonkSnarkWrapper {}

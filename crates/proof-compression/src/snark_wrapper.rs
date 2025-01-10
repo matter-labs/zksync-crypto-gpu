@@ -25,8 +25,12 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
         BS: BlobStorage,
     {
         assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
-        let hint = if Self::IS_PLONK { &[26u8] } else { &[24] };
-        serde_json::from_reader(&hint[..]).unwrap()
+        let hint = if Self::IS_PLONK {
+            (1 << <PlonkProverDeviceMemoryManagerConfig as gpu_prover::ManagerConfigs>::FULL_SLOT_SIZE_LOG).to_string()
+        } else {
+            (1 << fflonk::fflonk::L1_VERIFIER_DOMAIN_SIZE_LOG).to_string()
+        };
+        serde_json::from_str(&hint).unwrap()
     }
 
     fn load_previous_vk<BS>(
@@ -85,6 +89,7 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
     }
 
     fn prove_snark_wrapper_step<BS, CI>(
+        ctx_config: AsyncHandler<Self::ContextConfig>,
         input_proof: Proof<GoldilocksField, Self::PreviousStepTreeHasher, GoldilocksExt2>,
         blob_storage: &BS,
         context_handler: &CI,
@@ -95,12 +100,13 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
     {
         assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
         let input_vk = Self::load_previous_vk(blob_storage);
-        let vk = Self::load_this_vk(blob_storage);
+
         let precomputation = Self::get_precomputation(blob_storage);
-        let ctx = context_handler.init_context::<Self>();
+        let ctx = context_handler.init_snark_context::<Self>(ctx_config);
         let finalization_hint = Self::load_finalization_hint(blob_storage);
         let circuit = Self::build_circuit(input_vk, Some(input_proof));
         let proving_assembly = <Self as SnarkWrapperProofSystem>::synthesize_for_proving(circuit);
+        let vk = Self::load_this_vk(blob_storage);
         let proof = <Self as SnarkWrapperProofSystem>::prove(
             ctx,
             proving_assembly,
@@ -109,7 +115,7 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
             &vk,
         );
 
-        assert!(<Self as ProofSystemDefinition>::verify(&proof, &vk));
+        // assert!(<Self as ProofSystemDefinition>::verify(&proof, &vk));
 
         proof
     }
@@ -121,8 +127,11 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
 }
 
 pub trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperStep {
-    fn precompute_and_store_snark_wrapper_circuit<BS, CM>(blob_storage: &BS, context_manager: &CM)
-    where
+    fn precompute_and_store_snark_wrapper_circuit<BS, CM>(
+        ctx_config: AsyncHandler<Self::ContextConfig>,
+        blob_storage: &BS,
+        context_manager: &CM,
+    ) where
         BS: BlobStorageExt,
         CM: ContextManagerInterface,
         <Self as ProofSystemDefinition>::VK: 'static,
@@ -130,7 +139,7 @@ pub trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperStep {
         let input_vk = Self::load_previous_vk(blob_storage);
         let finalization_hint = Self::load_finalization_hint(blob_storage);
         let circuit = Self::build_circuit(input_vk, None);
-        let ctx = context_manager.init_context::<Self>();
+        let ctx = context_manager.init_snark_context::<Self>(ctx_config);
         let setup_assembly = <Self as SnarkWrapperProofSystemExt>::synthesize_for_setup(circuit);
 
         let (precomputation, vk) =

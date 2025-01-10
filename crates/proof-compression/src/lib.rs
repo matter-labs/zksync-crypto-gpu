@@ -20,11 +20,11 @@ use proof_system::*;
 mod snark_wrapper;
 use snark_wrapper::*;
 
-mod step;
-use step::*;
-
 mod serialization;
 use serialization::*;
+
+mod utils;
+use utils::*;   
 
 #[cfg(test)]
 mod test;

@@ -2,6 +2,7 @@ use circuit_definitions::circuit_definitions::recursion_layer::ZkSyncRecursionLa
 
 use super::*;
 
+#[test]
 pub fn test_proof_chain_with_fflonk() {
     let scheduler_proof_file =
         std::fs::File::open("./data/scheduler_recursive_proof.json").unwrap();

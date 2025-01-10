@@ -1,4 +1,7 @@
+use std::alloc::Allocator;
+
 use super::*;
+use bellman::kate_commitment::{Crs, CrsForMonomialForm};
 use bellman::pairing::compact_bn256::G1Affine as CompactG1Affine;
 use bellman::plonk::better_better_cs::cs::SynthesisModeGenerateSetup;
 use bellman::plonk::better_better_cs::{
@@ -9,6 +12,7 @@ use bellman::plonk::better_better_cs::{
     },
 };
 use bellman::plonk::commitments::transcript::keccak_transcript::RollingKeccakTranscript;
+use bellman::CurveAffine;
 use boojum::config::SetupCSConfig;
 use boojum::cs::implementations::transcript::Transcript;
 use boojum::cs::implementations::witness::WitnessVec;
@@ -23,12 +27,14 @@ use boojum::{
     },
     field::goldilocks::GoldilocksExt2,
 };
+
 use circuit_definitions::circuit_definitions::aux_layer::compression::{
     CompressionLayerCircuit, ProofCompressionFunction,
 };
 
 use fflonk::bellman::plonk::better_better_cs::cs::Circuit;
-use fflonk::{CombinedMonomialDeviceStorage, DeviceContextWithSingleDevice};
+use fflonk::fflonk::L1_VERIFIER_DOMAIN_SIZE_LOG;
+use fflonk::{init_compact_crs, CombinedMonomialDeviceStorage, DeviceContextWithSingleDevice};
 use gpu_prover::{DeviceMemoryManager, ManagerConfigs};
 use shivini::gpu_proof_config::GpuProofConfig;
 use shivini::{cs::GpuSetup, GpuTreeHasher, ProverContext};
@@ -45,10 +51,6 @@ pub trait ProofSystemDefinition: Sized {
     type FinalizationHint: serde::Serialize + serde::de::DeserializeOwned + Clone;
     type Allocator: std::alloc::Allocator;
     type ProvingAssembly: Sized + Send + Sync + 'static;
-    type ContextConfig;
-    type Context: Send + Sync + 'static;
-    fn get_context_config() -> Self::ContextConfig;
-    fn init_context(config: Self::ContextConfig) -> Self::Context;
     fn take_witnesses(proving_assembly: &mut Self::ProvingAssembly) -> Self::ExternalWitnessData;
     fn verify(_: &Self::Proof, _: &Self::VK) -> bool;
 }
@@ -60,8 +62,12 @@ pub trait CompressionProofSystem:
         ThisLayerPoW: GPUPoWRunner,
     > + ProofSystemDefinition
 {
+    type ContextConfig: Send + Sync + 'static;
+    type Context: Send + Sync + 'static;
     type AuxConfig;
-
+    fn get_context_config() -> Self::ContextConfig;
+    fn get_context_config_from_hint(_: &Self::FinalizationHint) -> Self::ContextConfig;
+    fn init_context(config: Self::ContextConfig) -> Self::Context;
     fn aux_config_from_assembly(proving_assembly: &Self::ProvingAssembly) -> Self::AuxConfig;
 
     fn synthesize_for_proving(
@@ -101,7 +107,13 @@ pub trait CompressionProofSystemExt: CompressionProofSystem {
 }
 
 pub trait SnarkWrapperProofSystem: ProofSystemDefinition {
+    type CRS;
     type Circuit;
+    type ContextConfig: Send + Sync + 'static;
+    type Context: Send + Sync + 'static;
+    fn get_context_config() -> Self::ContextConfig;
+    fn init_context(config: Self::ContextConfig) -> Self::Context;
+    fn load_crs(_: Self::FinalizationHint) -> Self::CRS;
     fn synthesize_for_proving(circuit: Self::Circuit) -> Self::ProvingAssembly;
     fn prove(
         _: AsyncHandler<Self::Context>,
@@ -128,6 +140,7 @@ pub trait SnarkWrapperProofSystemExt: SnarkWrapperProofSystem {
         _: Self::SetupAssembly,
         _: Self::FinalizationHint,
     ) -> (Self::Precomputation, Self::VK);
+    fn create_crs(_: Self::FinalizationHint);
 }
 
 type BoojumAssembly<CSConfig, A> =
@@ -153,21 +166,6 @@ where
     type FinalizationHint = FinalizationHintsForProver;
     type Allocator = std::alloc::Global;
     type ProvingAssembly = BoojumAssembly<ProvingCSConfig, Self::Allocator>;
-    type ContextConfig = usize; // domain_size
-    type Context = ProverContext;
-    fn get_context_config() -> Self::ContextConfig {
-        // TODO
-        println!("Using hardcoded domain size 2^17 for compression step");
-        1 << 17
-    }
-
-    fn init_context(domain_size: Self::ContextConfig) -> Self::Context {
-        let config =
-            ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
-        let context = Self::Context::create_with_config(config).expect("gpu prover context");
-
-        context
-    }
 
     fn verify(proof: &Self::Proof, vk: &Self::VK) -> bool {
         let verifier_builder =
@@ -198,7 +196,24 @@ where
         > + 'static,
 {
     type AuxConfig = GpuProofConfig;
+    type ContextConfig = usize; // domain_size
+    type Context = ProverContext;
 
+    fn get_context_config() -> Self::ContextConfig {
+        // println!("Using hardcoded domain size 2^17 for compression step");
+        1 << 17
+    }
+
+    fn init_context(domain_size: Self::ContextConfig) -> Self::Context {
+        let config =
+            ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
+        let context = Self::Context::create_with_config(config).expect("gpu prover context");
+
+        context
+    }
+    fn get_context_config_from_hint(hint: &Self::FinalizationHint) -> Self::ContextConfig {
+        hint.final_trace_len
+    }
     fn aux_config_from_assembly(proving_assembly: &Self::ProvingAssembly) -> Self::AuxConfig {
         GpuProofConfig::from_assembly(proving_assembly)
     }
@@ -207,7 +222,24 @@ where
         circuit: CompressionLayerCircuit<CF>,
         finalization_hint: Self::FinalizationHint,
     ) -> Self::ProvingAssembly {
-        synthesize_circuit_for_proving(circuit, &finalization_hint)
+        let geometry = circuit.geometry();
+        let (max_trace_len, num_vars) = circuit.size_hint();
+
+        let builder_impl = boojum::cs::cs_builder_reference::CsReferenceImplementationBuilder::<
+            GoldilocksField,
+            GoldilocksField,
+            ProvingCSConfig,
+        >::new(geometry, max_trace_len.unwrap());
+        let builder = boojum::cs::cs_builder::new_builder::<_, GoldilocksField>(builder_impl);
+
+        let builder = circuit.configure_builder_proxy(builder);
+        let mut cs = builder.build(num_vars.unwrap());
+        circuit.add_tables(&mut cs);
+        circuit.synthesize_into_cs(&mut cs);
+        let _ = cs.pad_and_shrink_using_hint(&finalization_hint);
+        let cs = cs.into_assembly::<std::alloc::Global>();
+
+        cs
     }
 
     fn prove(
@@ -311,7 +343,24 @@ where
     fn synthesize_for_setup(
         circuit: CompressionLayerCircuit<Self>,
     ) -> (Self::FinalizationHint, Self::SetupAssembly) {
-        synthesize_circuit_for_setup(circuit)
+        let geometry = circuit.geometry();
+        let (max_trace_len, num_vars) = circuit.size_hint();
+
+        let builder_impl = boojum::cs::cs_builder_reference::CsReferenceImplementationBuilder::<
+            GoldilocksField,
+            GoldilocksField,
+            SetupCSConfig,
+        >::new(geometry, max_trace_len.unwrap());
+        let builder = boojum::cs::cs_builder::new_builder::<_, GoldilocksField>(builder_impl);
+
+        let builder = circuit.configure_builder_proxy(builder);
+        let mut cs = builder.build(num_vars.unwrap());
+        circuit.add_tables(&mut cs);
+        circuit.synthesize_into_cs(&mut cs);
+        let (_domain_size, finalization_hint) = cs.pad_and_shrink();
+        let cs = cs.into_assembly::<std::alloc::Global>();
+
+        (finalization_hint, cs)
     }
 }
 
@@ -346,16 +395,6 @@ impl ProofSystemDefinition for PlonkSnarkWrapper {
     type FinalizationHint = usize;
     type Allocator = GlobalHost;
     type ProvingAssembly = PlonkAssembly<SynthesisModeProve, Self::Allocator>;
-    type ContextConfig = (Vec<usize>, Vec<CompactG1Affine>);
-    type Context = UnsafePlonkProverDeviceMemoryManagerWrapper;
-    fn get_context_config() -> Self::ContextConfig {
-        todo!()
-    }
-    fn init_context(config: Self::ContextConfig) -> Self::Context {
-        let (device_ids, compact_crs) = config;
-        let manager = DeviceMemoryManager::init(&device_ids, &compact_crs[..]).unwrap();
-        UnsafePlonkProverDeviceMemoryManagerWrapper(manager)
-    }
     fn take_witnesses(
         proving_assembly: &mut Self::ProvingAssembly,
     ) -> Vec<Self::FieldElement, Self::Allocator> {
@@ -367,7 +406,16 @@ impl ProofSystemDefinition for PlonkSnarkWrapper {
 }
 
 impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
+    type CRS = bellman::kate_commitment::Crs<bellman::compact_bn256::Bn256, CrsForMonomialForm>;
     type Circuit = PlonkSnarkVerifierCircuit;
+    type ContextConfig = (Vec<usize>, Vec<CompactG1Affine>);
+    type Context = UnsafePlonkProverDeviceMemoryManagerWrapper;
+    fn init_context(config: Self::ContextConfig) -> Self::Context {
+        let (device_ids, compact_crs) = config;
+        let manager = DeviceMemoryManager::init(&device_ids, &compact_crs[..]).unwrap();
+        UnsafePlonkProverDeviceMemoryManagerWrapper(manager)
+    }
+
     fn synthesize_for_proving(circuit: Self::Circuit) -> Self::ProvingAssembly {
         todo!()
     }
@@ -391,6 +439,18 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
     ) -> Self::Proof {
         todo!()
     }
+
+    fn get_context_config() -> Self::ContextConfig {
+        todo!()
+    }
+
+    fn load_crs(domain_size: Self::FinalizationHint) -> Self::CRS {
+        let raw_compact_crs_file_path = std::env::var("PLONK_COMPACT_RAW_CRS_FILE").unwrap();
+        let raw_compact_crs_file = std::fs::File::open(raw_compact_crs_file_path).unwrap();
+        let num_points = domain_size * L1_VERIFIER_DOMAIN_SIZE_LOG;
+        read_crs_from_raw_compact_form::<_, Self::Allocator>(raw_compact_crs_file, num_points)
+            .unwrap()
+    }
 }
 
 impl SnarkWrapperProofSystemExt for PlonkSnarkWrapper {
@@ -407,13 +467,17 @@ impl SnarkWrapperProofSystemExt for PlonkSnarkWrapper {
     ) -> (Self::Precomputation, Self::VK) {
         todo!()
     }
+
+    fn create_crs(_: Self::FinalizationHint) {
+        todo!()
+    }
 }
 
 type FflonkAssembly<CSConfig, A> = Assembly<Bn256, PlonkCsWidth3Params, NaiveMainGate, CSConfig, A>;
 
 impl ProofSystemDefinition for FflonkSnarkWrapper {
     type FieldElement = Fr;
-    type Precomputation = FflonkSnarkVerifierCircuitDeviceSetupWrapper;
+    type Precomputation = FflonkSnarkVerifierCircuitDeviceSetupWrapper<Self::Allocator>;
     type ExternalWitnessData = (
         Vec<Self::FieldElement>,
         Vec<Self::FieldElement, Self::Allocator>,
@@ -421,20 +485,9 @@ impl ProofSystemDefinition for FflonkSnarkWrapper {
     type Proof = FflonkSnarkVerifierCircuitProof;
     type VK = FflonkSnarkVerifierCircuitVK;
     type FinalizationHint = usize;
-    type Allocator = GlobalHost;
+    // type Allocator = GlobalHost; // TODO need global host with preallocated host memory
+    type Allocator = std::alloc::Global;
     type ProvingAssembly = FflonkAssembly<SynthesisModeProve, Self::Allocator>;
-    type ContextConfig = usize; // domain_size
-    type Context = DeviceContextWithSingleDevice;
-
-    fn get_context_config() -> Self::ContextConfig {
-        fflonk::fflonk::L1_VERIFIER_DOMAIN_SIZE_LOG
-    }
-    fn init_context(log_domain_size: Self::ContextConfig) -> Self::Context {
-        let domain_size = 1 << log_domain_size;
-        let context = Self::Context::init(domain_size).unwrap();
-
-        context
-    }
     fn take_witnesses(proving_assembly: &mut Self::ProvingAssembly) -> Self::ExternalWitnessData {
         let input_assignments =
             std::mem::replace(&mut proving_assembly.input_assingments, Vec::new());
@@ -455,7 +508,33 @@ impl ProofSystemDefinition for FflonkSnarkWrapper {
 }
 
 impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
+    type CRS = bellman::kate_commitment::Crs<bellman::compact_bn256::Bn256, CrsForMonomialForm>;
     type Circuit = FflonkSnarkVerifierCircuit;
+    type ContextConfig = (usize, Self::CRS);
+    type Context = DeviceContextWithSingleDevice;
+
+    fn load_crs(domain_size: Self::FinalizationHint) -> Self::CRS {
+        // let raw_compact_crs_file_path = std::env::var("FFLONK_COMPACT_RAW_CRS_FILE").unwrap();
+        // let raw_compact_crs_file = std::fs::File::open(raw_compact_crs_file_path).unwrap();
+        // let num_points = domain_size * fflonk::MAX_COMBINED_DEGREE_FACTOR;
+        // read_crs_from_raw_compact_form::<_, Self::Allocator>(raw_compact_crs_file, num_points)
+        //     .unwrap()
+        init_compact_crs(&bellman::worker::Worker::new(), domain_size)
+    }
+
+    fn get_context_config() -> Self::ContextConfig {
+        let domain_size = 1 << fflonk::fflonk::L1_VERIFIER_DOMAIN_SIZE_LOG;
+        let crs = Self::load_crs(domain_size);
+        (domain_size, crs)
+    }
+
+    fn init_context(config: Self::ContextConfig) -> Self::Context {
+        let (domain_size, crs) = config;
+        let context = Self::Context::init_from_preloaded_crs(domain_size, crs).unwrap();
+
+        context
+    }
+
     fn synthesize_for_proving(circuit: Self::Circuit) -> Self::ProvingAssembly {
         let mut proving_assembly = FflonkAssembly::<SynthesisModeProve, Self::Allocator>::new();
         circuit
@@ -469,14 +548,15 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
         mut proving_assembly: Self::ProvingAssembly,
         precomputation: AsyncHandler<Self::Precomputation>,
         finalization_hint: Self::FinalizationHint,
-        vk: &Self::VK,
+        _vk: &Self::VK,
     ) -> Self::Proof {
         assert!(proving_assembly.is_satisfied());
         let raw_trace_len = proving_assembly.n();
-        proving_assembly.finalize_to_size_log_2(1 << finalization_hint);
+        assert!(finalization_hint.is_power_of_two());
+        proving_assembly.finalize_to_size_log_2(finalization_hint.trailing_zeros() as usize);
         let domain_size = proving_assembly.n() + 1;
         assert!(domain_size.is_power_of_two());
-        assert!(domain_size <= 1 << Self::get_context_config());
+        assert_eq!(domain_size, finalization_hint);
 
         let ctx = ctx.wait();
         let precomputation = precomputation.wait().into_inner();
@@ -521,17 +601,30 @@ impl SnarkWrapperProofSystemExt for FflonkSnarkWrapper {
         _finalization_hint: Self::FinalizationHint,
     ) -> (Self::Precomputation, Self::VK) {
         let ctx = ctx.wait();
-        let device_setup =
-            FflonkSnarkVerifierCircuitDeviceSetup::create_setup_from_assembly_on_device(
-                &setup_assembly,
-            )
-            .unwrap();
+        let device_setup = fflonk::FflonkDeviceSetup::<
+            Bn256,
+            FflonkSnarkVerifierCircuit,
+            Self::Allocator,
+        >::create_setup_from_assembly_on_device(&setup_assembly)
+        .unwrap();
         let vk = device_setup.get_verification_key();
         drop(ctx);
         (
             FflonkSnarkVerifierCircuitDeviceSetupWrapper(device_setup),
             vk,
         )
+    }
+
+    fn create_crs(domain_size: Self::FinalizationHint) {
+        assert!(domain_size < fflonk::fflonk::L1_VERIFIER_DOMAIN_SIZE_LOG);
+        let num_points = fflonk::MAX_COMBINED_DEGREE_FACTOR * domain_size;
+        let original_crs = make_fflonk_crs_from_ignition_transcripts(num_points);
+        let raw_compact_crs_file_path = std::env::var("FFLONK_COMPACT_RAW_CRS_FILE").unwrap();
+        assert!(!std::path::Path::exists(std::path::Path::new(
+            &raw_compact_crs_file_path
+        )));
+        let raw_compact_crs_file = std::fs::File::create(raw_compact_crs_file_path).unwrap();
+        write_crs_into_raw_compact_form(original_crs, raw_compact_crs_file, num_points).unwrap();
     }
 }
 
@@ -545,70 +638,78 @@ impl ProofSystemDefinition for MarkerProofSystem {
     type FinalizationHint = ();
     type Allocator = std::alloc::Global;
     type ProvingAssembly = ();
-    type ContextConfig = ();
-    type Context = ();
-    fn get_context_config() -> Self::ContextConfig {
-        todo!()
-    }
-    fn init_context(config: Self::ContextConfig) -> Self::Context {
-        todo!()
-    }
 
     fn verify(_: &Self::Proof, _: &Self::VK) -> bool {
-        todo!()
+        unreachable!()
     }
 
     fn take_witnesses(proving_assembly: &mut Self::ProvingAssembly) -> Self::ExternalWitnessData {
-        todo!()
+        unreachable!()
     }
 }
 
-pub fn synthesize_circuit_for_setup<CF: ProofCompressionFunction>(
-    circuit: CompressionLayerCircuit<CF>,
-) -> (
-    FinalizationHintsForProver,
-    CSReferenceAssembly<GoldilocksField, GoldilocksField, SetupCSConfig>,
-) {
-    let geometry = circuit.geometry();
-    let (max_trace_len, num_vars) = circuit.size_hint();
+pub fn write_crs_into_raw_compact_form<W: std::io::Write>(
+    original_crs: Crs<bellman::bn256::Bn256, CrsForMonomialForm>,
+    mut dst_raw_compact_crs: W,
+    num_points: usize,
+) -> std::io::Result<()> {
+    assert!(num_points <= original_crs.g1_bases.len());
+    use bellman::{PrimeField, PrimeFieldRepr};
+    use byteorder::{BigEndian, WriteBytesExt};
+    assert!(num_points < u32::MAX as usize);
+    dst_raw_compact_crs.write_u32::<BigEndian>(num_points as u32)?;
+    for g1_base in original_crs.g1_bases.iter() {
+        let (x, y) = g1_base.as_xy();
+        x.into_raw_repr().write_be(&mut dst_raw_compact_crs)?;
+        y.into_raw_repr().write_be(&mut dst_raw_compact_crs)?;
+    }
+    for g2_base in original_crs.g2_monomial_bases.iter() {
+        let (x, y) = g2_base.as_xy();
+        x.c0.into_raw_repr().write_be(&mut dst_raw_compact_crs)?;
+        x.c1.into_raw_repr().write_be(&mut dst_raw_compact_crs)?;
+        y.c0.into_raw_repr().write_be(&mut dst_raw_compact_crs)?;
+        y.c1.into_raw_repr().write_be(&mut dst_raw_compact_crs)?;
+    }
 
-    let builder_impl = boojum::cs::cs_builder_reference::CsReferenceImplementationBuilder::<
-        GoldilocksField,
-        GoldilocksField,
-        SetupCSConfig,
-    >::new(geometry, max_trace_len.unwrap());
-    let builder = boojum::cs::cs_builder::new_builder::<_, GoldilocksField>(builder_impl);
-
-    let builder = circuit.configure_builder_proxy(builder);
-    let mut cs = builder.build(num_vars.unwrap());
-    circuit.add_tables(&mut cs);
-    circuit.synthesize_into_cs(&mut cs);
-    let (_domain_size, finalization_hint) = cs.pad_and_shrink();
-    let cs = cs.into_assembly::<std::alloc::Global>();
-
-    (finalization_hint, cs)
+    Ok(())
 }
 
-pub fn synthesize_circuit_for_proving<CF: ProofCompressionFunction>(
-    circuit: CompressionLayerCircuit<CF>,
-    finalization_hint: &FinalizationHintsForProver,
-) -> CSReferenceAssembly<GoldilocksField, GoldilocksField, ProvingCSConfig> {
-    let geometry = circuit.geometry();
-    let (max_trace_len, num_vars) = circuit.size_hint();
+// TODO: Crs doesn't allow bases located in a custom allocator
+pub fn read_crs_from_raw_compact_form<R: std::io::Read, A: Allocator + Default>(
+    mut src_raw_compact_crs: R,
+    num_points: usize,
+) -> std::io::Result<Crs<bellman::compact_bn256::Bn256, CrsForMonomialForm>> {
+    println!("Reading Raw compact CRS");
+    use byteorder::{BigEndian, ReadBytesExt};
+    let actual_num_points = src_raw_compact_crs.read_u32::<BigEndian>()? as usize;
+    assert!(num_points <= actual_num_points as usize);
+    use bellman::{PrimeField, PrimeFieldRepr};
+    // let mut g1_bases = Vec::with_capacity_in(num_points, A::default());
+    println!("Reading G1 points");
+    let mut g1_bases = Vec::with_capacity(num_points);
+    unsafe {
+        g1_bases.set_len(num_points);
+        let buf = std::slice::from_raw_parts_mut(
+            g1_bases.as_mut_ptr() as *mut u8,
+            num_points * std::mem::size_of::<bellman::compact_bn256::G1Affine>(),
+        );
+        src_raw_compact_crs.read_exact(buf)?;
+    }
+    let num_g2_points = 2;
+    // let mut g2_bases = Vec::with_capacity_in(num_g2_points, A::default());
+    println!("Reading G2 points");
+    let mut g2_bases = Vec::with_capacity(num_g2_points);
+    unsafe {
+        g2_bases.set_len(num_g2_points);
+        let buf = std::slice::from_raw_parts_mut(
+            g2_bases.as_mut_ptr() as *mut u8,
+            num_g2_points * std::mem::size_of::<bellman::compact_bn256::G2Affine>(),
+        );
+        src_raw_compact_crs.read_exact(buf)?;
+    }
+    let mut compact_crs = Crs::<_, CrsForMonomialForm>::dummy_crs(1);
+    compact_crs.g1_bases = std::sync::Arc::new(g1_bases);
+    compact_crs.g2_monomial_bases = std::sync::Arc::new(g2_bases);
 
-    let builder_impl = boojum::cs::cs_builder_reference::CsReferenceImplementationBuilder::<
-        GoldilocksField,
-        GoldilocksField,
-        ProvingCSConfig,
-    >::new(geometry, max_trace_len.unwrap());
-    let builder = boojum::cs::cs_builder::new_builder::<_, GoldilocksField>(builder_impl);
-
-    let builder = circuit.configure_builder_proxy(builder);
-    let mut cs = builder.build(num_vars.unwrap());
-    circuit.add_tables(&mut cs);
-    circuit.synthesize_into_cs(&mut cs);
-    let _ = cs.pad_and_shrink_using_hint(&finalization_hint);
-    let cs = cs.into_assembly::<std::alloc::Global>();
-
-    cs
+    Ok(compact_crs)
 }

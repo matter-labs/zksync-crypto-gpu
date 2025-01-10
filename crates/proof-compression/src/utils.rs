@@ -1,6 +1,11 @@
 use super::*;
+use bellman::{
+    kate_commitment::{Crs, CrsForMonomialForm},
+    CurveAffine, Engine, Field, PrimeField,
+};
+use byteorder::{BigEndian, ReadBytesExt};
 
-pub fn make_crs_from_ignition_transcript<S: AsRef<std::ffi::OsStr> + ?Sized>(
+pub fn create_crs_from_ignition_transcript<S: AsRef<std::ffi::OsStr> + ?Sized>(
     path: &S,
     num_chunks: usize,
 ) -> Result<
@@ -169,10 +174,13 @@ pub fn make_crs_from_ignition_transcript<S: AsRef<std::ffi::OsStr> + ?Sized>(
     Ok(new)
 }
 
-pub fn transform_ignition_transcripts(domain_size: usize) {
-    let transcripts_dir = std::env::var("IGNITION_TRANSCRIPT_PATH").unwrap_or("./".to_string());
+pub fn make_fflonk_crs_from_ignition_transcripts(
+    num_points: usize,
+) -> Crs<Bn256, CrsForMonomialForm> {
+    let transcripts_dir =
+        std::env::var("IGNITION_TRANSCRIPT_PATH").expect("IGNITION_TRANSCRIPT_PATH env variable");
     let chunk_size = 5_040_000usize;
-    let num_chunks = domain_size.div_ceil(chunk_size);
+    let num_chunks = num_points.div_ceil(chunk_size);
 
     // Check transcript files already downloaded from "https://aztec-ignition.s3.eu-west-2.amazonaws.com/MAIN+IGNITION/sealed/transcript{idx}.dat";
     for idx in 0..num_chunks {
@@ -182,21 +190,19 @@ pub fn transform_ignition_transcripts(domain_size: usize) {
     }
 
     // transform
-    let crs = make_crs_from_ignition_transcript(&transcripts_dir, num_chunks).unwrap();
+    let crs = create_crs_from_ignition_transcript(&transcripts_dir, num_chunks).unwrap();
     let out_path = format!("{}/full_ignition.key", &transcripts_dir);
     let out_file = std::fs::File::create(&out_path).unwrap();
 
-    let Crs {
+    let bellman::kate_commitment::Crs {
         g1_bases,
         g2_monomial_bases,
         ..
     } = crs;
-    assert!(g1_bases.len() >= domain_size);
+    assert!(g1_bases.len() >= num_points);
     let mut g1_bases = std::sync::Arc::try_unwrap(g1_bases).unwrap();
     let g2_monomial_bases = std::sync::Arc::try_unwrap(g2_monomial_bases).unwrap();
-    g1_bases.truncate(domain_size);
+    g1_bases.truncate(num_points);
 
-    let crs: Crs<Bn256, CrsForMonomialForm> = Crs::new(g1_bases, g2_monomial_bases);
-    crs.write(&out_file).unwrap();
-    println!("full ignition ceremony saved into {out_path}");
+    Crs::new(g1_bases, g2_monomial_bases)
 }

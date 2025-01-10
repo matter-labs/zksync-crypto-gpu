@@ -1,9 +1,29 @@
 use super::*;
 
-use fflonk::FflonkSnarkVerifierCircuitDeviceSetup;
-use shivini::boojum::cs::implementations::fast_serialization::MemcopySerializable;
+use gpu_prover::ManagerConfigs;
+use shivini::{
+    boojum::cs::implementations::fast_serialization::MemcopySerializable, cs::GpuSetup,
+    GpuTreeHasher,
+};
 
 use crate::PlonkSnarkVerifierCircuitDeviceSetup;
+
+pub struct BoojumDeviceSetupWrapper<H: GpuTreeHasher>(GpuSetup<H>);
+
+impl<H: GpuTreeHasher> boojum::cs::implementations::fast_serialization::MemcopySerializable
+    for BoojumDeviceSetupWrapper<H>
+{
+    fn write_into_buffer<W: std::io::Write>(
+        &self,
+        dst: W,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(bincode::serialize_into(dst, self.0).unwrap())
+    }
+
+    fn read_from_buffer<R: std::io::Read>(src: R) -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(Self(bincode::deserialize_from(src).unwrap()))
+    }
+}
 
 pub struct PlonkSnarkVerifierCircuitDeviceSetupWrapper(PlonkSnarkVerifierCircuitDeviceSetup);
 
@@ -12,11 +32,16 @@ impl MemcopySerializable for PlonkSnarkVerifierCircuitDeviceSetupWrapper {
         &self,
         dst: W,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        todo!()
+        self.0.write(dst).unwrap();
+        Ok(())
     }
 
     fn read_from_buffer<R: std::io::Read>(src: R) -> Result<Self, Box<dyn std::error::Error>> {
-        todo!()
+        let mut precomputation = PlonkSnarkVerifierCircuitDeviceSetup::allocate(
+            1 << PlonkProverDeviceMemoryManagerConfig::FULL_SLOT_SIZE_LOG,
+        );
+        precomputation.read(src).unwrap();
+        Ok(Self(precomputation))
     }
 }
 
@@ -26,9 +51,14 @@ impl PlonkSnarkVerifierCircuitDeviceSetupWrapper {
     }
 }
 
-pub struct FflonkSnarkVerifierCircuitDeviceSetupWrapper(pub FflonkSnarkVerifierCircuitDeviceSetup);
+pub struct FflonkSnarkVerifierCircuitDeviceSetupWrapper<A: HostAllocator>(
+    pub fflonk::FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, A>,
+);
 
-impl MemcopySerializable for FflonkSnarkVerifierCircuitDeviceSetupWrapper {
+impl<A> MemcopySerializable for FflonkSnarkVerifierCircuitDeviceSetupWrapper<A>
+where
+    A: HostAllocator,
+{
     fn write_into_buffer<W: std::io::Write>(
         &self,
         dst: W,
@@ -37,14 +67,17 @@ impl MemcopySerializable for FflonkSnarkVerifierCircuitDeviceSetupWrapper {
     }
 
     fn read_from_buffer<R: std::io::Read>(src: R) -> Result<Self, Box<dyn std::error::Error>> {
-        Ok(Self(
-            FflonkSnarkVerifierCircuitDeviceSetup::read(src).unwrap(),
-        ))
+        let precomputation = fflonk::FflonkDeviceSetup::<Bn256, _, A>::read(src).unwrap();
+
+        Ok(Self(precomputation))
     }
 }
 
-impl FflonkSnarkVerifierCircuitDeviceSetupWrapper {
-    pub fn into_inner(self) -> FflonkSnarkVerifierCircuitDeviceSetup {
+impl<A> FflonkSnarkVerifierCircuitDeviceSetupWrapper<A>
+where
+    A: HostAllocator,
+{
+    pub fn into_inner(self) -> fflonk::FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, A> {
         self.0
     }
 }

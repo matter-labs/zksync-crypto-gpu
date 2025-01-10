@@ -73,13 +73,12 @@ pub trait CompressionStep: CompressionProofSystem {
         BS: BlobStorage,
     {
         let reader = if Self::IS_WRAPPER {
-            blob_storage.read_compression_layer_precomputation(Self::MODE)
-        } else {
             blob_storage.read_compression_wrapper_precomputation(Self::MODE)
+        } else {
+            blob_storage.read_compression_layer_precomputation(Self::MODE)
         };
         let f = move || {
             let (sender, receiver) = std::sync::mpsc::channel();
-
             let precomputation =
                 <<Self as ProofSystemDefinition>::Precomputation as MemcopySerializable>::read_from_buffer(
                     reader,
@@ -105,8 +104,9 @@ pub trait CompressionStep: CompressionProofSystem {
         let input_vk = Self::load_previous_vk(blob_storage);
         let vk = Self::load_this_vk(blob_storage);
         let precomputation = Self::get_precomputation(blob_storage);
-        let ctx = context_handler.init_context::<Self>();
         let finalization_hint = Self::load_finalization_hint(blob_storage);
+        let ctx_config = Self::get_context_config_from_hint(&finalization_hint);
+        let ctx = context_handler.init_compression_context::<Self>(ctx_config);
         let circuit = Self::build_circuit(input_vk, Some(input_proof));
         let proving_assembly = <Self as CompressionProofSystem>::synthesize_for_proving(
             circuit,
@@ -122,7 +122,6 @@ pub trait CompressionStep: CompressionProofSystem {
             finalization_hint,
             &vk,
         );
-
         assert!(<Self as ProofSystemDefinition>::verify(&proof, &vk));
 
         proof
@@ -143,7 +142,10 @@ pub trait CompressionStepExt: CompressionProofSystemExt + CompressionStep {
     {
         let input_vk = Self::load_previous_vk(blob_storage);
         let circuit = Self::build_circuit(input_vk, None);
-        let ctx = context_manager.init_context::<Self>();
+        // Workaround: trace length is not known at this point, so thats totally fine
+        // to use a hardcoded trace length
+        let ctx_config = Self::get_context_config();
+        let ctx = context_manager.init_compression_context::<Self>(ctx_config);
         let (finalization_hint, setup_assembly) =
             <Self as CompressionProofSystemExt>::synthesize_for_setup(circuit);
         let (precomputation, vk) =

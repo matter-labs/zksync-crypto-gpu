@@ -37,7 +37,9 @@ where
     BS: BlobStorage,
 {
     let context_manager = SimpleContextManager::new();
-
+    let start = std::time::Instant::now();
+    let snark_context_config =
+        context_manager.initialize_snark_context_config::<FflonkSnarkWrapper>();
     let next_proof =
         CompressionMode1::prove_compression_step(input_proof, blob_storage, &context_manager);
     let next_proof = CompressionMode2::prove_compression_step::<_, SimpleContextManager>(
@@ -60,12 +62,20 @@ where
         blob_storage,
         &context_manager,
     );
+    println!(
+        "Proving entire compression chain took {}s",
+        start.elapsed().as_secs()
+    );
     let final_proof = FflonkSnarkWrapper::prove_snark_wrapper_step::<_, SimpleContextManager>(
+        snark_context_config,
         next_proof,
         blob_storage,
         &context_manager,
     );
-
+    println!(
+        "Proving entire chain with snark wrapper took {}s",
+        start.elapsed().as_secs()
+    );
     final_proof
 }
 
@@ -74,22 +84,30 @@ where
     BS: BlobStorageExt,
 {
     let context_manager = SimpleContextManager::new();
-    println!("Precomputing step 1");
+    let snark_context_config =
+        context_manager.initialize_snark_context_config::<FflonkSnarkWrapper>();
+    let start = std::time::Instant::now();
     CompressionMode1::precomputae_and_store_compression_circuits(blob_storage, &context_manager);
-    println!("Precomputing step 2");
     CompressionMode2::precomputae_and_store_compression_circuits(blob_storage, &context_manager);
-    println!("Precomputing step 3");
     CompressionMode3::precomputae_and_store_compression_circuits(blob_storage, &context_manager);
-    println!("Precomputing step 4");
     CompressionMode4::precomputae_and_store_compression_circuits(blob_storage, &context_manager);
-    println!("Precomputing step 5");
     CompressionMode5ForWrapper::precomputae_and_store_compression_circuits(
         blob_storage,
         &context_manager,
     );
-    println!("Precomputing fflonk");
-    FflonkSnarkWrapper::precompute_and_store_snark_wrapper_circuit(blob_storage, &context_manager);
-    println!("All steps in this approach precomputed and saved into blob storage");
+    println!(
+        "Precomputation of compression chain took {}s",
+        start.elapsed().as_secs()
+    );
+    FflonkSnarkWrapper::precompute_and_store_snark_wrapper_circuit(
+        snark_context_config,
+        blob_storage,
+        &context_manager,
+    );
+    println!(
+        "Precomputation of entire chain took {}s",
+        start.elapsed().as_secs()
+    );
 }
 
 pub(crate) fn run_proof_chain_with_plonk<BS>(
@@ -100,16 +118,25 @@ where
     BS: BlobStorage,
 {
     let context_manager = SimpleContextManager::new();
-
+    let snark_context_config =
+        context_manager.initialize_snark_context_config::<PlonkSnarkWrapper>();
+    let start = std::time::Instant::now();
     let next_proof = CompressionMode1ForWrapper::prove_compression_step(
         input_proof,
         blob_storage,
         &context_manager,
     );
 
-    let final_proof =
-        PlonkSnarkWrapper::prove_snark_wrapper_step(next_proof, blob_storage, &context_manager);
-
+    let final_proof = PlonkSnarkWrapper::prove_snark_wrapper_step(
+        snark_context_config,
+        next_proof,
+        blob_storage,
+        &context_manager,
+    );
+    println!(
+        "Entire compression chain took {}s",
+        start.elapsed().as_secs()
+    );
     final_proof
 }
 
@@ -118,10 +145,16 @@ where
     BS: BlobStorageExt,
 {
     let context_manager = SimpleContextManager::new();
+    let snark_context_config =
+        context_manager.initialize_snark_context_config::<PlonkSnarkWrapper>();
     CompressionMode1ForWrapper::precomputae_and_store_compression_circuits(
         blob_storage,
         &context_manager,
     );
-    PlonkSnarkWrapper::precompute_and_store_snark_wrapper_circuit(blob_storage, &context_manager);
+    PlonkSnarkWrapper::precompute_and_store_snark_wrapper_circuit(
+        snark_context_config,
+        blob_storage,
+        &context_manager,
+    );
     println!("All steps in this approach precomputed and saved into blob storage");
 }

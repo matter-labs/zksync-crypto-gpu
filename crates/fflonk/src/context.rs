@@ -55,7 +55,7 @@ pub(crate) fn init_tmp_mempool() {
     unsafe {
         _TMP_MEMPOOL = Some(bc_mem_pool::new(DEFAULT_DEVICE_ID).unwrap());
     }
-    let num_tmp_bytes = 1_100_000_000;
+    let num_tmp_bytes = 3 << 29; //1.5GB
     let stream = bc_stream::new().unwrap();
     DVec::<u8, PoolAllocator>::allocate_on(num_tmp_bytes, _tmp_mempool(), stream);
 }
@@ -146,9 +146,19 @@ const POWERS_OF_COSET_OMEGA_COARSE_LOG_COUNT: u32 = 14;
 pub type DeviceContextWithSingleDevice = DeviceContext<1>;
 
 impl<const N: usize> DeviceContext<N> {
+    pub fn init_from_preloaded_crs(
+        domain_size: usize,
+        crs: Crs<CompactBn256, CrsForMonomialForm>,
+    ) -> CudaResult<Self> {
+        let context = Self::init_no_msm(domain_size)?;
+        Self::init_msm_on_static_memory(domain_size, Some(crs))?;
+
+        Ok(context)
+    }
+
     pub fn init(domain_size: usize) -> CudaResult<Self> {
         let context = Self::init_no_msm(domain_size)?;
-        Self::init_msm_on_static_memory(domain_size)?;
+        Self::init_msm_on_static_memory(domain_size, None)?;
         // Self::init_msm_on_pool(domain_size)?;
 
         Ok(context)
@@ -179,8 +189,11 @@ impl<const N: usize> DeviceContext<N> {
         Ok(DeviceContext)
     }
 
-    fn init_msm_on_static_memory(domain_size: usize) -> CudaResult<()> {
-        Self::inner_init_msm(domain_size, None, None)?;
+    fn init_msm_on_static_memory(
+        domain_size: usize,
+        crs: Option<Crs<CompactBn256, CrsForMonomialForm>>,
+    ) -> CudaResult<()> {
+        Self::inner_init_msm(domain_size, crs, None, None)?;
         Ok(())
     }
 
@@ -188,13 +201,14 @@ impl<const N: usize> DeviceContext<N> {
     unsafe fn init_msm_on_pool(domain_size: usize) -> CudaResult<()> {
         let pool = _msm_bases_mempool();
         let stream = bc_stream::new().unwrap();
-        Self::inner_init_msm(domain_size, Some(pool), Some(stream))?;
+        Self::inner_init_msm(domain_size, None, Some(pool), Some(stream))?;
         stream.sync().unwrap();
         Ok(())
     }
 
     fn inner_init_msm(
         domain_size: usize,
+        crs: Option<Crs<CompactBn256, CrsForMonomialForm>>,
         pool: Option<bc_mem_pool>,
         stream: Option<bc_stream>,
     ) -> CudaResult<()> {
@@ -205,7 +219,10 @@ impl<const N: usize> DeviceContext<N> {
         init_msm_result_mempool();
         // MSM impl requires bases to be located in a buffer that is
         // multiple of the domain_size
-        let crs = init_compact_crs(&bellman::worker::Worker::new(), domain_size);
+        let crs = match crs {
+            Some(preloaded_crs) => preloaded_crs,
+            None => init_compact_crs(&bellman::worker::Worker::new(), domain_size),
+        };
         let num_bases = MAX_COMBINED_DEGREE_FACTOR * domain_size;
         assert!(crs.g1_bases.len() >= num_bases);
         let bases = match (pool, stream) {

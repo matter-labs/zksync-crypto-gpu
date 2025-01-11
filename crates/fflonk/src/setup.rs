@@ -307,3 +307,44 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
         write_curve_affine(&self.g2_elems[1], writer)
     }
 }
+
+pub fn read_raw_fr_vec<F: PrimeField, R: std::io::Read, A: Allocator + Default>(
+    mut src: R,
+) -> std::io::Result<Vec<F, A>> {
+    use byteorder::{BigEndian, ReadBytesExt};
+    let num_values = src.read_u32::<BigEndian>()? as usize;
+    let mut values = Vec::with_capacity_in(num_values, A::default());
+    unsafe {
+        values.set_len(num_values);
+        let buf = std::slice::from_raw_parts_mut(
+            values.as_mut_ptr() as *mut u8,
+            num_values * std::mem::size_of::<F>(),
+        );
+        // src.read_exact(buf)?;
+        let mut dst = &mut buf[..];
+        std::io::copy(&mut src, &mut dst)?;
+    }
+
+    Ok(values)
+}
+
+pub fn write_raw_fr_slice<F: PrimeField, W: std::io::Write>(
+    src_values: &[F],
+    mut dst: W,
+) -> std::io::Result<()> {
+    use byteorder::{BigEndian, WriteBytesExt};
+    let num_values = src_values.len();
+    assert!(num_values < u32::MAX as usize);
+    dst.write_u32::<BigEndian>(num_values as u32)?;
+    unsafe {
+        let buf = std::slice::from_raw_parts_mut(
+            src_values.as_ptr() as *mut u8,
+            num_values * std::mem::size_of::<F>(),
+        );
+        let mut reader = &buf[..];
+        // dst.write_all(buf)?;
+        std::io::copy(&mut reader, &mut dst)?;
+    }
+
+    Ok(())
+}

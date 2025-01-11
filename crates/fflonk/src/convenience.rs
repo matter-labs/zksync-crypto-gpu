@@ -14,8 +14,8 @@ use circuit_definitions::circuit_definitions::aux_layer::{
 };
 use fflonk::{FflonkAssembly, L1_VERIFIER_DOMAIN_SIZE_LOG};
 
-pub type FflonkSnarkVerifierCircuitDeviceSetup =
-    FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit>;
+pub type FflonkSnarkVerifierCircuitDeviceSetup<A> =
+    FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, A>;
 
 use super::*;
 

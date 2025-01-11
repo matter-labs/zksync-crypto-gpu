@@ -75,4 +75,4 @@ pub type FflonkSnarkVerifierCircuitVK = FflonkVerificationKey<Bn256, FflonkSnark
 pub type FflonkSnarkVerifierCircuitProof = FflonkProof<Bn256, FflonkSnarkVerifierCircuit>;
 pub type FflonkSnarkVerifierCircuitSetup = FflonkSetup<Bn256, FflonkSnarkVerifierCircuit>;
 
-pub use allocator::{GlobalHost, HostAllocator};
+pub use allocator::{HostAllocator, GlobalHost};

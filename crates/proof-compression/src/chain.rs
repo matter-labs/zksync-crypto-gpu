@@ -1,3 +1,8 @@
+use circuit_definitions::circuit_definitions::aux_layer::compression_modes::{
+    CompressionMode1, CompressionMode1ForWrapper, CompressionMode2, CompressionMode3,
+    CompressionMode4, CompressionMode5ForWrapper,
+};
+
 use super::*;
 
 pub enum SnarkWrapper {
@@ -8,6 +13,12 @@ pub enum SnarkWrapperProof {
     Plonk(PlonkSnarkVerifierCircuitProof),
     FFfonk(FflonkSnarkVerifierCircuitProof),
 }
+
+pub type SchedulerProof = franklin_crypto::boojum::cs::implementations::proof::Proof<
+    GoldilocksField,
+    circuit_definitions::circuit_definitions::recursion_layer::RecursiveProofsTreeHasher,
+    GoldilocksExt2,
+>;
 
 pub fn run_proof_chain<BS>(
     input_proof: SchedulerProof,
@@ -29,7 +40,7 @@ where
     }
 }
 
-pub(crate) fn run_proof_chain_with_fflonk<BS>(
+pub fn run_proof_chain_with_fflonk<BS>(
     input_proof: SchedulerProof,
     blob_storage: &BS,
 ) -> FflonkSnarkVerifierCircuitProof
@@ -38,8 +49,10 @@ where
 {
     let context_manager = SimpleContextManager::new();
     let start = std::time::Instant::now();
-    let snark_context_config =
-        context_manager.initialize_snark_context_config::<FflonkSnarkWrapper>();
+    let compact_raw_crs =
+        <FflonkSnarkWrapper as SnarkWrapperStep>::load_compact_raw_crs(blob_storage);
+    let fflonk_precomputation = FflonkSnarkWrapper::get_precomputation(blob_storage);
+
     let next_proof =
         CompressionMode1::prove_compression_step(input_proof, blob_storage, &context_manager);
     let next_proof = CompressionMode2::prove_compression_step::<_, SimpleContextManager>(
@@ -67,7 +80,8 @@ where
         start.elapsed().as_secs()
     );
     let final_proof = FflonkSnarkWrapper::prove_snark_wrapper_step::<_, SimpleContextManager>(
-        snark_context_config,
+        compact_raw_crs,
+        fflonk_precomputation,
         next_proof,
         blob_storage,
         &context_manager,
@@ -79,13 +93,14 @@ where
     final_proof
 }
 
-pub(crate) fn precompute_proof_chain_with_fflonk<BS>(blob_storage: &BS)
+pub fn precompute_proof_chain_with_fflonk<BS>(blob_storage: &BS)
 where
     BS: BlobStorageExt,
 {
     let context_manager = SimpleContextManager::new();
-    let snark_context_config =
-        context_manager.initialize_snark_context_config::<FflonkSnarkWrapper>();
+    let compact_raw_crs =
+        <FflonkSnarkWrapper as SnarkWrapperStep>::load_compact_raw_crs(blob_storage);
+
     let start = std::time::Instant::now();
     CompressionMode1::precomputae_and_store_compression_circuits(blob_storage, &context_manager);
     CompressionMode2::precomputae_and_store_compression_circuits(blob_storage, &context_manager);
@@ -100,17 +115,17 @@ where
         start.elapsed().as_secs()
     );
     FflonkSnarkWrapper::precompute_and_store_snark_wrapper_circuit(
-        snark_context_config,
+        compact_raw_crs,
         blob_storage,
         &context_manager,
     );
     println!(
-        "Precomputation of entire chain took {}s",
+        "Precomputation of entire chain with fflonk took {}s",
         start.elapsed().as_secs()
     );
 }
 
-pub(crate) fn run_proof_chain_with_plonk<BS>(
+pub fn run_proof_chain_with_plonk<BS>(
     input_proof: SchedulerProof,
     blob_storage: &BS,
 ) -> PlonkSnarkVerifierCircuitProof
@@ -118,9 +133,11 @@ where
     BS: BlobStorage,
 {
     let context_manager = SimpleContextManager::new();
-    let snark_context_config =
-        context_manager.initialize_snark_context_config::<PlonkSnarkWrapper>();
     let start = std::time::Instant::now();
+    let compact_raw_crs =
+        <PlonkSnarkWrapper as SnarkWrapperStep>::load_compact_raw_crs(blob_storage);
+    let plonk_precomputation = PlonkSnarkWrapper::get_precomputation(blob_storage);
+
     let next_proof = CompressionMode1ForWrapper::prove_compression_step(
         input_proof,
         blob_storage,
@@ -128,33 +145,38 @@ where
     );
 
     let final_proof = PlonkSnarkWrapper::prove_snark_wrapper_step(
-        snark_context_config,
+        compact_raw_crs,
+        plonk_precomputation,
         next_proof,
         blob_storage,
         &context_manager,
     );
     println!(
-        "Entire compression chain took {}s",
+        "Entire compression chain with plonk took {}s",
         start.elapsed().as_secs()
     );
     final_proof
 }
 
-pub(crate) fn precompute_proof_chain_with_plonk<BS>(blob_storage: &BS)
+pub fn precompute_proof_chain_with_plonk<BS>(blob_storage: &BS)
 where
     BS: BlobStorageExt,
 {
     let context_manager = SimpleContextManager::new();
-    let snark_context_config =
-        context_manager.initialize_snark_context_config::<PlonkSnarkWrapper>();
+    let start = std::time::Instant::now();
+    let compact_raw_crs =
+        <PlonkSnarkWrapper as SnarkWrapperStep>::load_compact_raw_crs(blob_storage);
     CompressionMode1ForWrapper::precomputae_and_store_compression_circuits(
         blob_storage,
         &context_manager,
     );
     PlonkSnarkWrapper::precompute_and_store_snark_wrapper_circuit(
-        snark_context_config,
+        compact_raw_crs,
         blob_storage,
         &context_manager,
     );
-    println!("All steps in this approach precomputed and saved into blob storage");
+    println!(
+        "Precomputation of entire chain with fflonk took {}s",
+        start.elapsed().as_secs()
+    );
 }

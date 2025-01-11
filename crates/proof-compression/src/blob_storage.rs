@@ -15,11 +15,10 @@ pub trait BlobStorage: Send + Sync {
 
     fn read_fflonk_vk(&self) -> Box<dyn Read>;
     fn read_fflonk_precomputation(&self) -> Box<dyn Read + Send + Sync>;
-    fn read_fflonk_crs(&self) -> Box<dyn Read>;
 
     fn read_plonk_vk(&self) -> Box<dyn Read>;
     fn read_plonk_precomputation(&self) -> Box<dyn Read + Send + Sync>;
-    fn read_plonk_crs(&self) -> Box<dyn Read>;
+    fn read_compact_raw_crs(&self) -> Box<dyn Read + Send + Sync>;
 }
 
 pub trait BlobStorageExt: BlobStorage {
@@ -33,14 +32,14 @@ pub trait BlobStorageExt: BlobStorage {
 
     fn write_fflonk_vk(&self) -> Box<dyn Write>;
     fn write_fflonk_precomputation(&self) -> Box<dyn Write>;
-    fn write_fflonk_crs(&self) -> Box<dyn Write>;
 
     fn write_plonk_vk(&self) -> Box<dyn Write>;
     fn write_plonk_precomputation(&self) -> Box<dyn Write>;
-    fn write_plonk_crs(&self) -> Box<dyn Write>;
+
+    fn write_compact_raw_crs(&self) -> Box<dyn Write>;
 }
 
-pub struct FileSystemBlobStorage;
+pub(crate) struct FileSystemBlobStorage;
 
 impl FileSystemBlobStorage {
     const DATA_DIR_PATH: &str = "./data";
@@ -163,24 +162,9 @@ impl BlobStorage for FileSystemBlobStorage {
         println!("Reading plonk vk at path {}", path);
         Self::open_file(&path)
     }
-
-    fn read_fflonk_crs(&self) -> Box<dyn Read> {
-        let path = format!(
-            "{}/{}_compact_crs.key.raw",
-            Self::DATA_DIR_PATH,
-            Self::FFLONK_PREFIX
-        );
-        println!("Reading fflonk CRS at path {}", path);
-        Self::open_file(&path)
-    }
-
-    fn read_plonk_crs(&self) -> Box<dyn Read> {
-        let path = format!(
-            "{}/{}_compact_crs.key.raw",
-            Self::DATA_DIR_PATH,
-            Self::PLONK_PREFIX
-        );
-        println!("Reading fflonk CRS at path {}", path);
+    fn read_compact_raw_crs(&self) -> Box<dyn Read + Send + Sync> {
+        let path = format!("{}/compact_raw_crs.key", Self::DATA_DIR_PATH,);
+        println!("Reading CRS at path {}", path);
         Self::open_file(&path)
     }
 }
@@ -279,28 +263,14 @@ impl BlobStorageExt for FileSystemBlobStorage {
         Self::create_file(&path)
     }
 
-    fn write_fflonk_crs(&self) -> Box<dyn Write> {
-        let path = format!(
-            "{}/{}_compact_crs.key.raw",
-            Self::DATA_DIR_PATH,
-            Self::PLONK_PREFIX
-        );
-        println!("Writeing fflonk CRS at path {}", path);
-        Self::create_file(&path)
-    }
-
-    fn write_plonk_crs(&self) -> Box<dyn Write> {
-        let path = format!(
-            "{}/{}_compact_crs.key.raw",
-            Self::DATA_DIR_PATH,
-            Self::PLONK_PREFIX
-        );
-        println!("Writeing plonk CRS at path {}", path);
+    fn write_compact_raw_crs(&self) -> Box<dyn Write> {
+        let path = format!("{}/compact_raw_crs.key", Self::DATA_DIR_PATH);
+        println!("Writeing compact raw CRS at path {}", path);
         Self::create_file(&path)
     }
 }
 
-pub struct AsyncHandler<T: Send + Sync + 'static> {
+pub(crate) struct AsyncHandler<T: Send + Sync + 'static> {
     receiver: std::thread::JoinHandle<std::sync::mpsc::Receiver<T>>,
 }
 
@@ -308,7 +278,7 @@ impl<T> AsyncHandler<T>
 where
     T: Send + Sync + 'static,
 {
-    pub fn spawn<F>(f: F) -> Self
+    pub(crate) fn spawn<F>(f: F) -> Self
     where
         F: FnOnce() -> std::sync::mpsc::Receiver<T> + Send + Sync + 'static,
     {
@@ -317,7 +287,7 @@ where
         Self { receiver }
     }
 
-    pub fn wait(self) -> T {
+    pub(crate) fn wait(self) -> T {
         self.receiver.join().unwrap().recv().unwrap()
     }
 }

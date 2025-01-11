@@ -1,11 +1,115 @@
 use super::*;
-use bellman::{
+use ::fflonk::bellman::{
+    self,
     kate_commitment::{Crs, CrsForMonomialForm},
-    CurveAffine, Engine, Field, PrimeField,
 };
+use bellman::{bn256::Bn256, CurveAffine, Engine, Field, PrimeField};
 use byteorder::{BigEndian, ReadBytesExt};
+use gpu_prover::ManagerConfigs;
 
-pub fn create_crs_from_ignition_transcript<S: AsRef<std::ffi::OsStr> + ?Sized>(
+pub(crate) fn write_crs_into_raw_compact_form<W: std::io::Write>(
+    original_crs: &Crs<bellman::bn256::Bn256, CrsForMonomialForm>,
+    mut dst_raw_compact_crs: W,
+    num_points: usize,
+) -> std::io::Result<()> {
+    use bellman::CurveAffine;
+    assert!(num_points <= original_crs.g1_bases.len());
+    use bellman::{PrimeField, PrimeFieldRepr};
+    use byteorder::{BigEndian, WriteBytesExt};
+    assert!(num_points < u32::MAX as usize);
+    dst_raw_compact_crs.write_u32::<BigEndian>(num_points as u32)?;
+    for g1_base in original_crs.g1_bases.iter() {
+        let (x, y) = g1_base.as_xy();
+        x.into_raw_repr().write_le(&mut dst_raw_compact_crs)?;
+        y.into_raw_repr().write_le(&mut dst_raw_compact_crs)?;
+    }
+    assert_eq!(original_crs.g2_monomial_bases.len(), 2);
+    for g2_base in original_crs.g2_monomial_bases.iter() {
+        let (x, y) = g2_base.as_xy();
+        x.c0.into_raw_repr().write_le(&mut dst_raw_compact_crs)?;
+        x.c1.into_raw_repr().write_le(&mut dst_raw_compact_crs)?;
+        y.c0.into_raw_repr().write_le(&mut dst_raw_compact_crs)?;
+        y.c1.into_raw_repr().write_le(&mut dst_raw_compact_crs)?;
+    }
+
+    Ok(())
+}
+
+pub(crate) fn read_crs_from_raw_compact_form<R: std::io::Read, A: Allocator + Default>(
+    mut src_raw_compact_crs: R,
+    num_g1_points: usize,
+) -> std::io::Result<Crs<bellman::compact_bn256::Bn256, CrsForMonomialForm, A>> {
+    use byteorder::{BigEndian, ReadBytesExt};
+    let actual_num_points = src_raw_compact_crs.read_u32::<BigEndian>()? as usize;
+    assert!(num_g1_points <= actual_num_points as usize);
+    let mut g1_bases = Vec::with_capacity_in(num_g1_points, A::default());
+    unsafe {
+        g1_bases.set_len(num_g1_points);
+        let buf = std::slice::from_raw_parts_mut(
+            g1_bases.as_mut_ptr() as *mut u8,
+            num_g1_points * std::mem::size_of::<bellman::compact_bn256::G1Affine>(),
+        );
+        src_raw_compact_crs.read_exact(buf)?;
+    }
+    let num_g2_points = 2;
+    let mut g2_bases = Vec::with_capacity_in(num_g2_points, A::default());
+    unsafe {
+        g2_bases.set_len(num_g2_points);
+        let buf = std::slice::from_raw_parts_mut(
+            g2_bases.as_mut_ptr() as *mut u8,
+            num_g2_points * std::mem::size_of::<bellman::compact_bn256::G2Affine>(),
+        );
+        src_raw_compact_crs.read_exact(buf)?;
+    }
+    Ok(Crs::<_, CrsForMonomialForm, A>::new_in(g1_bases, g2_bases))
+}
+
+pub(crate) fn create_compact_raw_crs<W: std::io::Write>(dst: W) {
+    let num_points = [
+        ::fflonk::MAX_COMBINED_DEGREE_FACTOR << ::fflonk::fflonk::L1_VERIFIER_DOMAIN_SIZE_LOG,
+        <PlonkProverDeviceMemoryManagerConfig as ManagerConfigs>::FULL_SLOT_SIZE,
+    ]
+    .into_iter()
+    .max()
+    .unwrap();
+    let original_crs = make_crs_from_ignition_transcripts(num_points);
+    write_crs_into_raw_compact_form(&original_crs, dst, num_points).unwrap();
+}
+
+fn make_crs_from_ignition_transcripts(num_points: usize) -> Crs<Bn256, CrsForMonomialForm> {
+    let transcripts_dir =
+        std::env::var("IGNITION_TRANSCRIPT_PATH").expect("IGNITION_TRANSCRIPT_PATH env variable");
+    let chunk_size = 5_040_000usize;
+    let num_chunks = num_points.div_ceil(chunk_size);
+
+    // Check transcript files already downloaded from "https://aztec-ignition.s3.eu-west-2.amazonaws.com/MAIN+IGNITION/sealed/transcript{idx}.dat";
+    for idx in 0..num_chunks {
+        let transcript_file_path = format!("{}/transcript{:02}.dat", transcripts_dir, idx);
+        let transcript_file_path = std::path::Path::new(&transcript_file_path);
+        assert!(
+            transcript_file_path.exists(),
+            "CRS transcript file {:?} couldn't found.",
+            transcript_file_path
+        );
+    }
+
+    // transform
+    let crs = create_crs_from_ignition_transcript(&transcripts_dir, num_chunks).unwrap();
+
+    let bellman::kate_commitment::Crs {
+        g1_bases,
+        g2_monomial_bases,
+        ..
+    } = crs;
+    assert!(g1_bases.len() >= num_points);
+    let mut g1_bases = std::sync::Arc::try_unwrap(g1_bases).unwrap();
+    let g2_monomial_bases = std::sync::Arc::try_unwrap(g2_monomial_bases).unwrap();
+    g1_bases.truncate(num_points);
+
+    Crs::new(g1_bases, g2_monomial_bases)
+}
+
+fn create_crs_from_ignition_transcript<S: AsRef<std::ffi::OsStr> + ?Sized>(
     path: &S,
     num_chunks: usize,
 ) -> Result<
@@ -172,37 +276,4 @@ pub fn create_crs_from_ignition_transcript<S: AsRef<std::ffi::OsStr> + ?Sized>(
     let new = Crs::new(g1_bases, g2_bases);
 
     Ok(new)
-}
-
-pub fn make_fflonk_crs_from_ignition_transcripts(
-    num_points: usize,
-) -> Crs<Bn256, CrsForMonomialForm> {
-    let transcripts_dir =
-        std::env::var("IGNITION_TRANSCRIPT_PATH").expect("IGNITION_TRANSCRIPT_PATH env variable");
-    let chunk_size = 5_040_000usize;
-    let num_chunks = num_points.div_ceil(chunk_size);
-
-    // Check transcript files already downloaded from "https://aztec-ignition.s3.eu-west-2.amazonaws.com/MAIN+IGNITION/sealed/transcript{idx}.dat";
-    for idx in 0..num_chunks {
-        let transcript_file_path = format!("{}/transcript{:02}.dat", transcripts_dir, idx);
-        let transcript_file_path = std::path::Path::new(&transcript_file_path);
-        assert!(transcript_file_path.exists());
-    }
-
-    // transform
-    let crs = create_crs_from_ignition_transcript(&transcripts_dir, num_chunks).unwrap();
-    let out_path = format!("{}/full_ignition.key", &transcripts_dir);
-    let out_file = std::fs::File::create(&out_path).unwrap();
-
-    let bellman::kate_commitment::Crs {
-        g1_bases,
-        g2_monomial_bases,
-        ..
-    } = crs;
-    assert!(g1_bases.len() >= num_points);
-    let mut g1_bases = std::sync::Arc::try_unwrap(g1_bases).unwrap();
-    let g2_monomial_bases = std::sync::Arc::try_unwrap(g2_monomial_bases).unwrap();
-    g1_bases.truncate(num_points);
-
-    Crs::new(g1_bases, g2_monomial_bases)
 }

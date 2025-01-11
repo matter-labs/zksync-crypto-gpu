@@ -1,16 +1,18 @@
-use boojum::cs::{
+use circuit_definitions::circuit_definitions::aux_layer::{
+    compression::ProofCompressionFunction,
+    compression_modes::{CompressionMode1ForWrapper, CompressionMode5ForWrapper},
+    wrapper::ZkSyncCompressionWrapper,
+};
+use franklin_crypto::boojum::cs::{
     implementations::{
         fast_serialization::MemcopySerializable, proof::Proof, verifier::VerificationKey,
     },
     oracle::TreeHasher,
 };
-use circuit_definitions::circuit_definitions::aux_layer::{
-    compression::ProofCompressionFunction, wrapper::ZkSyncCompressionWrapper,
-};
 
 use super::*;
 
-pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
+pub(crate)trait SnarkWrapperStep: SnarkWrapperProofSystem {
     const IS_PLONK: bool;
     const IS_FFLONK: bool;
     const PREVIOUS_COMPRESSION_MODE: u8;
@@ -19,7 +21,7 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
         Output: serde::Serialize + serde::de::DeserializeOwned,
     >;
     fn load_finalization_hint<BS>(
-        blob_storage: &BS,
+        _blob_storage: &BS,
     ) -> <Self as ProofSystemDefinition>::FinalizationHint
     where
         BS: BlobStorage,
@@ -61,6 +63,28 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
         serde_json::from_reader(reader).unwrap()
     }
 
+    fn load_compact_raw_crs<BS>(blob_storage: &BS) -> AsyncHandler<Self::CRS>
+    where
+        BS: BlobStorage,
+        Self::Allocator: Send + Sync + 'static,
+    {
+        assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
+        let reader = blob_storage.read_compact_raw_crs();
+        let f = move || {
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let start = std::time::Instant::now();
+            let compact_raw_crs = <Self as SnarkWrapperProofSystem>::load_compact_raw_crs(reader);
+            println!(
+                "Compact raw CRS loading takes {}s",
+                start.elapsed().as_secs()
+            );
+            sender.send(compact_raw_crs).unwrap();
+            receiver
+        };
+
+        AsyncHandler::spawn(f)
+    }
+
     fn get_precomputation<BS>(
         blob_storage: &BS,
     ) -> AsyncHandler<<Self as ProofSystemDefinition>::Precomputation>
@@ -74,13 +98,16 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
         };
         let f = move || {
             let (sender, receiver) = std::sync::mpsc::channel();
-
+            let start = std::time::Instant::now();
             let precomputation =
                 <<Self as ProofSystemDefinition>::Precomputation as MemcopySerializable>::read_from_buffer(
                     reader,
                 )
                 .unwrap();
-
+            println!(
+                "Snark wrapper device setup loading takes {}s",
+                start.elapsed().as_secs()
+            );
             sender.send(precomputation).unwrap();
             receiver
         };
@@ -89,7 +116,8 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
     }
 
     fn prove_snark_wrapper_step<BS, CI>(
-        ctx_config: AsyncHandler<Self::ContextConfig>,
+        ctx_config: AsyncHandler<Self::CRS>,
+        precomputation: AsyncHandler<Self::Precomputation>,
         input_proof: Proof<GoldilocksField, Self::PreviousStepTreeHasher, GoldilocksExt2>,
         blob_storage: &BS,
         context_handler: &CI,
@@ -101,21 +129,20 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
         assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
         let input_vk = Self::load_previous_vk(blob_storage);
 
-        let precomputation = Self::get_precomputation(blob_storage);
         let ctx = context_handler.init_snark_context::<Self>(ctx_config);
         let finalization_hint = Self::load_finalization_hint(blob_storage);
         let circuit = Self::build_circuit(input_vk, Some(input_proof));
         let proving_assembly = <Self as SnarkWrapperProofSystem>::synthesize_for_proving(circuit);
         let vk = Self::load_this_vk(blob_storage);
+
         let proof = <Self as SnarkWrapperProofSystem>::prove(
             ctx,
             proving_assembly,
             precomputation,
             finalization_hint,
-            &vk,
         );
 
-        // assert!(<Self as ProofSystemDefinition>::verify(&proof, &vk));
+        assert!(<Self as ProofSystemDefinition>::verify(&proof, &vk));
 
         proof
     }
@@ -126,9 +153,9 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
     ) -> Self::Circuit;
 }
 
-pub trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperStep {
+pub(crate)trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperStep {
     fn precompute_and_store_snark_wrapper_circuit<BS, CM>(
-        ctx_config: AsyncHandler<Self::ContextConfig>,
+        compact_raw_crs: AsyncHandler<Self::CRS>,
         blob_storage: &BS,
         context_manager: &CM,
     ) where
@@ -139,7 +166,7 @@ pub trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperStep {
         let input_vk = Self::load_previous_vk(blob_storage);
         let finalization_hint = Self::load_finalization_hint(blob_storage);
         let circuit = Self::build_circuit(input_vk, None);
-        let ctx = context_manager.init_snark_context::<Self>(ctx_config);
+        let ctx = context_manager.init_snark_context::<Self>(compact_raw_crs);
         let setup_assembly = <Self as SnarkWrapperProofSystemExt>::synthesize_for_setup(circuit);
 
         let (precomputation, vk) =
@@ -167,7 +194,6 @@ pub trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperStep {
     }
 }
 
-pub struct FflonkSnarkWrapper;
 impl SnarkWrapperStep for FflonkSnarkWrapper {
     const IS_PLONK: bool = false;
     const IS_FFLONK: bool = true;
@@ -192,7 +218,6 @@ impl SnarkWrapperStep for FflonkSnarkWrapper {
 }
 impl SnarkWrapperStepExt for FflonkSnarkWrapper {}
 
-pub struct PlonkSnarkWrapper;
 impl SnarkWrapperStep for PlonkSnarkWrapper {
     const IS_PLONK: bool = true;
     const IS_FFLONK: bool = false;

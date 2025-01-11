@@ -1,25 +1,18 @@
 use std::sync::atomic::AtomicBool;
 
-use crate::{AsyncHandler, CompressionProofSystem, SnarkWrapperProofSystem};
+use crate::{AsyncHandler, CompressionProofSystem, SnarkWrapperProofSystem, SnarkWrapperStep};
 
-pub trait ContextManagerInterface {
+pub(crate) trait ContextManagerInterface {
     fn init_compression_context<P>(&self, config: P::ContextConfig) -> AsyncHandler<P::Context>
     where
         P: CompressionProofSystem;
 
-    fn initialize_snark_context_config<S>(&self) -> AsyncHandler<S::ContextConfig>
+    fn init_snark_context<S>(&self, crs: AsyncHandler<S::CRS>) -> AsyncHandler<S::Context>
     where
-        S: SnarkWrapperProofSystem;
-
-    fn init_snark_context<S>(
-        &self,
-        config: AsyncHandler<S::ContextConfig>,
-    ) -> AsyncHandler<S::Context>
-    where
-        S: SnarkWrapperProofSystem;
+        S: SnarkWrapperStep;
 }
 
-pub struct SimpleContextManager {
+pub(crate) struct SimpleContextManager {
     context_status: std::sync::Arc<AtomicBool>,
 }
 
@@ -41,7 +34,6 @@ impl ContextManagerInterface for SimpleContextManager {
                 .load(std::sync::atomic::Ordering::Relaxed)
                 == false
         );
-        // load next context
         let flag = self.context_status.clone();
         let f = move || {
             let (sender, receiver) = std::sync::mpsc::channel();
@@ -53,26 +45,9 @@ impl ContextManagerInterface for SimpleContextManager {
 
         AsyncHandler::spawn(f)
     }
-
-    fn initialize_snark_context_config<S>(&self) -> AsyncHandler<S::ContextConfig>
-    where
-        S: SnarkWrapperProofSystem,
-    {
-        let f = move || {
-            let (sender, receiver) = std::sync::mpsc::channel();
-            let start = std::time::Instant::now();
-            let context_config = S::get_context_config();
-            println!("CRS loading takes {}s", start.elapsed().as_secs());
-            sender.send(context_config).unwrap();
-
-            receiver
-        };
-        AsyncHandler::spawn(f)
-    }
-
     fn init_snark_context<S>(
         &self,
-        config: AsyncHandler<S::ContextConfig>,
+        compact_raw_crs: AsyncHandler<S::CRS>,
     ) -> AsyncHandler<S::Context>
     where
         S: SnarkWrapperProofSystem,
@@ -86,7 +61,7 @@ impl ContextManagerInterface for SimpleContextManager {
         let flag = self.context_status.clone();
         let f = move || {
             let (sender, receiver) = std::sync::mpsc::channel();
-            let context = S::init_context(config.wait());
+            let context = S::init_context(compact_raw_crs);
             sender.send(context).unwrap();
             flag.store(false, std::sync::atomic::Ordering::Relaxed);
             receiver

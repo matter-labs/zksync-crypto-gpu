@@ -1,12 +1,13 @@
 use super::*;
 
+use fflonk::bellman::bn256::Bn256;
 use gpu_prover::ManagerConfigs;
 use shivini::{
     boojum::cs::implementations::fast_serialization::MemcopySerializable, cs::GpuSetup,
     GpuTreeHasher,
 };
 
-pub trait SerializationWrapper: Sized {
+pub(crate) trait GenericWrapper: Sized {
     type Inner;
     fn into_inner(self) -> Self::Inner;
     fn from_inner(inner: Self::Inner) -> Self;
@@ -14,8 +15,8 @@ pub trait SerializationWrapper: Sized {
 
 use crate::PlonkSnarkVerifierCircuitDeviceSetup;
 
-pub struct BoojumDeviceSetupWrapper<H: GpuTreeHasher>(GpuSetup<H>);
-impl<H> SerializationWrapper for BoojumDeviceSetupWrapper<H>
+pub(crate) struct BoojumDeviceSetupWrapper<H: GpuTreeHasher>(GpuSetup<H>);
+impl<H> GenericWrapper for BoojumDeviceSetupWrapper<H>
 where
     H: GpuTreeHasher,
 {
@@ -29,7 +30,7 @@ where
     }
 }
 
-impl<H: GpuTreeHasher> boojum::cs::implementations::fast_serialization::MemcopySerializable
+impl<H: GpuTreeHasher> shivini::boojum::cs::implementations::fast_serialization::MemcopySerializable
     for BoojumDeviceSetupWrapper<H>
 {
     fn write_into_buffer<W: std::io::Write>(
@@ -44,7 +45,7 @@ impl<H: GpuTreeHasher> boojum::cs::implementations::fast_serialization::MemcopyS
     }
 }
 
-pub struct PlonkSnarkVerifierCircuitDeviceSetupWrapper(PlonkSnarkVerifierCircuitDeviceSetup);
+pub(crate) struct PlonkSnarkVerifierCircuitDeviceSetupWrapper(PlonkSnarkVerifierCircuitDeviceSetup);
 
 impl MemcopySerializable for PlonkSnarkVerifierCircuitDeviceSetupWrapper {
     fn write_into_buffer<W: std::io::Write>(
@@ -64,7 +65,7 @@ impl MemcopySerializable for PlonkSnarkVerifierCircuitDeviceSetupWrapper {
     }
 }
 
-impl SerializationWrapper for PlonkSnarkVerifierCircuitDeviceSetupWrapper {
+impl GenericWrapper for PlonkSnarkVerifierCircuitDeviceSetupWrapper {
     type Inner = PlonkSnarkVerifierCircuitDeviceSetup;
     fn into_inner(self) -> Self::Inner {
         self.0
@@ -75,7 +76,7 @@ impl SerializationWrapper for PlonkSnarkVerifierCircuitDeviceSetupWrapper {
     }
 }
 
-pub struct FflonkSnarkVerifierCircuitDeviceSetupWrapper<A: HostAllocator>(
+pub(crate) struct FflonkSnarkVerifierCircuitDeviceSetupWrapper<A: HostAllocator>(
     pub fflonk::FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, A>,
 );
 
@@ -97,7 +98,7 @@ where
     }
 }
 
-impl<A> SerializationWrapper for FflonkSnarkVerifierCircuitDeviceSetupWrapper<A>
+impl<A> GenericWrapper for FflonkSnarkVerifierCircuitDeviceSetupWrapper<A>
 where
     A: HostAllocator,
 {
@@ -112,16 +113,16 @@ where
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
-pub struct MarkerPrecomputation;
+pub(crate) struct MarkerPrecomputation;
 impl MemcopySerializable for MarkerPrecomputation {
     fn write_into_buffer<W: std::io::Write>(
         &self,
-        dst: W,
+        _dst: W,
     ) -> Result<(), Box<dyn std::error::Error>> {
         todo!()
     }
 
-    fn read_from_buffer<R: std::io::Read>(src: R) -> Result<Self, Box<dyn std::error::Error>> {
+    fn read_from_buffer<R: std::io::Read>(_src: R) -> Result<Self, Box<dyn std::error::Error>> {
         todo!()
     }
 }

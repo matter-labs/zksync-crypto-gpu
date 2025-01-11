@@ -1,20 +1,24 @@
 use super::*;
 
-use boojum::cs::{
+use circuit_definitions::circuit_definitions::{
+    aux_layer::{
+        compression::{CompressionLayerCircuit, ProofCompressionFunction},
+        compression_modes::{
+            CompressionMode1, CompressionMode1ForWrapper, CompressionMode2, CompressionMode3,
+            CompressionMode4, CompressionMode5ForWrapper,
+        },
+        ZkSyncCompressionForWrapperCircuit, ZkSyncCompressionLayerCircuit,
+    },
+    recursion_layer::RecursiveProofsTreeHasher,
+};
+use franklin_crypto::boojum::cs::{
     implementations::{
         fast_serialization::MemcopySerializable, proof::Proof, verifier::VerificationKey,
     },
     oracle::TreeHasher,
 };
-use circuit_definitions::circuit_definitions::{
-    aux_layer::{
-        compression::{CompressionLayerCircuit, ProofCompressionFunction},
-        ZkSyncCompressionForWrapperCircuit, ZkSyncCompressionLayerCircuit,
-    },
-    recursion_layer::RecursiveProofsTreeHasher,
-};
 
-pub trait CompressionStep: CompressionProofSystem {
+pub(crate)trait CompressionStep: CompressionProofSystem {
     type PreviousStepTreeHasher: TreeHasher<
         GoldilocksField,
         Output: serde::Serialize + serde::de::DeserializeOwned,
@@ -134,7 +138,7 @@ pub trait CompressionStep: CompressionProofSystem {
     ) -> CompressionLayerCircuit<Self>;
 }
 
-pub trait CompressionStepExt: CompressionProofSystemExt + CompressionStep {
+pub(crate)trait CompressionStepExt: CompressionProofSystemExt + CompressionStep {
     fn precomputae_and_store_compression_circuits<BS, CM>(blob_storage: &BS, context_manager: &CM)
     where
         BS: BlobStorageExt,

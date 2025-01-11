@@ -11,7 +11,7 @@ name = "zksync-gpu-prover"
 description = "ZKsync GPU prover utilities"
 
 [dependencies]
-franklin-crypto = { workspace = true, optional = true }
+franklin-crypto = { workspace = true, default-features = true, optional = true }
 gpu-ffi.workspace = true
 
 crossbeam = "0.8"
@@ -23,6 +23,5 @@ bit-vec = "0.6"
 serde = {version = "1", features = ["derive", "rc"]}
 
 [features]
-default = ["allocator"]
-no_allocator = ["franklin-crypto"]
+default = ["franklin-crypto"]
 allocator = ["franklin-crypto/allocator"]

@@ -18,7 +18,7 @@ use franklin_crypto::boojum::cs::{
     oracle::TreeHasher,
 };
 
-pub(crate)trait CompressionStep: CompressionProofSystem {
+pub(crate) trait CompressionStep: CompressionProofSystem {
     type PreviousStepTreeHasher: TreeHasher<
         GoldilocksField,
         Output: serde::Serialize + serde::de::DeserializeOwned,
@@ -138,7 +138,7 @@ pub(crate)trait CompressionStep: CompressionProofSystem {
     ) -> CompressionLayerCircuit<Self>;
 }
 
-pub(crate)trait CompressionStepExt: CompressionProofSystemExt + CompressionStep {
+pub(crate) trait CompressionStepExt: CompressionProofSystemExt + CompressionStep {
     fn precomputae_and_store_compression_circuits<BS, CM>(blob_storage: &BS, context_manager: &CM)
     where
         BS: BlobStorageExt,

@@ -22,7 +22,8 @@ use circuit_definitions::circuit_definitions::aux_layer::ZkSyncSnarkWrapperCircu
 use super::*;
 pub(crate) use ::fflonk::HostAllocator;
 pub(crate) type FflonkSnarkVerifierCircuit = ZkSyncSnarkWrapperCircuitNoLookupCustomGate;
-pub(crate) type FflonkSnarkVerifierCircuitVK = FflonkVerificationKey<Bn256, FflonkSnarkVerifierCircuit>;
+pub(crate) type FflonkSnarkVerifierCircuitVK =
+    FflonkVerificationKey<Bn256, FflonkSnarkVerifierCircuit>;
 pub(crate) type FflonkSnarkVerifierCircuitProof = FflonkProof<Bn256, FflonkSnarkVerifierCircuit>;
 type FflonkAssembly<CSConfig, A> = Assembly<Bn256, PlonkCsWidth3Params, NaiveMainGate, CSConfig, A>;
 pub(crate) struct FflonkSnarkWrapper;

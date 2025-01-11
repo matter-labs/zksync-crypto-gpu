@@ -12,7 +12,7 @@ use franklin_crypto::boojum::cs::{
 
 use super::*;
 
-pub(crate)trait SnarkWrapperStep: SnarkWrapperProofSystem {
+pub(crate) trait SnarkWrapperStep: SnarkWrapperProofSystem {
     const IS_PLONK: bool;
     const IS_FFLONK: bool;
     const PREVIOUS_COMPRESSION_MODE: u8;
@@ -153,7 +153,7 @@ pub(crate)trait SnarkWrapperStep: SnarkWrapperProofSystem {
     ) -> Self::Circuit;
 }
 
-pub(crate)trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperStep {
+pub(crate) trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperStep {
     fn precompute_and_store_snark_wrapper_circuit<BS, CM>(
         compact_raw_crs: AsyncHandler<Self::CRS>,
         blob_storage: &BS,

@@ -226,14 +226,12 @@ where
         let geometry = circuit.geometry();
         let (max_trace_len, num_vars) = circuit.size_hint();
 
-        let builder_impl =
-            boojum::cs::cs_builder_reference::CsReferenceImplementationBuilder::<
-                GoldilocksField,
-                GoldilocksField,
-                SetupCSConfig,
-            >::new(geometry, max_trace_len.unwrap());
-        let builder =
-            boojum::cs::cs_builder::new_builder::<_, GoldilocksField>(builder_impl);
+        let builder_impl = boojum::cs::cs_builder_reference::CsReferenceImplementationBuilder::<
+            GoldilocksField,
+            GoldilocksField,
+            SetupCSConfig,
+        >::new(geometry, max_trace_len.unwrap());
+        let builder = boojum::cs::cs_builder::new_builder::<_, GoldilocksField>(builder_impl);
 
         let builder = circuit.configure_builder_proxy(builder);
         let mut cs = builder.build(num_vars.unwrap());

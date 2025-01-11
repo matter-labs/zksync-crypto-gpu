@@ -254,12 +254,7 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
         assert_eq!(num_polys, 5);
         let mut main_gate_selector_monomials = vec![];
         for _ in 0..num_polys {
-            let num_values = reader.read_u64::<BigEndian>()?;
-            let mut coeffs = Vec::with_capacity_in(num_values as usize, A::default());
-            for _ in 0..num_values {
-                let el = read_fr(&mut reader)?;
-                coeffs.push(el);
-            }
+            let coeffs = read_raw_fr_vec::<_, _, A>(&mut reader)?;
             main_gate_selector_monomials.push(coeffs);
         }
 
@@ -267,12 +262,16 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
         assert_eq!(num_polys, 3);
         let mut variable_indexes = vec![];
         for _ in 0..num_polys {
-            let num_values = reader.read_u64::<BigEndian>()?;
-            let mut indexes = Vec::with_capacity_in(num_values as usize, A::default());
-            for _ in 0..num_values {
-                let el = reader.read_u32::<BigEndian>()?;
-                indexes.push(el);
-            }
+            let num_values = reader.read_u64::<BigEndian>()? as usize;
+            let mut indexes = Vec::with_capacity_in(num_values, A::default());
+            let indexes_buf = unsafe {
+                indexes.set_len(num_values);
+                std::slice::from_raw_parts_mut(
+                    indexes.as_mut_ptr() as *mut u8,
+                    num_values * std::mem::size_of::<u32>(),
+                )
+            };
+            reader.read_exact(indexes_buf)?;
             variable_indexes.push(indexes);
         }
 
@@ -293,17 +292,58 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
         use byteorder::{BigEndian, WriteBytesExt};
         writer.write_u64::<BigEndian>(self.main_gate_selector_monomials.len() as u64)?;
         for mon in self.main_gate_selector_monomials.iter() {
-            write_fr_vec(&mon, &mut writer)?;
+            write_raw_fr_slice(&mon, &mut writer)?;
         }
         writer.write_u64::<BigEndian>(self.variable_indexes.len() as u64)?;
         for col in self.variable_indexes.iter() {
             writer.write_u64::<BigEndian>(col.len() as u64)?;
-            for el in col {
-                writer.write_u32::<BigEndian>(*el)?;
-            }
+            let buf = unsafe {
+                std::slice::from_raw_parts(
+                    col.as_ptr() as *mut u8,
+                    col.len() * std::mem::size_of::<u32>(),
+                )
+            };
+            writer.write_all(buf)?;
         }
         write_curve_affine(&self.c0_commitment, &mut writer)?;
         write_curve_affine(&self.g2_elems[0], &mut writer)?;
         write_curve_affine(&self.g2_elems[1], writer)
     }
+}
+
+pub fn read_raw_fr_vec<F: PrimeField, R: std::io::Read, A: Allocator + Default>(
+    mut src: R,
+) -> std::io::Result<Vec<F, A>> {
+    use byteorder::{BigEndian, ReadBytesExt};
+    let num_values = src.read_u32::<BigEndian>()? as usize;
+    let mut values = Vec::with_capacity_in(num_values, A::default());
+    unsafe {
+        values.set_len(num_values);
+        let buf = std::slice::from_raw_parts_mut(
+            values.as_mut_ptr() as *mut u8,
+            num_values * std::mem::size_of::<F>(),
+        );
+        src.read_exact(buf)?;
+    }
+
+    Ok(values)
+}
+
+pub fn write_raw_fr_slice<F: PrimeField, W: std::io::Write>(
+    src_values: &[F],
+    mut dst: W,
+) -> std::io::Result<()> {
+    use byteorder::{BigEndian, WriteBytesExt};
+    let num_values = src_values.len();
+    assert!(num_values < u32::MAX as usize);
+    dst.write_u32::<BigEndian>(num_values as u32)?;
+    unsafe {
+        let buf = std::slice::from_raw_parts_mut(
+            src_values.as_ptr() as *mut u8,
+            num_values * std::mem::size_of::<F>(),
+        );
+        dst.write_all(buf)?;
+    }
+
+    Ok(())
 }

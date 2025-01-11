@@ -3,7 +3,7 @@ use bellman::{
     kate_commitment::{Crs, CrsForMonomialForm},
     plonk::{
         better_better_cs::cs::{
-            Circuit, SynthesisModeGenerateSetup, SynthesisModeProve, SynthesisModeTesting,
+            Circuit, SynthesisModeProve, SynthesisModeTesting,
         },
         commitments::transcript::keccak_transcript::RollingKeccakTranscript,
     },
@@ -14,8 +14,8 @@ use circuit_definitions::circuit_definitions::aux_layer::{
 };
 use fflonk::{FflonkAssembly, L1_VERIFIER_DOMAIN_SIZE_LOG};
 
-pub type FflonkSnarkVerifierCircuitDeviceSetup =
-    FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit>;
+pub type FflonkSnarkVerifierCircuitDeviceSetup<A: HostAllocator = GlobalHost> =
+    FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, A>;
 
 use super::*;
 
@@ -190,7 +190,7 @@ pub fn precompute_and_save_setup_and_vk_for_fflonk_snark_circuit(
 
     println!("Generating fflonk setup data on the device");
     let device_setup =
-        FflonkSnarkVerifierCircuitDeviceSetup::create_setup_on_device(&circuit).unwrap();
+        FflonkSnarkVerifierCircuitDeviceSetup::<GlobalHost>::create_setup_on_device(&circuit).unwrap();
     let setup_file_path = format!("{}/final_snark_device_setup.bin", path);
     println!("Saving setup into file {setup_file_path}");
     let device_setup_file = std::fs::File::create(&setup_file_path).unwrap();

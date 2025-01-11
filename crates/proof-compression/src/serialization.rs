@@ -6,9 +6,28 @@ use shivini::{
     GpuTreeHasher,
 };
 
+pub trait SerializationWrapper: Sized {
+    type Inner;
+    fn into_inner(self) -> Self::Inner;
+    fn from_inner(inner: Self::Inner) -> Self;
+}
+
 use crate::PlonkSnarkVerifierCircuitDeviceSetup;
 
 pub struct BoojumDeviceSetupWrapper<H: GpuTreeHasher>(GpuSetup<H>);
+impl<H> SerializationWrapper for BoojumDeviceSetupWrapper<H>
+where
+    H: GpuTreeHasher,
+{
+    type Inner = GpuSetup<H>;
+    fn into_inner(self) -> Self::Inner {
+        self.0
+    }
+
+    fn from_inner(inner: Self::Inner) -> Self {
+        Self(inner)
+    }
+}
 
 impl<H: GpuTreeHasher> boojum::cs::implementations::fast_serialization::MemcopySerializable
     for BoojumDeviceSetupWrapper<H>
@@ -17,7 +36,7 @@ impl<H: GpuTreeHasher> boojum::cs::implementations::fast_serialization::MemcopyS
         &self,
         dst: W,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        Ok(bincode::serialize_into(dst, self.0).unwrap())
+        Ok(bincode::serialize_into(dst, &self.0).unwrap())
     }
 
     fn read_from_buffer<R: std::io::Read>(src: R) -> Result<Self, Box<dyn std::error::Error>> {
@@ -45,9 +64,14 @@ impl MemcopySerializable for PlonkSnarkVerifierCircuitDeviceSetupWrapper {
     }
 }
 
-impl PlonkSnarkVerifierCircuitDeviceSetupWrapper {
-    pub fn into_inner(self) -> PlonkSnarkVerifierCircuitDeviceSetup {
+impl SerializationWrapper for PlonkSnarkVerifierCircuitDeviceSetupWrapper {
+    type Inner = PlonkSnarkVerifierCircuitDeviceSetup;
+    fn into_inner(self) -> Self::Inner {
         self.0
+    }
+
+    fn from_inner(inner: Self::Inner) -> Self {
+        Self(inner)
     }
 }
 
@@ -73,12 +97,17 @@ where
     }
 }
 
-impl<A> FflonkSnarkVerifierCircuitDeviceSetupWrapper<A>
+impl<A> SerializationWrapper for FflonkSnarkVerifierCircuitDeviceSetupWrapper<A>
 where
     A: HostAllocator,
 {
-    pub fn into_inner(self) -> fflonk::FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, A> {
+    type Inner = fflonk::FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, A>;
+    fn into_inner(self) -> Self::Inner {
         self.0
+    }
+
+    fn from_inner(inner: Self::Inner) -> Self {
+        Self(inner)
     }
 }
 

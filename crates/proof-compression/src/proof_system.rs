@@ -34,14 +34,14 @@ use circuit_definitions::circuit_definitions::aux_layer::compression::{
 
 use fflonk::bellman::plonk::better_better_cs::cs::Circuit;
 use fflonk::fflonk::L1_VERIFIER_DOMAIN_SIZE_LOG;
-use fflonk::{init_compact_crs, CombinedMonomialDeviceStorage, DeviceContextWithSingleDevice};
+use fflonk::{CombinedMonomialDeviceStorage, DeviceContextWithSingleDevice};
 use gpu_prover::{DeviceMemoryManager, ManagerConfigs};
 use shivini::gpu_proof_config::GpuProofConfig;
-use shivini::{cs::GpuSetup, GpuTreeHasher, ProverContext};
 use shivini::{
     CacheStrategy, CommitmentCacheStrategy, GPUPoWRunner, PolynomialsCacheStrategy,
     ProverContextConfig,
 };
+use shivini::{GpuTreeHasher, ProverContext};
 pub trait ProofSystemDefinition: Sized {
     type FieldElement;
     type ExternalWitnessData;
@@ -160,7 +160,7 @@ where
 {
     type FieldElement = GoldilocksField;
     type ExternalWitnessData = WitnessVec<Self::FieldElement, Self::Allocator>;
-    type Precomputation = GpuSetup<CF::ThisLayerHasher>;
+    type Precomputation = BoojumDeviceSetupWrapper<CF::ThisLayerHasher>;
     type Proof = Proof<Self::FieldElement, CF::ThisLayerHasher, GoldilocksExt2>;
     type VK = VerificationKey<Self::FieldElement, CF::ThisLayerHasher>;
     type FinalizationHint = FinalizationHintsForProver;
@@ -277,7 +277,7 @@ where
             commitment: CommitmentCacheStrategy::CacheCosetCaps,
         };
         let worker = Worker::new();
-        let precomputation = precomputation.wait();
+        let precomputation = precomputation.wait().into_inner();
         let ctx = ctx.wait();
         let gpu_proof = shivini::gpu_prove_from_external_witness_data_with_cache_strategy::<
             CF::ThisLayerTranscript,
@@ -338,7 +338,7 @@ where
             >(setup_base, vk_params, vars_hint, wits_hint, &worker)
             .unwrap();
         drop(ctx);
-        (precomputation, vk)
+        (BoojumDeviceSetupWrapper::from_inner(precomputation), vk)
     }
     fn synthesize_for_setup(
         circuit: CompressionLayerCircuit<Self>,
@@ -406,7 +406,11 @@ impl ProofSystemDefinition for PlonkSnarkWrapper {
 }
 
 impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
-    type CRS = bellman::kate_commitment::Crs<bellman::compact_bn256::Bn256, CrsForMonomialForm>;
+    type CRS = bellman::kate_commitment::Crs<
+        bellman::compact_bn256::Bn256,
+        CrsForMonomialForm,
+        Self::Allocator,
+    >;
     type Circuit = PlonkSnarkVerifierCircuit;
     type ContextConfig = (Vec<usize>, Vec<CompactG1Affine>);
     type Context = UnsafePlonkProverDeviceMemoryManagerWrapper;
@@ -508,18 +512,21 @@ impl ProofSystemDefinition for FflonkSnarkWrapper {
 }
 
 impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
-    type CRS = bellman::kate_commitment::Crs<bellman::compact_bn256::Bn256, CrsForMonomialForm>;
+    type CRS = bellman::kate_commitment::Crs<
+        bellman::compact_bn256::Bn256,
+        CrsForMonomialForm,
+        Self::Allocator,
+    >;
     type Circuit = FflonkSnarkVerifierCircuit;
     type ContextConfig = (usize, Self::CRS);
     type Context = DeviceContextWithSingleDevice;
 
     fn load_crs(domain_size: Self::FinalizationHint) -> Self::CRS {
-        // let raw_compact_crs_file_path = std::env::var("FFLONK_COMPACT_RAW_CRS_FILE").unwrap();
-        // let raw_compact_crs_file = std::fs::File::open(raw_compact_crs_file_path).unwrap();
-        // let num_points = domain_size * fflonk::MAX_COMBINED_DEGREE_FACTOR;
-        // read_crs_from_raw_compact_form::<_, Self::Allocator>(raw_compact_crs_file, num_points)
-        //     .unwrap()
-        init_compact_crs(&bellman::worker::Worker::new(), domain_size)
+        let raw_compact_crs_file_path = std::env::var("FFLONK_COMPACT_RAW_CRS_FILE").unwrap();
+        let raw_compact_crs_file = std::fs::File::open(raw_compact_crs_file_path).unwrap();
+        let num_points = domain_size * fflonk::MAX_COMBINED_DEGREE_FACTOR;
+        read_crs_from_raw_compact_form::<_, Self::Allocator>(raw_compact_crs_file, num_points)
+            .unwrap()
     }
 
     fn get_context_config() -> Self::ContextConfig {
@@ -531,7 +538,6 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
     fn init_context(config: Self::ContextConfig) -> Self::Context {
         let (domain_size, crs) = config;
         let context = Self::Context::init_from_preloaded_crs(domain_size, crs).unwrap();
-
         context
     }
 
@@ -624,7 +630,7 @@ impl SnarkWrapperProofSystemExt for FflonkSnarkWrapper {
             &raw_compact_crs_file_path
         )));
         let raw_compact_crs_file = std::fs::File::create(raw_compact_crs_file_path).unwrap();
-        write_crs_into_raw_compact_form(original_crs, raw_compact_crs_file, num_points).unwrap();
+        write_crs_into_raw_compact_form(&original_crs, raw_compact_crs_file, num_points).unwrap();
     }
 }
 
@@ -649,7 +655,7 @@ impl ProofSystemDefinition for MarkerProofSystem {
 }
 
 pub fn write_crs_into_raw_compact_form<W: std::io::Write>(
-    original_crs: Crs<bellman::bn256::Bn256, CrsForMonomialForm>,
+    original_crs: &Crs<bellman::bn256::Bn256, CrsForMonomialForm>,
     mut dst_raw_compact_crs: W,
     num_points: usize,
 ) -> std::io::Result<()> {
@@ -660,15 +666,16 @@ pub fn write_crs_into_raw_compact_form<W: std::io::Write>(
     dst_raw_compact_crs.write_u32::<BigEndian>(num_points as u32)?;
     for g1_base in original_crs.g1_bases.iter() {
         let (x, y) = g1_base.as_xy();
-        x.into_raw_repr().write_be(&mut dst_raw_compact_crs)?;
-        y.into_raw_repr().write_be(&mut dst_raw_compact_crs)?;
+        x.into_raw_repr().write_le(&mut dst_raw_compact_crs)?;
+        y.into_raw_repr().write_le(&mut dst_raw_compact_crs)?;
     }
+    assert_eq!(original_crs.g2_monomial_bases.len(), 2);
     for g2_base in original_crs.g2_monomial_bases.iter() {
         let (x, y) = g2_base.as_xy();
-        x.c0.into_raw_repr().write_be(&mut dst_raw_compact_crs)?;
-        x.c1.into_raw_repr().write_be(&mut dst_raw_compact_crs)?;
-        y.c0.into_raw_repr().write_be(&mut dst_raw_compact_crs)?;
-        y.c1.into_raw_repr().write_be(&mut dst_raw_compact_crs)?;
+        x.c0.into_raw_repr().write_le(&mut dst_raw_compact_crs)?;
+        x.c1.into_raw_repr().write_le(&mut dst_raw_compact_crs)?;
+        y.c0.into_raw_repr().write_le(&mut dst_raw_compact_crs)?;
+        y.c1.into_raw_repr().write_le(&mut dst_raw_compact_crs)?;
     }
 
     Ok(())
@@ -677,28 +684,22 @@ pub fn write_crs_into_raw_compact_form<W: std::io::Write>(
 // TODO: Crs doesn't allow bases located in a custom allocator
 pub fn read_crs_from_raw_compact_form<R: std::io::Read, A: Allocator + Default>(
     mut src_raw_compact_crs: R,
-    num_points: usize,
-) -> std::io::Result<Crs<bellman::compact_bn256::Bn256, CrsForMonomialForm>> {
-    println!("Reading Raw compact CRS");
+    num_g1_points: usize,
+) -> std::io::Result<Crs<bellman::compact_bn256::Bn256, CrsForMonomialForm, A>> {
     use byteorder::{BigEndian, ReadBytesExt};
     let actual_num_points = src_raw_compact_crs.read_u32::<BigEndian>()? as usize;
-    assert!(num_points <= actual_num_points as usize);
-    use bellman::{PrimeField, PrimeFieldRepr};
-    // let mut g1_bases = Vec::with_capacity_in(num_points, A::default());
-    println!("Reading G1 points");
-    let mut g1_bases = Vec::with_capacity(num_points);
+    assert!(num_g1_points <= actual_num_points as usize);
+    let mut g1_bases = Vec::with_capacity_in(num_g1_points, A::default());
     unsafe {
-        g1_bases.set_len(num_points);
+        g1_bases.set_len(num_g1_points);
         let buf = std::slice::from_raw_parts_mut(
             g1_bases.as_mut_ptr() as *mut u8,
-            num_points * std::mem::size_of::<bellman::compact_bn256::G1Affine>(),
+            num_g1_points * std::mem::size_of::<bellman::compact_bn256::G1Affine>(),
         );
         src_raw_compact_crs.read_exact(buf)?;
     }
     let num_g2_points = 2;
-    // let mut g2_bases = Vec::with_capacity_in(num_g2_points, A::default());
-    println!("Reading G2 points");
-    let mut g2_bases = Vec::with_capacity(num_g2_points);
+    let mut g2_bases = Vec::with_capacity_in(num_g2_points, A::default());
     unsafe {
         g2_bases.set_len(num_g2_points);
         let buf = std::slice::from_raw_parts_mut(
@@ -707,9 +708,5 @@ pub fn read_crs_from_raw_compact_form<R: std::io::Read, A: Allocator + Default>(
         );
         src_raw_compact_crs.read_exact(buf)?;
     }
-    let mut compact_crs = Crs::<_, CrsForMonomialForm>::dummy_crs(1);
-    compact_crs.g1_bases = std::sync::Arc::new(g1_bases);
-    compact_crs.g2_monomial_bases = std::sync::Arc::new(g2_bases);
-
-    Ok(compact_crs)
+    Ok(Crs::<_, CrsForMonomialForm, A>::new_in(g1_bases, g2_bases))
 }

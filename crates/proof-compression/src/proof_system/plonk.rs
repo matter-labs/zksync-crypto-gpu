@@ -70,10 +70,7 @@ impl ProofSystemDefinition for PlonkSnarkWrapper {
     type Proof = PlonkSnarkVerifierCircuitProof;
     type VK = PlonkSnarkVerifierCircuitVK;
     type FinalizationHint = usize;
-    #[cfg(feature = "allocator")]
     type Allocator = gpu_prover::cuda_bindings::CudaAllocator;
-    #[cfg(not(feature = "allocator"))]
-    type Allocator = std::alloc::Global;
     type ProvingAssembly = PlonkAssembly<SynthesisModeProve, Self::Allocator>;
     type Transcript = RollingKeccakTranscript<Self::FieldElement>;
     fn take_witnesses(
@@ -98,16 +95,17 @@ impl ProofSystemDefinition for PlonkSnarkWrapper {
 
 impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
     type Circuit = PlonkSnarkVerifierCircuit;
-    type Context = (
-        UnsafePlonkProverDeviceMemoryManagerWrapper,
-        Vec<bellman::compact_bn256::G2Affine>,
-    );
+    type Context = UnsafePlonkProverDeviceMemoryManagerWrapper;
 
     type CRS = bellman::kate_commitment::Crs<
         bellman::compact_bn256::Bn256,
         CrsForMonomialForm,
         Self::Allocator,
     >;
+    fn pre_init() {
+        // TODO: initialize static pinned memory
+    }
+
     fn load_compact_raw_crs<R: std::io::Read>(src: R) -> Self::CRS {
         let num_g1_points_for_crs = 1 << PlonkProverDeviceMemoryManagerConfig::FULL_SLOT_SIZE_LOG;
         read_crs_from_raw_compact_form(src, num_g1_points_for_crs).unwrap()
@@ -117,12 +115,8 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
         let device_ids: Vec<_> =
             (0..<PlonkProverDeviceMemoryManagerConfig as ManagerConfigs>::NUM_GPUS).collect();
         let compact_raw_crs = compact_raw_crs.wait();
-        let g2_bases = compact_raw_crs.g2_monomial_bases.as_ref().to_vec();
         let manager = DeviceMemoryManager::init(&device_ids, &compact_raw_crs.g1_bases).unwrap();
-        (
-            UnsafePlonkProverDeviceMemoryManagerWrapper(manager),
-            g2_bases,
-        )
+        UnsafePlonkProverDeviceMemoryManagerWrapper(manager)
     }
 
     fn synthesize_for_proving(circuit: Self::Circuit) -> Self::ProvingAssembly {
@@ -146,7 +140,7 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
         assert!(domain_size.is_power_of_two());
         assert_eq!(domain_size, finalization_hint);
 
-        let (ctx, _) = ctx.wait();
+        let ctx = ctx.wait();
         let mut ctx = ctx.into_inner();
         let mut precomputation = precomputation.wait().into_inner();
         let worker = bellman::worker::Worker::new();
@@ -197,28 +191,18 @@ impl SnarkWrapperProofSystemExt for PlonkSnarkWrapper {
         assert!(domain_size.is_power_of_two());
         assert_eq!(domain_size, hardcoded_finalization_hint);
 
-        let (ctx, compact_g2_bases) = ctx.wait();
+        let ctx = ctx.wait();
         let mut ctx = ctx.into_inner();
         let worker = bellman::worker::Worker::new();
-        #[cfg(feature = "allocator")]
         let mut precomputation =
             AsyncSetup::<Self::Allocator>::allocate(hardcoded_finalization_hint);
-        #[cfg(not(feature = "allocator"))]
-        let mut precomputation = AsyncSetup::allocate(hardcoded_finalization_hint);
         precomputation
             .generate_from_assembly(&worker, &setup_assembly, &mut ctx)
             .unwrap();
 
+        let hardcoded_g2_bases = hardcoded_canonical_g2_bases();
         let mut dummy_crs = Crs::<bellman::bn256::Bn256, CrsForMonomialForm>::dummy_crs(1);
-        let mut g2_bases = vec![];
-        use bellman::CurveAffine;
-        for base in compact_g2_bases.into_iter() {
-            let (x, y) = base.into_xy_unchecked();
-            let base = bellman::bn256::G2Affine::from_xy_unchecked(x, y);
-            g2_bases.push(base);
-        }
-
-        dummy_crs.g2_monomial_bases = std::sync::Arc::new(g2_bases);
+        dummy_crs.g2_monomial_bases = std::sync::Arc::new(hardcoded_g2_bases.to_vec());
         let vk = gpu_prover::compute_vk_from_assembly::<
             _,
             _,

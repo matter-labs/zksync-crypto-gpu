@@ -79,6 +79,7 @@ pub(crate) trait SnarkWrapperProofSystem: ProofSystemDefinition {
     type Circuit;
     type Context: Send + Sync + 'static;
     type CRS: Send + Sync + 'static;
+    fn pre_init();
     fn init_context(crs: AsyncHandler<Self::CRS>) -> Self::Context;
     fn load_compact_raw_crs<R: std::io::Read>(src: R) -> Self::CRS;
     fn synthesize_for_proving(circuit: Self::Circuit) -> Self::ProvingAssembly;
@@ -91,7 +92,7 @@ pub(crate) trait SnarkWrapperProofSystem: ProofSystemDefinition {
 
     fn prove_from_witnesses(
         _: AsyncHandler<Self::Context>,
-        _: Vec<Self::FieldElement, Self::Allocator>,
+        _: Self::ExternalWitnessData,
         _: AsyncHandler<Self::Precomputation>,
         _: Self::FinalizationHint,
     ) -> Self::Proof;

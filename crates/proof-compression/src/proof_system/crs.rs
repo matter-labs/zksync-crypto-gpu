@@ -1,7 +1,7 @@
 use super::*;
-use ::fflonk::bellman::{
-    self,
-    kate_commitment::{Crs, CrsForMonomialForm},
+use ::fflonk::{
+    bellman::kate_commitment::{Crs, CrsForMonomialForm},
+    hardcoded_g2_bases,
 };
 use bellman::{bn256::Bn256, CurveAffine, Engine, Field, PrimeField};
 use byteorder::{BigEndian, ReadBytesExt};
@@ -10,13 +10,11 @@ use gpu_prover::ManagerConfigs;
 pub(crate) fn write_crs_into_raw_compact_form<W: std::io::Write>(
     original_crs: &Crs<bellman::bn256::Bn256, CrsForMonomialForm>,
     mut dst_raw_compact_crs: W,
-    num_points: usize,
 ) -> std::io::Result<()> {
     use bellman::CurveAffine;
-    assert!(num_points <= original_crs.g1_bases.len());
     use bellman::{PrimeField, PrimeFieldRepr};
     use byteorder::{BigEndian, WriteBytesExt};
-    assert!(num_points < u32::MAX as usize);
+    let num_points = original_crs.g1_bases.len();
     dst_raw_compact_crs.write_u32::<BigEndian>(num_points as u32)?;
     for g1_base in original_crs.g1_bases.iter() {
         let (x, y) = g1_base.as_xy();
@@ -39,6 +37,7 @@ pub(crate) fn read_crs_from_raw_compact_form<R: std::io::Read, A: Allocator + De
     mut src_raw_compact_crs: R,
     num_g1_points: usize,
 ) -> std::io::Result<Crs<bellman::compact_bn256::Bn256, CrsForMonomialForm, A>> {
+    // requested number of bases can be smaller than the available bases
     use byteorder::{BigEndian, ReadBytesExt};
     let actual_num_points = src_raw_compact_crs.read_u32::<BigEndian>()? as usize;
     assert!(num_g1_points <= actual_num_points as usize);
@@ -51,16 +50,9 @@ pub(crate) fn read_crs_from_raw_compact_form<R: std::io::Read, A: Allocator + De
         );
         src_raw_compact_crs.read_exact(buf)?;
     }
-    let num_g2_points = 2;
-    let mut g2_bases = Vec::with_capacity_in(num_g2_points, A::default());
-    unsafe {
-        g2_bases.set_len(num_g2_points);
-        let buf = std::slice::from_raw_parts_mut(
-            g2_bases.as_mut_ptr() as *mut u8,
-            num_g2_points * std::mem::size_of::<bellman::compact_bn256::G2Affine>(),
-        );
-        src_raw_compact_crs.read_exact(buf)?;
-    }
+
+    let g2_bases = hardcoded_g2_bases::<bellman::compact_bn256::Bn256>().to_vec_in(A::default());
+
     Ok(Crs::<_, CrsForMonomialForm, A>::new_in(g1_bases, g2_bases))
 }
 
@@ -73,7 +65,8 @@ pub(crate) fn create_compact_raw_crs<W: std::io::Write>(dst: W) {
     .max()
     .unwrap();
     let original_crs = make_crs_from_ignition_transcripts(num_points);
-    write_crs_into_raw_compact_form(&original_crs, dst, num_points).unwrap();
+    assert_eq!(original_crs.g1_bases.len(), num_points);
+    write_crs_into_raw_compact_form(&original_crs, dst).unwrap();
 }
 
 fn make_crs_from_ignition_transcripts(num_points: usize) -> Crs<Bn256, CrsForMonomialForm> {
@@ -276,4 +269,8 @@ fn create_crs_from_ignition_transcript<S: AsRef<std::ffi::OsStr> + ?Sized>(
     let new = Crs::new(g1_bases, g2_bases);
 
     Ok(new)
+}
+
+pub(crate) fn hardcoded_canonical_g2_bases() -> [bellman::bn256::G2Affine; 2] {
+    ::fflonk::hardcoded_g2_bases::<bellman::bn256::Bn256>()
 }

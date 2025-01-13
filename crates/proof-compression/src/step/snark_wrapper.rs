@@ -115,6 +115,10 @@ pub(crate) trait SnarkWrapperStep: SnarkWrapperProofSystem {
         AsyncHandler::spawn(f)
     }
 
+    fn run_pre_initialization_tasks() {
+        Self::pre_init();
+    }
+
     fn prove_snark_wrapper_step<BS, CI>(
         ctx_config: AsyncHandler<Self::CRS>,
         precomputation: AsyncHandler<Self::Precomputation>,

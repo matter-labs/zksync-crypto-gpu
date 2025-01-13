@@ -38,7 +38,7 @@ impl ProofSystemDefinition for FflonkSnarkWrapper {
     type Proof = FflonkSnarkVerifierCircuitProof;
     type VK = FflonkSnarkVerifierCircuitVK;
     type FinalizationHint = usize;
-    // type Allocator = GlobalHost; // TODO need global host with preallocated host memory
+    // Pinned memory with small allocations is expensive e.g Assembly storage
     type Allocator = std::alloc::Global;
     type ProvingAssembly = FflonkAssembly<SynthesisModeProve, Self::Allocator>;
     type Transcript = RollingKeccakTranscript<Self::FieldElement>;
@@ -69,6 +69,12 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
         CrsForMonomialForm,
         Self::Allocator,
     >;
+
+    fn pre_init() {
+        let domain_size = ::fflonk::fflonk::L1_VERIFIER_DOMAIN_SIZE_LOG;
+        Self::Context::init_pinned_memory(domain_size).unwrap();
+    }
+
     fn load_compact_raw_crs<R: std::io::Read>(src: R) -> Self::CRS {
         let domain_size = 1 << ::fflonk::fflonk_cpu::L1_VERIFIER_DOMAIN_SIZE_LOG;
         let num_g1_bases_for_crs = ::fflonk::fflonk_cpu::MAX_COMBINED_DEGREE_FACTOR * domain_size;
@@ -78,7 +84,11 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
     fn init_context(compact_raw_crs: AsyncHandler<Self::CRS>) -> Self::Context {
         let compact_raw_crs = compact_raw_crs.wait();
         let domain_size = 1 << ::fflonk::fflonk_cpu::L1_VERIFIER_DOMAIN_SIZE_LOG;
-        let context = Self::Context::init_from_preloaded_crs(domain_size, compact_raw_crs).unwrap();
+        let context = DeviceContextWithSingleDevice::init_from_preloaded_crs::<Self::Allocator>(
+            domain_size,
+            compact_raw_crs,
+        )
+        .unwrap();
         context
     }
 
@@ -120,7 +130,7 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
 
     fn prove_from_witnesses(
         _: AsyncHandler<Self::Context>,
-        _: Vec<Self::FieldElement, Self::Allocator>,
+        _: Self::ExternalWitnessData,
         _: AsyncHandler<Self::Precomputation>,
         _: Self::FinalizationHint,
     ) -> Self::Proof {

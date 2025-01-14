@@ -29,14 +29,21 @@ fflonk = { version = "=0.152.10", path = "crates/fflonk", package = "fflonk-cuda
 
 # These dependencies should be shared by all the crates.
 # zksync-crypto repository
-boojum = "=0.30.12"
-fflonk-cpu = {package = "fflonk", version = "=0.30.12"}
-franklin-crypto = "=0.30.12"
-rescue_poseidon = "=0.30.12"
-snark_wrapper = "=0.30.12"
+# boojum = "=0.30.9"
+# fflonk-cpu = {package = "fflonk", version = "=0.30.9"}
+# franklin-crypto = "=0.30.9"
+# rescue_poseidon = "=0.30.9"
+# snark_wrapper = "=0.30.9"
+boojum = { path = "../zksync-crypto/crates/boojum"}
+fflonk-cpu = { path = "../zksync-crypto/crates/fflonk", package = "fflonk", features = ["allocator"]}
+franklin-crypto = { path = "../zksync-crypto/crates/franklin-crypto", package =  "franklin-crypto"}
+rescue_poseidon = { path = "../zksync-crypto/crates/rescue-poseidon", package =  "rescue_poseidon"}
+snark_wrapper = { path = "../zksync-crypto/crates/snark-wrapper", package =  "snark_wrapper"}
 # zksync-protocol repository
-circuit_definitions = { version = "=0.150.19" }
-zkevm_test_harness = { version = "=0.150.19" }
+# circuit_definitions = { version = "=0.150.16" }
+# zkevm_test_harness = { version = "=0.150.16" }
+circuit_definitions = { path = "../zksync-protocol/crates/circuit_definitions"}
+zkevm_test_harness = { path = "../zksync-protocol/crates/zkevm_test_harness"}
 
 [profile.release]
 debug = "line-tables-only"

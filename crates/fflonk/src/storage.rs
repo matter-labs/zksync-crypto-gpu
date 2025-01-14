@@ -126,7 +126,7 @@ where
     }
 }
 
-pub struct CombinedMonomialHostStorage<F: PrimeField, A: HostAllocator = std::alloc::Global> {
+pub struct CombinedMonomialHostStorage<F: PrimeField, A: HostAllocator = GlobalStaticHost> {
     pub(crate) combined_monomials: [Vec<F, A>; 3],
     pub(crate) events: [bc_event; 3],
 }

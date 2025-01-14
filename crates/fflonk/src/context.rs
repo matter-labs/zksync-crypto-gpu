@@ -2,6 +2,8 @@ use std::mem::ManuallyDrop;
 
 use super::*;
 use bellman::compact_bn256::Bn256 as CompactBn256;
+use bellman::compact_bn256::{G1Affine as CompactG1Affine, G2Affine as CompactG2Affine};
+use bellman::CurveAffine;
 use gpu_ffi::bc_mem_pool;
 
 static mut _MSM_BASES_MEMPOOL: Option<bc_mem_pool> = None;
@@ -146,10 +148,19 @@ const POWERS_OF_COSET_OMEGA_COARSE_LOG_COUNT: u32 = 14;
 pub type DeviceContextWithSingleDevice = DeviceContext<1>;
 
 impl<const N: usize> DeviceContext<N> {
-    pub fn init_from_preloaded_crs(
+    pub fn init_pinned_memory(domain_size: usize) -> CudaResult<()> {
+        init_static_host_alloc(domain_size);
+
+        Ok(())
+    }
+
+    pub fn init_from_preloaded_crs<A>(
         domain_size: usize,
-        crs: Crs<CompactBn256, CrsForMonomialForm>,
-    ) -> CudaResult<Self> {
+        crs: Crs<CompactBn256, CrsForMonomialForm, A>,
+    ) -> CudaResult<Self>
+    where
+        A: HostAllocator,
+    {
         let context = Self::init_no_msm(domain_size)?;
         Self::init_msm_on_static_memory(domain_size, Some(crs))?;
 
@@ -158,7 +169,7 @@ impl<const N: usize> DeviceContext<N> {
 
     pub fn init(domain_size: usize) -> CudaResult<Self> {
         let context = Self::init_no_msm(domain_size)?;
-        Self::init_msm_on_static_memory(domain_size, None)?;
+        Self::init_msm_on_static_memory::<std::alloc::Global>(domain_size, None)?;
         // Self::init_msm_on_pool(domain_size)?;
 
         Ok(context)
@@ -189,29 +200,38 @@ impl<const N: usize> DeviceContext<N> {
         Ok(DeviceContext)
     }
 
-    fn init_msm_on_static_memory(
+    fn init_msm_on_static_memory<A>(
         domain_size: usize,
-        crs: Option<Crs<CompactBn256, CrsForMonomialForm>>,
-    ) -> CudaResult<()> {
+        crs: Option<Crs<CompactBn256, CrsForMonomialForm, A>>,
+    ) -> CudaResult<()>
+    where
+        A: HostAllocator,
+    {
         Self::inner_init_msm(domain_size, crs, None, None)?;
         Ok(())
     }
 
     // In reality we keep bases on a statically allocated buffer.
-    unsafe fn init_msm_on_pool(domain_size: usize) -> CudaResult<()> {
+    unsafe fn init_msm_on_pool<A>(domain_size: usize) -> CudaResult<()>
+    where
+        A: HostAllocator,
+    {
         let pool = _msm_bases_mempool();
         let stream = bc_stream::new().unwrap();
-        Self::inner_init_msm(domain_size, None, Some(pool), Some(stream))?;
+        Self::inner_init_msm::<A>(domain_size, None, Some(pool), Some(stream))?;
         stream.sync().unwrap();
         Ok(())
     }
 
-    fn inner_init_msm(
+    fn inner_init_msm<A>(
         domain_size: usize,
-        crs: Option<Crs<CompactBn256, CrsForMonomialForm>>,
+        crs: Option<Crs<CompactBn256, CrsForMonomialForm, A>>,
         pool: Option<bc_mem_pool>,
         stream: Option<bc_stream>,
-    ) -> CudaResult<()> {
+    ) -> CudaResult<()>
+    where
+        A: HostAllocator,
+    {
         assert!(
             is_msm_context_initialized() == false,
             "MSM context is already initialized"
@@ -221,7 +241,7 @@ impl<const N: usize> DeviceContext<N> {
         // multiple of the domain_size
         let crs = match crs {
             Some(preloaded_crs) => preloaded_crs,
-            None => init_compact_crs(&bellman::worker::Worker::new(), domain_size),
+            None => init_compact_crs::<A>(domain_size),
         };
         let num_bases = MAX_COMBINED_DEGREE_FACTOR * domain_size;
         assert!(crs.g1_bases.len() >= num_bases);
@@ -255,13 +275,14 @@ impl<const N: usize> DeviceContext<N> {
 }
 
 pub fn init_allocations(domain_size: usize) {
-    init_static_alloc(domain_size);
+    init_static_alloc(domain_size);    
     init_small_scalar_mempool();
     init_tmp_mempool();
 }
 
 pub fn free_allocations() {
     free_static_alloc();
+    free_static_host_alloc();
     destroy_small_scalar_mempool();
     destroy_tmp_mempool();
 }
@@ -302,25 +323,56 @@ pub(crate) fn _bases() -> &'static DSlice<CompactG1Affine> {
 
 use bellman::kate_commitment::{Crs, CrsForMonomialForm};
 
-pub fn init_compact_crs(
-    worker: &bellman::worker::Worker,
-    domain_size: usize,
-) -> Crs<CompactBn256, CrsForMonomialForm> {
+pub fn init_compact_crs<A>(domain_size: usize) -> Crs<CompactBn256, CrsForMonomialForm, A>
+where
+    A: HostAllocator,
+{
     assert!(domain_size <= 1 << fflonk::L1_VERIFIER_DOMAIN_SIZE_LOG);
     let num_points = MAX_COMBINED_DEGREE_FACTOR * domain_size;
-    let mon_crs = if let Ok(crs_file_path) = std::env::var("COMPACT_CRS_FILE") {
-        println!("using crs file at {crs_file_path}");
-        let crs_file =
-            std::fs::File::open(&crs_file_path).expect(&format!("crs file at {}", crs_file_path));
-        let mon_crs = Crs::<CompactBn256, CrsForMonomialForm>::read(crs_file)
-            .expect(&format!("read crs file at {}", crs_file_path));
-        assert!(num_points <= mon_crs.g1_bases.len());
-
-        mon_crs
-    } else {
-        println!("Using dummy CRS");
-        Crs::<CompactBn256, CrsForMonomialForm>::non_power_of_two_crs_42(num_points, &worker)
-    };
+    let crs_file_path = std::env::var("COMPACT_RAW_CRS_FILE").unwrap();
+    println!("using crs file at {crs_file_path}");
+    let crs_file =
+        std::fs::File::open(&crs_file_path).expect(&format!("crs file at {}", crs_file_path));
+    let (g1_bases, g2_bases) =
+        read_bases(crs_file).expect(&format!("read crs file at {}", crs_file_path));
+    let mon_crs = Crs::new_in(g1_bases, g2_bases);
+    assert!(num_points <= mon_crs.g1_bases.len());
 
     mon_crs
+}
+
+pub fn read_bases<R: std::io::Read, A: Allocator + Default>(
+    mut reader: R,
+) -> std::io::Result<(Vec<CompactG1Affine, A>, Vec<CompactG2Affine, A>)> {
+    use bellman::pairing::EncodedPoint;
+    use byteorder::{BigEndian, ReadBytesExt};
+    let mut g1_repr = <CompactG1Affine as CurveAffine>::Uncompressed::empty();
+    let mut g2_repr = <CompactG2Affine as CurveAffine>::Uncompressed::empty();
+
+    let num_g1 = reader.read_u64::<BigEndian>()?;
+
+    let mut g1_bases = Vec::with_capacity_in(num_g1 as usize, A::default());
+
+    for _ in 0..num_g1 {
+        reader.read_exact(g1_repr.as_mut())?;
+        let p = g1_repr
+            .into_affine()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        g1_bases.push(p);
+    }
+
+    let num_g2 = reader.read_u64::<BigEndian>()?;
+    assert!(num_g2 == 2u64);
+
+    let mut g2_bases = Vec::with_capacity_in(num_g2 as usize, A::default());
+
+    for _ in 0..num_g2 {
+        reader.read_exact(g2_repr.as_mut())?;
+        let p = g2_repr
+            .into_affine()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        g2_bases.push(p);
+    }
+
+    Ok((g1_bases, g2_bases))
 }

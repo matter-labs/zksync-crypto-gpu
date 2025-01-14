@@ -6,6 +6,7 @@ mod boojum;
 pub(crate) use boojum::*;
 mod crs;
 pub(crate) use crs::*;
+pub use crs::*;
 mod fflonk;
 pub(crate) use fflonk::*;
 mod interface;

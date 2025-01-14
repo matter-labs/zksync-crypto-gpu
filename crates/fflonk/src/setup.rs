@@ -5,7 +5,7 @@ use bellman::{
             Assembly, Circuit, GateInternal, MainGate, PlonkConstraintSystemParams, PolyIdentifier,
             Setup, SynthesisMode, SynthesisModeGenerateSetup,
         },
-        better_cs::keys::{read_curve_affine, read_fr, write_curve_affine, write_fr_vec},
+        better_cs::keys::{read_curve_affine, write_curve_affine},
     },
     worker::Worker,
 };
@@ -15,7 +15,7 @@ use super::*;
 
 use crate::HostAllocator;
 
-pub struct FflonkDeviceSetup<E: Engine, C: Circuit<E>, A: HostAllocator = GlobalHost> {
+pub struct FflonkDeviceSetup<E: Engine, C: Circuit<E>, A: HostAllocator = GlobalStaticHost> {
     pub main_gate_selector_monomials: [Vec<E::Fr, A>; 5],
     pub variable_indexes: [Vec<u32, A>; 3],
     pub c0_commitment: E::G1Affine,
@@ -148,14 +148,13 @@ where
         )?;
         println!("Computing preprocessing combined commitment on the device");
         let c0_commitment = msm::<E>(combined_monomial.as_ref(), domain_size, stream)?;
-        let g2_elems = get_g2_elems_from_compact_crs::<E>();
         d2h_events.into_iter().for_each(|e| e.sync().unwrap());
         stream.sync().unwrap();
         Ok(Self {
             variable_indexes: h_all_transformed_variables.try_into().unwrap(),
             main_gate_selector_monomials: h_main_gate_selectors.try_into().unwrap(),
             c0_commitment,
-            g2_elems,
+            g2_elems: hardcoded_g2_bases::<E>(),
             _c: std::marker::PhantomData,
         })
     }
@@ -257,13 +256,15 @@ impl<E: Engine, C: Circuit<E>, A: HostAllocator> FflonkDeviceSetup<E, C, A> {
             let coeffs = read_raw_fr_vec::<_, _, A>(&mut reader)?;
             main_gate_selector_monomials.push(coeffs);
         }
-
+        let domain_size = main_gate_selector_monomials[0].len();
         let num_polys = reader.read_u64::<BigEndian>()?;
         assert_eq!(num_polys, 3);
         let mut variable_indexes = vec![];
         for _ in 0..num_polys {
             let num_values = reader.read_u64::<BigEndian>()? as usize;
-            let mut indexes = Vec::with_capacity_in(num_values, A::default());
+            // Block size of pinned memory allocator  requires each allocation
+            // to be same length
+            let mut indexes = Vec::with_capacity_in(domain_size, A::default());
             let indexes_buf = unsafe {
                 indexes.set_len(num_values);
                 std::slice::from_raw_parts_mut(

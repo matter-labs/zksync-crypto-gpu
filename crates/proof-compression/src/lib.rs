@@ -10,7 +10,8 @@ pub use chain::*;
 mod context;
 use context::*;
 
-mod proof_system;
+pub mod proof_system;
+pub use proof_system::create_compact_raw_crs;
 use proof_system::*;
 
 mod serialization;

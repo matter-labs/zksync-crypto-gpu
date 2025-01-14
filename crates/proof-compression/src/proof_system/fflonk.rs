@@ -71,7 +71,7 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
     >;
 
     fn pre_init() {
-        let domain_size = ::fflonk::fflonk::L1_VERIFIER_DOMAIN_SIZE_LOG;
+        let domain_size = 1 << ::fflonk::fflonk::L1_VERIFIER_DOMAIN_SIZE_LOG;
         Self::Context::init_pinned_memory(domain_size).unwrap();
     }
 
@@ -115,15 +115,14 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
         assert_eq!(domain_size, finalization_hint);
         let ctx = ctx.wait();
         let precomputation = precomputation.wait().into_inner();
-        let proof = ::fflonk::create_proof::<
-            _,
-            _,
-            _,
-            RollingKeccakTranscript<_>,
-            CombinedMonomialDeviceStorage<Fr>,
-            _,
-        >(&proving_assembly, &precomputation, raw_trace_len)
+        let start = std::time::Instant::now();
+        let proof = ::fflonk::create_proof::<_, _, _, RollingKeccakTranscript<_>, _>(
+            &proving_assembly,
+            &precomputation,
+            raw_trace_len,
+        )
         .unwrap();
+        println!("fflonk proving takes {} s", start.elapsed().as_secs());
         drop(ctx);
         proof
     }

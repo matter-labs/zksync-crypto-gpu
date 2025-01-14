@@ -13,7 +13,7 @@ use circuit_definitions::circuit_definitions::aux_layer::{
 };
 use fflonk::{FflonkAssembly, L1_VERIFIER_DOMAIN_SIZE_LOG};
 
-pub type FflonkSnarkVerifierCircuitDeviceSetup<A: HostAllocator = GlobalStaticHost> =
+pub type FflonkSnarkVerifierCircuitDeviceSetup<A: HostAllocator = std::alloc::Global> =
     FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, A>;
 
 use super::*;
@@ -107,17 +107,18 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_single_shot(
     FflonkSnarkVerifierCircuitProof,
     FflonkSnarkVerifierCircuitVK,
 ) {
-    let mut assembly = FflonkAssembly::<Bn256, SynthesisModeTesting, GlobalStaticHost>::new();
+    let mut assembly = FflonkAssembly::<Bn256, SynthesisModeTesting>::new();
     circuit.synthesize(&mut assembly).expect("must work");
     assert!(assembly.is_satisfied());
     let raw_trace_len = assembly.n();
     let domain_size = (raw_trace_len + 1).next_power_of_two();
+    DeviceContextWithSingleDevice::init_pinned_memory(domain_size).unwrap();
     let _context = DeviceContextWithSingleDevice::init(domain_size)
         .expect("Couldn't create fflonk GPU Context");
 
     let setup =
-        FflonkDeviceSetup::<_, FflonkSnarkVerifierCircuit, GlobalStaticHost>::create_setup_from_assembly_on_device(
-            &assembly
+        FflonkDeviceSetup::<_, FflonkSnarkVerifierCircuit>::create_setup_from_assembly_on_device(
+            &assembly,
         )
         .unwrap();
     let vk = setup.get_verification_key();
@@ -128,14 +129,11 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_single_shot(
     assert!(domain_size <= 1 << L1_VERIFIER_DOMAIN_SIZE_LOG);
 
     let start = std::time::Instant::now();
-    let proof = create_proof::<
-        _,
-        FflonkSnarkVerifierCircuit,
-        _,
-        RollingKeccakTranscript<_>,
-        CombinedMonomialDeviceStorage<Fr>,
-        _,
-    >(&assembly, &setup, raw_trace_len)
+    let proof = create_proof::<_, FflonkSnarkVerifierCircuit, _, RollingKeccakTranscript<_>, _>(
+        &assembly,
+        &setup,
+        raw_trace_len,
+    )
     .unwrap();
     println!("proof generation takes {} ms", start.elapsed().as_millis());
 
@@ -151,7 +149,8 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_with_precomputation(
     vk: &FflonkSnarkVerifierCircuitVK,
 ) -> FflonkSnarkVerifierCircuitProof {
     println!("Synthesizing for fflonk proving");
-    let mut proving_assembly = FflonkAssembly::<Bn256, SynthesisModeProve, GlobalStaticHost>::new();
+    let mut proving_assembly =
+        FflonkAssembly::<Bn256, SynthesisModeProve, std::alloc::Global>::new();
     circuit
         .synthesize(&mut proving_assembly)
         .expect("must work");
@@ -163,14 +162,11 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_with_precomputation(
     assert!(domain_size <= 1 << L1_VERIFIER_DOMAIN_SIZE_LOG);
 
     let start = std::time::Instant::now();
-    let proof = create_proof::<
-        _,
-        FflonkSnarkVerifierCircuit,
-        _,
-        RollingKeccakTranscript<_>,
-        CombinedMonomialDeviceStorage<Fr>,
-        _,
-    >(&proving_assembly, setup, raw_trace_len)
+    let proof = create_proof::<_, FflonkSnarkVerifierCircuit, _, RollingKeccakTranscript<_>, _>(
+        &proving_assembly,
+        setup,
+        raw_trace_len,
+    )
     .unwrap();
     println!("proof generation takes {} ms", start.elapsed().as_millis());
 
@@ -189,8 +185,10 @@ pub fn precompute_and_save_setup_and_vk_for_fflonk_snark_circuit(
 
     println!("Generating fflonk setup data on the device");
     let device_setup =
-        FflonkSnarkVerifierCircuitDeviceSetup::<GlobalStaticHost>::create_setup_on_device(&circuit)
-            .unwrap();
+        FflonkSnarkVerifierCircuitDeviceSetup::<std::alloc::Global>::create_setup_on_device(
+            &circuit,
+        )
+        .unwrap();
     let setup_file_path = format!("{}/final_snark_device_setup.bin", path);
     println!("Saving setup into file {setup_file_path}");
     let device_setup_file = std::fs::File::create(&setup_file_path).unwrap();

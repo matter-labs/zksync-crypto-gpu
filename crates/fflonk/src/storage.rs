@@ -13,7 +13,7 @@ pub trait CombinedMonomialStorage {
     ) -> CudaResult<()>;
 }
 
-pub enum GenericCombinedStorage<F, A = std::alloc::Global>
+pub enum GenericCombinedStorage<F, A = GlobalStaticHost>
 where
     F: PrimeField,
     A: HostAllocator,
@@ -46,9 +46,10 @@ where
     }
 }
 
-impl<F> CombinedMonomialStorage for GenericCombinedStorage<F>
+impl<F, A> CombinedMonomialStorage for GenericCombinedStorage<F, A>
 where
     F: PrimeField,
+    A: HostAllocator,
 {
     type Poly = Poly<F, MonomialBasis>;
 

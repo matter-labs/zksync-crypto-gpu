@@ -22,6 +22,7 @@ pub(crate) fn init_static_host_alloc(domain_size: usize) {
             return;
         }
     }
+    assert!(domain_size.is_power_of_two());
     // Bitmap allocator with small block size and high number of allocations doesn't make
     // sense, and doesn't give good runtime performance compared to default allocator.
     // However it provides satisfying improvement for 3 combined monomials, since prover

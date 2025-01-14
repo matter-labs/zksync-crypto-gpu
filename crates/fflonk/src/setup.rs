@@ -15,7 +15,7 @@ use super::*;
 
 use crate::HostAllocator;
 
-pub struct FflonkDeviceSetup<E: Engine, C: Circuit<E>, A: HostAllocator = GlobalStaticHost> {
+pub struct FflonkDeviceSetup<E: Engine, C: Circuit<E>, A: HostAllocator = std::alloc::Global> {
     pub main_gate_selector_monomials: [Vec<E::Fr, A>; 5],
     pub variable_indexes: [Vec<u32, A>; 3],
     pub c0_commitment: E::G1Affine,

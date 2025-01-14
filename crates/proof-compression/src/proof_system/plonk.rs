@@ -144,6 +144,7 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
         let mut ctx = ctx.into_inner();
         let mut precomputation = precomputation.wait().into_inner();
         let worker = bellman::worker::Worker::new();
+        let start = std::time::Instant::now();
         let proof = gpu_prover::create_proof::<_, _, Self::Transcript, _>(
             &proving_assembly,
             &mut ctx,
@@ -152,7 +153,7 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
             None,
         )
         .unwrap();
-
+        println!("plonk proving takes {} s", start.elapsed().as_secs());
         ctx.free_all_slots();
 
         proof

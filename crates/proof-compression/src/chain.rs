@@ -84,24 +84,23 @@ pub type SchedulerProof = franklin_crypto::boojum::cs::implementations::proof::P
     GoldilocksExt2,
 >;
 
-pub fn run_proof_chain<BS, PS>(
+pub fn run_proof_chain<BS>(
     snark_wrapper: SnarkWrapper,
     blob_storage: &BS,
-    proof_storage: &mut PS,
-) where
+    scheduler_proof: SchedulerProof,
+) -> SnarkWrapperProof
+where
     BS: BlobStorage,
-    PS: ProofStorage,
 {
     match snark_wrapper {
-        SnarkWrapper::Plonk => run_proof_chain_with_plonk(blob_storage, proof_storage),
-        SnarkWrapper::FFfonk => run_proof_chain_with_fflonk(blob_storage, proof_storage),
+        SnarkWrapper::Plonk => run_proof_chain_with_plonk(blob_storage, scheduler_proof),
+        SnarkWrapper::FFfonk => run_proof_chain_with_fflonk(blob_storage, scheduler_proof),
     }
 }
 
-pub fn run_proof_chain_with_fflonk<BS, PS>(blob_storage: &BS, proof_storage: &mut PS)
+pub fn run_proof_chain_with_fflonk<BS>(blob_storage: &BS, scheduler_proof: SchedulerProof) -> SnarkWrapperProof
 where
     BS: BlobStorage,
-    PS: ProofStorage,
 {
     let context_manager = SimpleContextManager::new();
     let start = std::time::Instant::now();
@@ -109,46 +108,29 @@ where
     let compact_raw_crs =
         <FflonkSnarkWrapper as SnarkWrapperStep>::load_compact_raw_crs(blob_storage);
     let fflonk_precomputation = FflonkSnarkWrapper::get_precomputation(blob_storage);
-
-    let input_proof = proof_storage.get_scheduler_proof();
-
     let next_proof =
-        CompressionMode1::prove_compression_step(input_proof, blob_storage, &context_manager);
-    let compression_proof_1 = ZkSyncCompressionLayerProof::from_inner(1, next_proof.clone());
-    proof_storage.save_compression_layer_proof(1, compression_proof_1.clone());
+        CompressionMode1::prove_compression_step(scheduler_proof, blob_storage, &context_manager);
 
     let next_proof = CompressionMode2::prove_compression_step::<_, SimpleContextManager>(
         next_proof,
         blob_storage,
         &context_manager,
     );
-    let compression_proof_2 = ZkSyncCompressionLayerProof::from_inner(2, next_proof.clone());
-    proof_storage.save_compression_layer_proof(2, compression_proof_2.clone());
-
     let next_proof = CompressionMode3::prove_compression_step::<_, SimpleContextManager>(
         next_proof,
         blob_storage,
         &context_manager,
     );
-    let compression_proof_3 = ZkSyncCompressionLayerProof::from_inner(3, next_proof.clone());
-    proof_storage.save_compression_layer_proof(3, compression_proof_3.clone());
 
     let next_proof = CompressionMode4::prove_compression_step::<_, SimpleContextManager>(
         next_proof,
         blob_storage,
         &context_manager,
     );
-    let compression_proof_4 = ZkSyncCompressionLayerProof::from_inner(4, next_proof.clone());
-    proof_storage.save_compression_layer_proof(4, compression_proof_4.clone());
-
     let next_proof = CompressionMode5ForWrapper::prove_compression_step::<_, SimpleContextManager>(
         next_proof,
         blob_storage,
         &context_manager,
-    );
-    proof_storage.save_compression_wrapper_proof(
-        5,
-        ZkSyncCompressionForWrapperProof::from_inner(5, next_proof.clone()),
     );
     println!(
         "Proving entire compression chain took {}s",
@@ -165,7 +147,7 @@ where
         "Proving entire chain with snark wrapper took {}s",
         start.elapsed().as_secs()
     );
-    proof_storage.save_fflonk_proof(final_proof);
+    SnarkWrapperProof::FFfonk(final_proof)
 }
 
 pub fn precompute_proof_chain_with_fflonk<BS>(blob_storage: &BS)
@@ -201,10 +183,9 @@ where
     );
 }
 
-pub fn run_proof_chain_with_plonk<BS, PS>(blob_storage: &BS, proof_storage: &mut PS)
+pub fn run_proof_chain_with_plonk<BS>(blob_storage: &BS, scheduler_proof: SchedulerProof) -> SnarkWrapperProof
 where
     BS: BlobStorage,
-    PS: ProofStorage,
 {
     let context_manager = SimpleContextManager::new();
     let start = std::time::Instant::now();
@@ -212,16 +193,10 @@ where
         <PlonkSnarkWrapper as SnarkWrapperStep>::load_compact_raw_crs(blob_storage);
     let plonk_precomputation = PlonkSnarkWrapper::get_precomputation(blob_storage);
 
-    let input_proof = proof_storage.get_scheduler_proof();
-
     let next_proof = CompressionMode1ForWrapper::prove_compression_step(
-        input_proof,
+        scheduler_proof,
         blob_storage,
         &context_manager,
-    );
-    proof_storage.save_compression_wrapper_proof(
-        1,
-        ZkSyncCompressionForWrapperProof::from_inner(1, next_proof.clone()),
     );
 
     let final_proof = PlonkSnarkWrapper::prove_snark_wrapper_step(
@@ -235,7 +210,7 @@ where
         "Entire compression chain with plonk took {}s",
         start.elapsed().as_secs()
     );
-    proof_storage.save_plonk_proof(final_proof);
+    SnarkWrapperProof::Plonk(final_proof)
 }
 
 pub fn precompute_proof_chain_with_plonk<BS>(blob_storage: &BS)

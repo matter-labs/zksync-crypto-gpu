@@ -2,7 +2,7 @@
 #![feature(allocator_api)]
 
 mod blob_storage;
-use blob_storage::*;
+pub use blob_storage::*;
 
 mod chain;
 pub use chain::*;

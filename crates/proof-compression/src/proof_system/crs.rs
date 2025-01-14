@@ -56,7 +56,7 @@ pub(crate) fn read_crs_from_raw_compact_form<R: std::io::Read, A: Allocator + De
     Ok(Crs::<_, CrsForMonomialForm, A>::new_in(g1_bases, g2_bases))
 }
 
-pub(crate) fn create_compact_raw_crs<W: std::io::Write>(dst: W) {
+pub fn create_compact_raw_crs<W: std::io::Write>(dst: W) {
     let num_points = [
         ::fflonk::MAX_COMBINED_DEGREE_FACTOR << ::fflonk::fflonk::L1_VERIFIER_DOMAIN_SIZE_LOG,
         <PlonkProverDeviceMemoryManagerConfig as ManagerConfigs>::FULL_SLOT_SIZE,

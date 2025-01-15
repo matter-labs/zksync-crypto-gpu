@@ -193,7 +193,7 @@ pub(crate) trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperS
         precomputation
             .write_into_buffer(precompuatation_writer)
             .unwrap();
-        serde_json::to_writer(vk_writer, &vk).unwrap();
+        serde_json::to_writer_pretty(vk_writer, &vk).unwrap();
         println!("Pecomputation and vk of snark wrapper circuit saved into blob storage");
     }
 }

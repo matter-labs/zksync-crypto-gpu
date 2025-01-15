@@ -174,8 +174,8 @@ pub(crate) trait CompressionStepExt: CompressionProofSystemExt + CompressionStep
         precomputation
             .write_into_buffer(precompuatation_writer)
             .unwrap();
-        serde_json::to_writer(vk_writer, &vk).unwrap();
-        serde_json::to_writer(hint_writer, &finalization_hint).unwrap();
+        serde_json::to_writer_pretty(vk_writer, &vk).unwrap();
+        serde_json::to_writer_pretty(hint_writer, &finalization_hint).unwrap();
         println!(
             "Precomputation and vk of compression circuit {} saved into blob storage",
             Self::MODE

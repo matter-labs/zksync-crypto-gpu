@@ -98,7 +98,10 @@ where
     }
 }
 
-pub fn run_proof_chain_with_fflonk<BS>(blob_storage: &BS, scheduler_proof: SchedulerProof) -> SnarkWrapperProof
+pub fn run_proof_chain_with_fflonk<BS>(
+    blob_storage: &BS,
+    scheduler_proof: SchedulerProof,
+) -> SnarkWrapperProof
 where
     BS: BlobStorage,
 {
@@ -183,7 +186,10 @@ where
     );
 }
 
-pub fn run_proof_chain_with_plonk<BS>(blob_storage: &BS, scheduler_proof: SchedulerProof) -> SnarkWrapperProof
+pub fn run_proof_chain_with_plonk<BS>(
+    blob_storage: &BS,
+    scheduler_proof: SchedulerProof,
+) -> SnarkWrapperProof
 where
     BS: BlobStorage,
 {

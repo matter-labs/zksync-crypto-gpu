@@ -275,7 +275,7 @@ impl<const N: usize> DeviceContext<N> {
 }
 
 pub fn init_allocations(domain_size: usize) {
-    init_static_alloc(domain_size);    
+    init_static_alloc(domain_size);
     init_small_scalar_mempool();
     init_tmp_mempool();
 }

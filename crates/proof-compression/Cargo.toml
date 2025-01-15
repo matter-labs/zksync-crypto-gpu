@@ -26,4 +26,4 @@ byteorder = "1"
 default = ["gpu", "fflonk", "gpu-prover"]
 gpu = []
 cpu = []
-allocator = ["fflonk/allocator", "gpu-prover/allocator"]
+allocator = ["fflonk", "gpu-prover/allocator"]

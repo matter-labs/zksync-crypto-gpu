@@ -63,7 +63,7 @@ pub use gpu_ffi;
 use gpu_ffi::{bc_event, bc_mem_pool, bc_stream};
 use std::alloc::Allocator;
 
-pub use context::{DeviceContext, DeviceContextWithSingleDevice};
+pub use context::{init_compact_crs, DeviceContext, DeviceContextWithSingleDevice};
 pub use fflonk::MAX_COMBINED_DEGREE_FACTOR;
 
 pub use convenience::FflonkSnarkVerifierCircuitDeviceSetup;
@@ -74,3 +74,5 @@ pub type FflonkSnarkVerifierCircuit = ZkSyncSnarkWrapperCircuitNoLookupCustomGat
 pub type FflonkSnarkVerifierCircuitVK = FflonkVerificationKey<Bn256, FflonkSnarkVerifierCircuit>;
 pub type FflonkSnarkVerifierCircuitProof = FflonkProof<Bn256, FflonkSnarkVerifierCircuit>;
 pub type FflonkSnarkVerifierCircuitSetup = FflonkSetup<Bn256, FflonkSnarkVerifierCircuit>;
+
+pub use allocator::{GlobalStaticHost, HostAllocator};

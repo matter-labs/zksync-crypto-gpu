@@ -12,7 +12,7 @@ use fflonk::{
     commit_point_as_xy, compute_generators, horner_evaluation, FflonkAssembly, FflonkProof,
 };
 
-pub fn create_proof<E, C, S, T, CM, A>(
+pub fn create_proof<E, C, S, T, A>(
     assembly: &FflonkAssembly<E, S, A>,
     setup: &FflonkDeviceSetup<E, C, A>,
     raw_trace_len: usize,
@@ -58,7 +58,7 @@ where
     let common_combined_degree = MAX_COMBINED_DEGREE_FACTOR * domain_size;
     let device = Device::model();
     let mut combined_monomial_storage =
-        GenericCombinedStorage::<E::Fr, _>::allocate_on(&device, domain_size)?;
+        GenericCombinedStorage::<E::Fr, GlobalStaticHost>::allocate_on(&device, domain_size)?;
     let start = std::time::Instant::now();
     let ([c1_commitment, c2_commitment], h_all_evaluations, h_aux_evaluations, challenges) =
         prove_arguments(

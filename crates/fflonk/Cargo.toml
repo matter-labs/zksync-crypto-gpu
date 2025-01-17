@@ -12,7 +12,7 @@ description = "CUDA implementation of the fflonk prover"
 exclude = ["/data"]
 
 [dependencies]
-fflonk-cpu = {workspace = true}
+fflonk-cpu = {workspace = true, optional = true}
 circuit_definitions.workspace = true
 gpu-ffi.workspace = true
 rand = "0.4"
@@ -24,5 +24,5 @@ serde_json = "1"
 serde_derive = "1"
 
 [features]
-default = []
+default = ["fflonk-cpu/allocator"]
 sanity = []

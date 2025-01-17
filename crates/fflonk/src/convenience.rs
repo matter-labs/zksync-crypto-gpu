@@ -2,11 +2,10 @@ use bellman::{
     bn256::{Bn256, Fr},
     kate_commitment::{Crs, CrsForMonomialForm},
     plonk::{
-        better_better_cs::cs::{
-            Circuit, SynthesisModeGenerateSetup, SynthesisModeProve, SynthesisModeTesting,
-        },
+        better_better_cs::cs::{Circuit, SynthesisModeProve, SynthesisModeTesting},
         commitments::transcript::keccak_transcript::RollingKeccakTranscript,
     },
+    CurveAffine, PrimeFieldRepr,
 };
 use circuit_definitions::circuit_definitions::aux_layer::{
     wrapper::ZkSyncCompressionWrapper, ZkSyncCompressionProofForWrapper,
@@ -14,8 +13,8 @@ use circuit_definitions::circuit_definitions::aux_layer::{
 };
 use fflonk::{FflonkAssembly, L1_VERIFIER_DOMAIN_SIZE_LOG};
 
-pub type FflonkSnarkVerifierCircuitDeviceSetup =
-    FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit>;
+pub type FflonkSnarkVerifierCircuitDeviceSetup<A: HostAllocator = std::alloc::Global> =
+    FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, A>;
 
 use super::*;
 
@@ -108,16 +107,17 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_single_shot(
     FflonkSnarkVerifierCircuitProof,
     FflonkSnarkVerifierCircuitVK,
 ) {
-    let mut assembly = FflonkAssembly::<Bn256, SynthesisModeTesting, GlobalHost>::new();
+    let mut assembly = FflonkAssembly::<Bn256, SynthesisModeTesting>::new();
     circuit.synthesize(&mut assembly).expect("must work");
     assert!(assembly.is_satisfied());
     let raw_trace_len = assembly.n();
     let domain_size = (raw_trace_len + 1).next_power_of_two();
+    DeviceContextWithSingleDevice::init_pinned_memory(domain_size).unwrap();
     let _context = DeviceContextWithSingleDevice::init(domain_size)
         .expect("Couldn't create fflonk GPU Context");
 
     let setup =
-        FflonkDeviceSetup::<_, FflonkSnarkVerifierCircuit, GlobalHost>::create_setup_from_assembly_on_device(
+        FflonkDeviceSetup::<_, FflonkSnarkVerifierCircuit>::create_setup_from_assembly_on_device(
             &assembly,
         )
         .unwrap();
@@ -129,14 +129,11 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_single_shot(
     assert!(domain_size <= 1 << L1_VERIFIER_DOMAIN_SIZE_LOG);
 
     let start = std::time::Instant::now();
-    let proof = create_proof::<
-        _,
-        FflonkSnarkVerifierCircuit,
-        _,
-        RollingKeccakTranscript<_>,
-        CombinedMonomialDeviceStorage<Fr>,
-        _,
-    >(&assembly, &setup, raw_trace_len)
+    let proof = create_proof::<_, FflonkSnarkVerifierCircuit, _, RollingKeccakTranscript<_>, _>(
+        &assembly,
+        &setup,
+        raw_trace_len,
+    )
     .unwrap();
     println!("proof generation takes {} ms", start.elapsed().as_millis());
 
@@ -152,7 +149,8 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_with_precomputation(
     vk: &FflonkSnarkVerifierCircuitVK,
 ) -> FflonkSnarkVerifierCircuitProof {
     println!("Synthesizing for fflonk proving");
-    let mut proving_assembly = FflonkAssembly::<Bn256, SynthesisModeProve, GlobalHost>::new();
+    let mut proving_assembly =
+        FflonkAssembly::<Bn256, SynthesisModeProve, std::alloc::Global>::new();
     circuit
         .synthesize(&mut proving_assembly)
         .expect("must work");
@@ -164,14 +162,11 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_with_precomputation(
     assert!(domain_size <= 1 << L1_VERIFIER_DOMAIN_SIZE_LOG);
 
     let start = std::time::Instant::now();
-    let proof = create_proof::<
-        _,
-        FflonkSnarkVerifierCircuit,
-        _,
-        RollingKeccakTranscript<_>,
-        CombinedMonomialDeviceStorage<Fr>,
-        _,
-    >(&proving_assembly, setup, raw_trace_len)
+    let proof = create_proof::<_, FflonkSnarkVerifierCircuit, _, RollingKeccakTranscript<_>, _>(
+        &proving_assembly,
+        setup,
+        raw_trace_len,
+    )
     .unwrap();
     println!("proof generation takes {} ms", start.elapsed().as_millis());
 
@@ -190,7 +185,10 @@ pub fn precompute_and_save_setup_and_vk_for_fflonk_snark_circuit(
 
     println!("Generating fflonk setup data on the device");
     let device_setup =
-        FflonkSnarkVerifierCircuitDeviceSetup::create_setup_on_device(&circuit).unwrap();
+        FflonkSnarkVerifierCircuitDeviceSetup::<std::alloc::Global>::create_setup_on_device(
+            &circuit,
+        )
+        .unwrap();
     let setup_file_path = format!("{}/final_snark_device_setup.bin", path);
     println!("Saving setup into file {setup_file_path}");
     let device_setup_file = std::fs::File::create(&setup_file_path).unwrap();
@@ -220,4 +218,65 @@ pub fn load_device_setup_and_vk_of_fflonk_snark_circuit(
     let vk = serde_json::from_reader(&vk_file).unwrap();
 
     (device_setup, vk)
+}
+
+pub fn hardcoded_g2_bases<E: Engine>() -> [E::G2Affine; 2] {
+    use bellman::compact_bn256::{Fq, Fq2, FqRepr};
+    use bellman::PrimeField;
+
+    let encoding = [
+        38, 32, 188, 2, 209, 181, 131, 142, 114, 1, 123, 73, 53, 25, 235, 220, 223, 26, 129, 151,
+        71, 38, 184, 251, 59, 80, 150, 175, 65, 56, 87, 25, 64, 97, 76, 168, 125, 115, 180, 175,
+        196, 216, 2, 88, 90, 221, 67, 96, 134, 47, 160, 82, 252, 80, 233, 9, 107, 123, 234, 58,
+        131, 240, 254, 20, 246, 233, 107, 136, 157, 250, 157, 97, 120, 155, 158, 245, 151, 210,
+        127, 254, 254, 125, 27, 35, 98, 26, 158, 255, 6, 66, 158, 174, 235, 126, 253, 40, 238, 86,
+        24, 199, 86, 91, 9, 100, 187, 60, 125, 50, 34, 249, 87, 220, 118, 16, 53, 51, 190, 53, 249,
+        85, 130, 100, 253, 147, 230, 160, 164, 13, 182, 244, 28, 71, 70, 29, 100, 233, 208, 232,
+        16, 57, 87, 156, 156, 214, 74, 82, 220, 27, 161, 197, 77, 15, 210, 9, 240, 189, 172, 71,
+        111, 30, 128, 0, 56, 200, 24, 253, 23, 165, 145, 209, 42, 156, 197, 0, 120, 91, 50, 140,
+        234, 115, 242, 5, 158, 54, 169, 218, 26, 132, 98, 22, 43, 23, 206, 192, 48, 61, 48, 232,
+        255, 223, 42, 230, 151, 216, 68, 117, 123, 28, 236, 116, 246, 140, 245, 170, 54, 180, 144,
+        56, 190, 222, 70, 225, 237, 33, 140, 112, 147, 119, 162, 146, 63, 229, 0, 167, 154, 82, 99,
+        93, 178, 109, 44, 185, 245, 226, 45, 73, 216, 99, 172, 7, 183, 178, 189, 54, 218, 31,
+    ];
+    assert_eq!(encoding.len(), 256);
+    let mut src = &encoding[..];
+
+    let mut repr = FqRepr::default();
+    repr.read_le(&mut src).unwrap();
+    let x0c0 = Fq::from_raw_repr(repr).unwrap();
+
+    let mut repr = FqRepr::default();
+    repr.read_le(&mut src).unwrap();
+    let x0c1 = Fq::from_raw_repr(repr).unwrap();
+    let x = unsafe { *(&Fq2 { c0: x0c0, c1: x0c1 } as *const Fq2 as *const E::Fqe) };
+    let mut repr = FqRepr::default();
+    repr.read_le(&mut src).unwrap();
+    let y0c0 = Fq::from_raw_repr(repr).unwrap();
+
+    let mut repr = FqRepr::default();
+    repr.read_le(&mut src).unwrap();
+    let y0c1 = Fq::from_raw_repr(repr).unwrap();
+    let y = unsafe { *(&Fq2 { c0: y0c0, c1: y0c1 } as *const Fq2 as *const E::Fqe) };
+    let p0 = E::G2Affine::from_xy_checked(x, y).unwrap();
+
+    let mut repr = FqRepr::default();
+    repr.read_le(&mut src).unwrap();
+    let x1c0 = Fq::from_raw_repr(repr).unwrap();
+
+    let mut repr = FqRepr::default();
+    repr.read_le(&mut src).unwrap();
+    let x1c1 = Fq::from_raw_repr(repr).unwrap();
+    let x = unsafe { *(&Fq2 { c0: x1c0, c1: x1c1 } as *const Fq2 as *const E::Fqe) };
+    let mut repr = FqRepr::default();
+    repr.read_le(&mut src).unwrap();
+    let y1c0 = Fq::from_raw_repr(repr).unwrap();
+
+    let mut repr = FqRepr::default();
+    repr.read_le(&mut src).unwrap();
+    let y1c1 = Fq::from_raw_repr(repr).unwrap();
+    let y = unsafe { *(&Fq2 { c0: y1c0, c1: y1c1 } as *const Fq2 as *const E::Fqe) };
+    let p1 = E::G2Affine::from_xy_checked(x, y).unwrap();
+
+    [p0, p1]
 }

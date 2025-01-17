@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.152.11](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.10...v0.152.11) (2025-01-17)
+
+
+### Features
+
+* **proof-compression:** better proof compression ([#67](https://github.com/matter-labs/zksync-crypto-gpu/issues/67)) ([f4eac96](https://github.com/matter-labs/zksync-crypto-gpu/commit/f4eac96459a344bc9759f52f38bb26d81b931b6b))
+
+
+### Bug Fixes
+
+* better CUDA detection ([#61](https://github.com/matter-labs/zksync-crypto-gpu/issues/61)) ([e902ca4](https://github.com/matter-labs/zksync-crypto-gpu/commit/e902ca4a0e2688b2e2ebc69adbaae06d39dafc40))
+
 ## [0.152.10](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.9...v0.152.10) (2024-12-20)
 
 

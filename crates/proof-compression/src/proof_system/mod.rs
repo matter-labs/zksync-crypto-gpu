@@ -14,5 +14,7 @@ pub(crate) use interface::*;
 mod plonk;
 pub(crate) use plonk::*;
 
+pub use plonk::PlonkSnarkVerifierCircuitProof;
+
 pub(crate) use ::fflonk::fflonk_cpu::franklin_crypto;
 pub(crate) use franklin_crypto::bellman;

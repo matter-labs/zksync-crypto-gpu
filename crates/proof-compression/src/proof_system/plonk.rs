@@ -25,7 +25,7 @@ use bellman::bn256::{Bn256, Fr};
 pub(crate) type PlonkSnarkVerifierCircuit = ZkSyncSnarkWrapperCircuit;
 pub(crate) type PlonkSnarkVerifierCircuitVK =
     PlonkVerificationKey<Bn256, PlonkSnarkVerifierCircuit>;
-pub(crate) type PlonkSnarkVerifierCircuitProof = PlonkProof<Bn256, PlonkSnarkVerifierCircuit>;
+pub type PlonkSnarkVerifierCircuitProof = PlonkProof<Bn256, PlonkSnarkVerifierCircuit>;
 pub(crate) type PlonkSnarkVerifierCircuitDeviceSetup = AsyncSetup;
 
 type PlonkAssembly<CSConfig, A> = Assembly<

@@ -39,7 +39,7 @@ pub trait BlobStorageExt: BlobStorage {
     fn write_compact_raw_crs(&self) -> Box<dyn Write>;
 }
 
-pub(crate) struct FileSystemBlobStorage;
+pub struct FileSystemBlobStorage;
 
 impl FileSystemBlobStorage {
     const DATA_DIR_PATH: &str = "./data";
@@ -57,6 +57,14 @@ impl FileSystemBlobStorage {
     fn create_file(path: &str) -> Box<dyn Write> {
         let file = std::fs::File::create(path).unwrap();
         Box::new(file)
+    }
+
+    pub fn write_scheduler_vk(&self, data: &[u8]) {
+        let path = format!("{}/{}_vk.json", Self::DATA_DIR_PATH, Self::SCHEDULER_PREFIX,);
+        println!("Writing scheduler vk at path {}", path);
+
+        let mut file = Self::create_file(&path);
+        file.write_all(data).unwrap();
     }
 }
 

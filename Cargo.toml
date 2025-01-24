@@ -41,3 +41,8 @@ zkevm_test_harness = { version = "=0.150.20" }
 
 [profile.release]
 debug = "line-tables-only"
+
+
+[patch.crates-io]
+circuit_definitions = { path = "../zksync-protocol/crates/circuit_definitions"}
+boojum = { path = "../zksync-crypto/crates/boojum"}

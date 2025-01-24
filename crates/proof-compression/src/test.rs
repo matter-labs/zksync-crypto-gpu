@@ -2,16 +2,18 @@ use super::*;
 #[test]
 fn test_proof_chain_with_fflonk() {
     let simple_blob_storage = FileSystemBlobStorage;
-    let mut simple_proof_storage = SimpleProofStorage::new();
-    run_proof_chain_with_fflonk(&simple_blob_storage, &mut simple_proof_storage);
+    let simple_proof_storage = SimpleProofStorage::new();
+    let scheduler_proof = simple_proof_storage.get_scheduler_proof();
+    run_proof_chain_with_fflonk(&simple_blob_storage, scheduler_proof);
     println!("Final fflonk snark wrapper proof has successfully generated");
 }
 
 #[test]
 fn test_proof_chain_with_plonk() {
     let simple_blob_storage = FileSystemBlobStorage;
-    let mut simple_proof_storage = SimpleProofStorage::new();
-    run_proof_chain_with_plonk(&simple_blob_storage, &mut simple_proof_storage);
+    let simple_proof_storage = SimpleProofStorage::new();
+    let scheduler_proof = simple_proof_storage.get_scheduler_proof();
+    run_proof_chain_with_plonk(&simple_blob_storage, scheduler_proof);
 
     println!("Final plonk snark wrapper proof has successfully generated");
 }

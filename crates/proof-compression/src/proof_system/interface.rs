@@ -17,6 +17,7 @@ pub(crate) trait ProofSystemDefinition: Sized {
     type Proof: serde::Serialize + serde::de::DeserializeOwned;
     type VK: serde::Serialize + serde::de::DeserializeOwned + Send + Sync + Clone + 'static;
     type FinalizationHint: serde::Serialize + serde::de::DeserializeOwned + Clone;
+    #[cfg(feature = "allocator")]
     type Allocator: std::alloc::Allocator + Default;
     type ProvingAssembly: Sized + Send + Sync + 'static;
     type Transcript;
@@ -117,6 +118,7 @@ impl ProofSystemDefinition for MarkerProofSystem {
     type VK = ();
     type ExternalWitnessData = ();
     type FinalizationHint = ();
+    #[cfg(feature = "allocator")]
     type Allocator = std::alloc::Global;
     type ProvingAssembly = ();
     type Transcript = ();

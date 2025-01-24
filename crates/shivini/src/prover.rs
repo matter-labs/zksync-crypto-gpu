@@ -53,7 +53,7 @@ pub fn gpu_prove_from_external_witness_data<
         transcript_params.clone(),
         worker,
     )?;
-    gpu_prove_from_external_witness_data_with_cache_strategy::<TR, H, POW, A>(
+    gpu_prove_from_external_witness_data_with_cache_strategy_inner::<TR, H, POW, A>(
         config,
         external_witness_data,
         proof_config,
@@ -65,8 +65,65 @@ pub fn gpu_prove_from_external_witness_data<
     )
 }
 
+// Making allocator_api conditional requires huge changes.
+// It is enough to make it compatible with proof-compresison for now.
+#[cfg(feature = "allocator")]
 #[allow(clippy::too_many_arguments)]
 pub fn gpu_prove_from_external_witness_data_with_cache_strategy<
+    TR: Transcript<F>,
+    H: GpuTreeHasher<Output = TR::CompatibleCap>,
+    POW: GPUPoWRunner,
+    A: GoodAllocator, // This is for output proof only
+>(
+    config: &GpuProofConfig,
+    external_witness_data: &WitnessVec<F>, // TODO: read data from Assembly pinned storage
+    proof_config: ProofConfig,
+    setup: &GpuSetup<H>,
+    vk: &VerificationKey<F, H>,
+    transcript_params: TR::TransciptParameters,
+    worker: &Worker,
+    cache_strategy: CacheStrategy,
+) -> CudaResult<GpuProof<H, A>> {
+    gpu_prove_from_external_witness_data_with_cache_strategy_inner::<TR, H, POW, A>(
+        config,
+        external_witness_data,
+        proof_config,
+        setup,
+        vk,
+        transcript_params,
+        worker,
+        cache_strategy,
+    )
+}
+
+#[cfg(not(feature = "allocator"))]
+pub fn gpu_prove_from_external_witness_data_with_cache_strategy<
+    TR: Transcript<F>,
+    H: GpuTreeHasher<Output = TR::CompatibleCap>,
+    POW: GPUPoWRunner,
+>(
+    config: &GpuProofConfig,
+    external_witness_data: &WitnessVec<F, std::alloc::Global>,
+    proof_config: ProofConfig,
+    setup: &GpuSetup<H>,
+    vk: &VerificationKey<F, H>,
+    transcript_params: TR::TransciptParameters,
+    worker: &Worker,
+    cache_strategy: CacheStrategy,
+) -> CudaResult<GpuProof<H, std::alloc::Global>> {
+    gpu_prove_from_external_witness_data_with_cache_strategy_inner::<TR, H, POW, std::alloc::Global>(
+        config,
+        external_witness_data,
+        proof_config,
+        setup,
+        vk,
+        transcript_params,
+        worker,
+        cache_strategy,
+    )
+}
+
+pub fn gpu_prove_from_external_witness_data_with_cache_strategy_inner<
     TR: Transcript<F>,
     H: GpuTreeHasher<Output = TR::CompatibleCap>,
     POW: GPUPoWRunner,

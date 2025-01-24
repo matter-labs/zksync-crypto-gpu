@@ -13,19 +13,17 @@ pub trait CombinedMonomialStorage {
     ) -> CudaResult<()>;
 }
 
-pub enum GenericCombinedStorage<F, A = GlobalStaticHost>
+pub enum GenericCombinedStorage<F>
 where
     F: PrimeField,
-    A: HostAllocator,
 {
-    HostBased(CombinedMonomialHostStorage<F, A>),
+    HostBased(CombinedMonomialHostStorage<F>),
     DeviceBased(CombinedMonomialDeviceStorage<F>),
 }
 
-impl<F, A> GenericCombinedStorage<F, A>
+impl<F> GenericCombinedStorage<F>
 where
     F: PrimeField,
-    A: HostAllocator,
 {
     pub fn allocate_on(device: &Device, domain_size: usize) -> CudaResult<Self> {
         match device {
@@ -39,17 +37,16 @@ where
             _ => {
                 println!("Using Host based combined storage");
                 Ok(GenericCombinedStorage::HostBased(
-                    CombinedMonomialHostStorage::<_, A>::allocate_on(domain_size)?,
+                    CombinedMonomialHostStorage::allocate_on(domain_size)?,
                 ))
             }
         }
     }
 }
 
-impl<F, A> CombinedMonomialStorage for GenericCombinedStorage<F, A>
+impl<F> CombinedMonomialStorage for GenericCombinedStorage<F>
 where
     F: PrimeField,
-    A: HostAllocator,
 {
     type Poly = Poly<F, MonomialBasis>;
 
@@ -127,20 +124,28 @@ where
     }
 }
 
-pub struct CombinedMonomialHostStorage<F: PrimeField, A: HostAllocator = GlobalStaticHost> {
-    pub(crate) combined_monomials: [Vec<F, A>; 3],
+pub struct CombinedMonomialHostStorage<F: PrimeField> {
+    #[cfg(feature = "allocator")]
+    pub(crate) combined_monomials: [Vec<F, GlobalStaticHost>; 3],
+    #[cfg(not(feature = "allocator"))]
+    pub(crate) combined_monomials: [Vec<F>; 3],
     pub(crate) events: [bc_event; 3],
 }
 
-impl<F, A> CombinedMonomialHostStorage<F, A>
+impl<F> CombinedMonomialHostStorage<F>
 where
     F: PrimeField,
-    A: HostAllocator,
 {
     fn allocate_on(domain_size: usize) -> CudaResult<Self> {
         let common_combined_degree = MAX_COMBINED_DEGREE_FACTOR * domain_size;
         let combined_monomials = std::array::from_fn(|_| {
-            let mut buf = Vec::with_capacity_in(common_combined_degree, A::default());
+            #[cfg(feature = "allocator")]
+            let mut buf = Vec::with_capacity_in(
+                common_combined_degree,
+                crate::allocator::GlobalStaticHost::default(),
+            );
+            #[cfg(not(feature = "allocator"))]
+            let mut buf = Vec::with_capacity(common_combined_degree);
             unsafe { buf.set_len(common_combined_degree) };
             buf
         });
@@ -155,10 +160,9 @@ where
     }
 }
 
-impl<F, A> CombinedMonomialStorage for CombinedMonomialHostStorage<F, A>
+impl<F> CombinedMonomialStorage for CombinedMonomialHostStorage<F>
 where
     F: PrimeField,
-    A: HostAllocator,
 {
     type Poly = Poly<F, MonomialBasis>;
 

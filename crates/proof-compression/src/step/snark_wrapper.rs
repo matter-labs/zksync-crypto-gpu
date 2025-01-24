@@ -66,7 +66,7 @@ pub(crate) trait SnarkWrapperStep: SnarkWrapperProofSystem {
     fn load_compact_raw_crs<BS>(blob_storage: &BS) -> AsyncHandler<Self::CRS>
     where
         BS: BlobStorage,
-        Self::Allocator: Send + Sync + 'static,
+        // Self::Allocator: Send + Sync + 'static,
     {
         assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
         let reader = blob_storage.read_compact_raw_crs();

@@ -27,13 +27,20 @@ pub(crate) type PlonkSnarkVerifierCircuitVK =
     PlonkVerificationKey<Bn256, PlonkSnarkVerifierCircuit>;
 pub(crate) type PlonkSnarkVerifierCircuitProof = PlonkProof<Bn256, PlonkSnarkVerifierCircuit>;
 pub(crate) type PlonkSnarkVerifierCircuitDeviceSetup = AsyncSetup;
-
+#[cfg(feature = "allocator")]
 type PlonkAssembly<CSConfig, A> = Assembly<
     Bn256,
     PlonkCsWidth4WithNextStepAndCustomGatesParams,
     SelectorOptimizedWidth4MainGateWithDNext,
     CSConfig,
     A,
+>;
+#[cfg(not(feature = "allocator"))]
+type PlonkAssembly<CSConfig> = Assembly<
+    Bn256,
+    PlonkCsWidth4WithNextStepAndCustomGatesParams,
+    SelectorOptimizedWidth4MainGateWithDNext,
+    CSConfig,
 >;
 
 pub(crate) struct UnsafePlonkProverDeviceMemoryManagerWrapper(
@@ -66,16 +73,21 @@ pub(crate) struct PlonkSnarkWrapper;
 impl ProofSystemDefinition for PlonkSnarkWrapper {
     type FieldElement = Fr;
     type Precomputation = PlonkSnarkVerifierCircuitDeviceSetupWrapper;
+    #[cfg(feature = "allocator")]
     type ExternalWitnessData = Vec<Self::FieldElement, Self::Allocator>;
+    #[cfg(not(feature = "allocator"))]
+    type ExternalWitnessData = Vec<Self::FieldElement>;
     type Proof = PlonkSnarkVerifierCircuitProof;
     type VK = PlonkSnarkVerifierCircuitVK;
     type FinalizationHint = usize;
+    #[cfg(feature = "allocator")]
     type Allocator = gpu_prover::cuda_bindings::CudaAllocator;
+    #[cfg(feature = "allocator")]
     type ProvingAssembly = PlonkAssembly<SynthesisModeProve, Self::Allocator>;
+    #[cfg(not(feature = "allocator"))]
+    type ProvingAssembly = PlonkAssembly<SynthesisModeProve>;
     type Transcript = RollingKeccakTranscript<Self::FieldElement>;
-    fn take_witnesses(
-        _proving_assembly: &mut Self::ProvingAssembly,
-    ) -> Vec<Self::FieldElement, Self::Allocator> {
+    fn take_witnesses(_proving_assembly: &mut Self::ProvingAssembly) -> Self::ExternalWitnessData {
         // let input_assignments =
         //     std::mem::replace(&mut proving_assembly.input_assingments, Vec::new());
         // let aux_assignments = std::mem::replace(
@@ -92,16 +104,21 @@ impl ProofSystemDefinition for PlonkSnarkWrapper {
         .unwrap()
     }
 }
+#[cfg(feature = "allocator")]
+pub type IgnitionCRS<A> =
+    bellman::kate_commitment::Crs<bellman::compact_bn256::Bn256, CrsForMonomialForm, A>;
+#[cfg(not(feature = "allocator"))]
+pub type IgnitionCRS =
+    bellman::kate_commitment::Crs<bellman::compact_bn256::Bn256, CrsForMonomialForm>;
 
 impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
     type Circuit = PlonkSnarkVerifierCircuit;
     type Context = UnsafePlonkProverDeviceMemoryManagerWrapper;
 
-    type CRS = bellman::kate_commitment::Crs<
-        bellman::compact_bn256::Bn256,
-        CrsForMonomialForm,
-        Self::Allocator,
-    >;
+    #[cfg(feature = "allocator")]
+    type CRS = IgnitionCRS<Self::Allocator>;
+    #[cfg(not(feature = "allocator"))]
+    type CRS = IgnitionCRS;
     fn pre_init() {
         // TODO: initialize static pinned memory
     }
@@ -120,7 +137,10 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
     }
 
     fn synthesize_for_proving(circuit: Self::Circuit) -> Self::ProvingAssembly {
+        #[cfg(feature = "allocator")]
         let mut proving_assembly = PlonkAssembly::<SynthesisModeProve, Self::Allocator>::new();
+        #[cfg(not(feature = "allocator"))]
+        let mut proving_assembly = PlonkAssembly::<SynthesisModeProve>::new();
         circuit
             .synthesize(&mut proving_assembly)
             .expect("must work");
@@ -161,7 +181,7 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
 
     fn prove_from_witnesses(
         _: AsyncHandler<Self::Context>,
-        _: Vec<Self::FieldElement, Self::Allocator>,
+        _: Self::ExternalWitnessData,
         _: AsyncHandler<Self::Precomputation>,
         _: Self::FinalizationHint,
     ) -> Self::Proof {
@@ -170,11 +190,13 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
 }
 
 impl SnarkWrapperProofSystemExt for PlonkSnarkWrapper {
+    #[cfg(feature = "allocator")]
     type SetupAssembly = PlonkAssembly<SynthesisModeGenerateSetup, Self::Allocator>;
+    #[cfg(not(feature = "allocator"))]
+    type SetupAssembly = PlonkAssembly<SynthesisModeGenerateSetup>;
 
     fn synthesize_for_setup(circuit: Self::Circuit) -> Self::SetupAssembly {
-        let mut setup_assembly =
-            PlonkAssembly::<SynthesisModeGenerateSetup, Self::Allocator>::new();
+        let mut setup_assembly = Self::SetupAssembly::new();
         circuit.synthesize(&mut setup_assembly).expect("must work");
         setup_assembly
     }
@@ -195,8 +217,11 @@ impl SnarkWrapperProofSystemExt for PlonkSnarkWrapper {
         let ctx = ctx.wait();
         let mut ctx = ctx.into_inner();
         let worker = bellman::worker::Worker::new();
+        #[cfg(feature = "allocator")]
         let mut precomputation =
             AsyncSetup::<Self::Allocator>::allocate(hardcoded_finalization_hint);
+        #[cfg(not(feature = "allocator"))]
+        let mut precomputation = AsyncSetup::allocate(hardcoded_finalization_hint);
         precomputation
             .generate_from_assembly(&worker, &setup_assembly, &mut ctx)
             .unwrap();

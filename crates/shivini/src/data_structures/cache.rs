@@ -4,9 +4,7 @@ use crate::data_structures::{GenericPolynomialStorageLayout, GenericStorage};
 use crate::gpu_proof_config::GpuProofConfig;
 use crate::oracle::SubTree;
 use crate::poly::{CosetEvaluations, LagrangeBasis, MonomialBasis};
-use crate::prover::{
-    compute_quotient_degree, gpu_prove_from_external_witness_data_with_cache_strategy,
-};
+use crate::prover::{compute_quotient_degree, gpu_prove_from_external_witness_data_with_cache_strategy_inner};
 use boojum::cs::implementations::prover::ProofConfig;
 use boojum::cs::implementations::transcript::Transcript;
 use boojum::cs::implementations::verifier::{VerificationKey, VerificationKeyCircuitGeometry};
@@ -759,17 +757,21 @@ impl CacheStrategy {
             for (_, strategy) in strategies.iter().copied() {
                 _setup_cache_reset();
                 dry_run_start();
-                let result =
-                    gpu_prove_from_external_witness_data_with_cache_strategy::<TR, H, POW, A>(
-                        config,
-                        external_witness_data,
-                        proof_config.clone(),
-                        setup,
-                        vk,
-                        transcript_params.clone(),
-                        worker,
-                        strategy,
-                    );
+                let result = gpu_prove_from_external_witness_data_with_cache_strategy_inner::<
+                    TR,
+                    H,
+                    POW,
+                    A,
+                >(
+                    config,
+                    external_witness_data,
+                    proof_config.clone(),
+                    setup,
+                    vk,
+                    transcript_params.clone(),
+                    worker,
+                    strategy,
+                );
                 _setup_cache_reset();
                 let result = result.and(dry_run_stop());
                 match result {

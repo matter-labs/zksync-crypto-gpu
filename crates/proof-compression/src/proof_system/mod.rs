@@ -1,5 +1,3 @@
-use std::alloc::Allocator;
-
 use super::*;
 
 mod boojum;

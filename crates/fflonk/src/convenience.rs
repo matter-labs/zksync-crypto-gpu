@@ -12,9 +12,12 @@ use circuit_definitions::circuit_definitions::aux_layer::{
     ZkSyncCompressionVerificationKeyForWrapper,
 };
 use fflonk::{FflonkAssembly, L1_VERIFIER_DOMAIN_SIZE_LOG};
-
+#[cfg(feature = "allocator")]
 pub type FflonkSnarkVerifierCircuitDeviceSetup<A: HostAllocator = std::alloc::Global> =
     FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, A>;
+#[cfg(not(feature = "allocator"))]
+pub type FflonkSnarkVerifierCircuitDeviceSetup =
+    FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit>;
 
 use super::*;
 
@@ -112,10 +115,15 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_single_shot(
     assert!(assembly.is_satisfied());
     let raw_trace_len = assembly.n();
     let domain_size = (raw_trace_len + 1).next_power_of_two();
-    DeviceContextWithSingleDevice::init_pinned_memory(domain_size).unwrap();
     let _context = DeviceContextWithSingleDevice::init(domain_size)
         .expect("Couldn't create fflonk GPU Context");
-
+    #[cfg(feature = "allocator")]
+    let setup =
+        FflonkDeviceSetup::<_, FflonkSnarkVerifierCircuit, std::alloc::Global>::create_setup_from_assembly_on_device(
+            &assembly,
+        )
+        .unwrap();
+    #[cfg(not(feature = "allocator"))]
     let setup =
         FflonkDeviceSetup::<_, FflonkSnarkVerifierCircuit>::create_setup_from_assembly_on_device(
             &assembly,
@@ -129,7 +137,17 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_single_shot(
     assert!(domain_size <= 1 << L1_VERIFIER_DOMAIN_SIZE_LOG);
 
     let start = std::time::Instant::now();
-    let proof = create_proof::<_, FflonkSnarkVerifierCircuit, _, RollingKeccakTranscript<_>, _>(
+    #[cfg(feature = "allocator")]
+    let proof = create_proof::<
+        _,
+        FflonkSnarkVerifierCircuit,
+        _,
+        RollingKeccakTranscript<_>,
+        std::alloc::Global,
+    >(&assembly, &setup, raw_trace_len)
+    .unwrap();
+    #[cfg(not(feature = "allocator"))]
+    let proof = create_proof::<_, FflonkSnarkVerifierCircuit, _, RollingKeccakTranscript<_>>(
         &assembly,
         &setup,
         raw_trace_len,
@@ -149,8 +167,11 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_with_precomputation(
     vk: &FflonkSnarkVerifierCircuitVK,
 ) -> FflonkSnarkVerifierCircuitProof {
     println!("Synthesizing for fflonk proving");
+    #[cfg(feature = "allocator")]
     let mut proving_assembly =
         FflonkAssembly::<Bn256, SynthesisModeProve, std::alloc::Global>::new();
+    #[cfg(not(feature = "allocator"))]
+    let mut proving_assembly = FflonkAssembly::<Bn256, SynthesisModeProve>::new();
     circuit
         .synthesize(&mut proving_assembly)
         .expect("must work");
@@ -162,7 +183,17 @@ pub fn gpu_prove_fflonk_snark_verifier_circuit_with_precomputation(
     assert!(domain_size <= 1 << L1_VERIFIER_DOMAIN_SIZE_LOG);
 
     let start = std::time::Instant::now();
-    let proof = create_proof::<_, FflonkSnarkVerifierCircuit, _, RollingKeccakTranscript<_>, _>(
+    #[cfg(feature = "allocator")]
+    let proof = create_proof::<
+        _,
+        FflonkSnarkVerifierCircuit,
+        _,
+        RollingKeccakTranscript<_>,
+        std::alloc::Global,
+    >(&proving_assembly, setup, raw_trace_len)
+    .unwrap();
+    #[cfg(not(feature = "allocator"))]
+    let proof = create_proof::<_, FflonkSnarkVerifierCircuit, _, RollingKeccakTranscript<_>>(
         &proving_assembly,
         setup,
         raw_trace_len,
@@ -184,11 +215,15 @@ pub fn precompute_and_save_setup_and_vk_for_fflonk_snark_circuit(
     println!("Compression mode: {compression_wrapper_mode}");
 
     println!("Generating fflonk setup data on the device");
+    #[cfg(feature = "allocator")]
     let device_setup =
         FflonkSnarkVerifierCircuitDeviceSetup::<std::alloc::Global>::create_setup_on_device(
             &circuit,
         )
         .unwrap();
+    #[cfg(not(feature = "allocator"))]
+    let device_setup =
+        FflonkSnarkVerifierCircuitDeviceSetup::create_setup_on_device(&circuit).unwrap();
     let setup_file_path = format!("{}/final_snark_device_setup.bin", path);
     println!("Saving setup into file {setup_file_path}");
     let device_setup_file = std::fs::File::create(&setup_file_path).unwrap();

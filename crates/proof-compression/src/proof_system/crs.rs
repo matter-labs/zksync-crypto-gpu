@@ -33,27 +33,35 @@ pub(crate) fn write_crs_into_raw_compact_form<W: std::io::Write>(
     Ok(())
 }
 
-pub(crate) fn read_crs_from_raw_compact_form<R: std::io::Read, A: Allocator + Default>(
-    mut src_raw_compact_crs: R,
+#[cfg(feature = "allocator")]
+pub(crate) fn read_crs_from_raw_compact_form<
+    R: std::io::Read,
+    A: std::alloc::Allocator + Default,
+>(
+    src_raw_compact_crs: R,
     num_g1_points: usize,
 ) -> std::io::Result<Crs<bellman::compact_bn256::Bn256, CrsForMonomialForm, A>> {
     // requested number of bases can be smaller than the available bases
-    use byteorder::{BigEndian, ReadBytesExt};
-    let actual_num_points = src_raw_compact_crs.read_u32::<BigEndian>()? as usize;
-    assert!(num_g1_points <= actual_num_points as usize);
     let mut g1_bases = Vec::with_capacity_in(num_g1_points, A::default());
-    unsafe {
-        g1_bases.set_len(num_g1_points);
-        let buf = std::slice::from_raw_parts_mut(
-            g1_bases.as_mut_ptr() as *mut u8,
-            num_g1_points * std::mem::size_of::<bellman::compact_bn256::G1Affine>(),
-        );
-        src_raw_compact_crs.read_exact(buf)?;
-    }
+    let mut g2_bases = Vec::with_capacity_in(2, A::default());
 
-    let g2_bases = hardcoded_g2_bases::<bellman::compact_bn256::Bn256>().to_vec_in(A::default());
+    ::fflonk::init_compact_crs_into(src_raw_compact_crs, &mut g1_bases, &mut g2_bases)?;
 
-    Ok(Crs::<_, CrsForMonomialForm, A>::new_in(g1_bases, g2_bases))
+    Ok(Crs::new_in(g1_bases, g2_bases))
+}
+
+#[cfg(not(feature = "allocator"))]
+pub(crate) fn read_crs_from_raw_compact_form<R: std::io::Read>(
+    src_raw_compact_crs: R,
+    num_g1_points: usize,
+) -> std::io::Result<Crs<bellman::compact_bn256::Bn256, CrsForMonomialForm>> {
+    // requested number of bases can be smaller than the available bases
+    let mut g1_bases = Vec::with_capacity(num_g1_points);
+    let mut g2_bases = Vec::with_capacity(2);
+
+    ::fflonk::init_compact_crs_into(src_raw_compact_crs, &mut g1_bases, &mut g2_bases)?;
+
+    Ok(Crs::new(g1_bases, g2_bases))
 }
 
 pub fn create_compact_raw_crs<W: std::io::Write>(dst: W) {

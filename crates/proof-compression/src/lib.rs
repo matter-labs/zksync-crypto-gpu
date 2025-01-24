@@ -1,5 +1,5 @@
 #![feature(generic_const_exprs)]
-#![feature(allocator_api)]
+#![cfg_attr(feature = "allocator", feature(allocator_api))]
 
 mod blob_storage;
 pub use blob_storage::*;

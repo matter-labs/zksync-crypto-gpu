@@ -76,10 +76,16 @@ impl GenericWrapper for PlonkSnarkVerifierCircuitDeviceSetupWrapper {
     }
 }
 
-pub(crate) struct FflonkSnarkVerifierCircuitDeviceSetupWrapper<A: HostAllocator>(
-    pub fflonk::FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, A>,
+pub(crate) struct FflonkSnarkVerifierCircuitDeviceSetupWrapper<
+    #[cfg(feature = "allocator")] A: HostAllocator,
+>(
+    #[cfg(feature = "allocator")]
+    pub  fflonk::FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, A>,
+    #[cfg(not(feature = "allocator"))]
+    pub  fflonk::FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit>,
 );
 
+#[cfg(feature = "allocator")]
 impl<A> MemcopySerializable for FflonkSnarkVerifierCircuitDeviceSetupWrapper<A>
 where
     A: HostAllocator,
@@ -97,12 +103,40 @@ where
         Ok(Self(precomputation))
     }
 }
+#[cfg(not(feature = "allocator"))]
+impl MemcopySerializable for FflonkSnarkVerifierCircuitDeviceSetupWrapper {
+    fn write_into_buffer<W: std::io::Write>(
+        &self,
+        dst: W,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(self.0.write(dst).unwrap())
+    }
 
+    fn read_from_buffer<R: std::io::Read>(src: R) -> Result<Self, Box<dyn std::error::Error>> {
+        let precomputation = fflonk::FflonkDeviceSetup::<Bn256, _>::read(src).unwrap();
+
+        Ok(Self(precomputation))
+    }
+}
+
+#[cfg(feature = "allocator")]
 impl<A> GenericWrapper for FflonkSnarkVerifierCircuitDeviceSetupWrapper<A>
 where
     A: HostAllocator,
 {
     type Inner = fflonk::FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, A>;
+    fn into_inner(self) -> Self::Inner {
+        self.0
+    }
+
+    fn from_inner(inner: Self::Inner) -> Self {
+        Self(inner)
+    }
+}
+
+#[cfg(not(feature = "allocator"))]
+impl GenericWrapper for FflonkSnarkVerifierCircuitDeviceSetupWrapper {
+    type Inner = fflonk::FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit>;
     fn into_inner(self) -> Self::Inner {
         self.0
     }

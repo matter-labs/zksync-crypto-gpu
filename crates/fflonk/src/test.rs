@@ -50,13 +50,17 @@ fn test_simple_circuit_with_naive_main_gate() {
     let setup = FflonkDeviceSetup::create_setup_on_device(&circuit).unwrap();
     let vk = setup.get_verification_key();
     assert_eq!(vk.n + 1, domain_size);
-
+    #[cfg(feature = "allocator")]
     let proof = create_proof::<_, C, _, RollingKeccakTranscript<Fr>, std::alloc::Global>(
         &assembly,
         &setup,
         raw_trace_len,
     )
     .expect("proof");
+    #[cfg(not(feature = "allocator"))]
+    let proof =
+        create_proof::<_, C, _, RollingKeccakTranscript<Fr>>(&assembly, &setup, raw_trace_len)
+            .expect("proof");
 
     let valid = fflonk::verify::<_, _, RollingKeccakTranscript<Fr>>(&vk, &proof, None).unwrap();
     assert!(valid, "proof verification fails");

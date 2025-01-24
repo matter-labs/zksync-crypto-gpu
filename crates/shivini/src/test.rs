@@ -816,6 +816,7 @@ mod zksync {
     };
     use era_cudart::memory::memory_get_info;
     use era_cudart_sys::CudaError;
+    use prover::gpu_prove_from_external_witness_data_with_cache_strategy_inner;
     use serde::{Deserialize, Serialize};
     use synthesis_utils::synthesize_compression_circuit;
 
@@ -1773,11 +1774,11 @@ mod zksync {
         let config =
             ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
         let ctx = ProverContext::create_with_config(config).expect("gpu prover context");
-        let gpu_proof = gpu_prove_from_external_witness_data_with_cache_strategy::<
+        let gpu_proof = gpu_prove_from_external_witness_data_with_cache_strategy_inner::<
             CompressionProofsTranscript,
             CompressionProofsTreeHasher,
             CF::ThisLayerPoW,
-            Global,
+            std::alloc::Global,
         >(
             &gpu_cfg,
             witness,
@@ -1862,11 +1863,11 @@ mod zksync {
         let config =
             ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
         let ctx = ProverContext::create_with_config(config).expect("gpu prover context");
-        let gpu_proof = gpu_prove_from_external_witness_data_with_cache_strategy::<
+        let gpu_proof = gpu_prove_from_external_witness_data_with_cache_strategy_inner::<
             CompressionTranscriptForWrapper,
             CompressionTreeHasherForWrapper,
             CF::ThisLayerPoW,
-            Global,
+            std::alloc::Global
         >(
             &gpu_cfg,
             witness,

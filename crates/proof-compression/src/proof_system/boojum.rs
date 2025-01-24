@@ -6,7 +6,7 @@ use shivini::{
                 proof::Proof, reference_cs::CSReferenceAssembly, setup::FinalizationHintsForProver,
                 transcript::Transcript, verifier::VerificationKey, witness::WitnessVec,
             },
-            traits::{circuit::CircuitBuilderProxy, GoodAllocator},
+            traits::circuit::CircuitBuilderProxy,
         },
         worker::Worker,
     },
@@ -23,8 +23,11 @@ use super::*;
 pub(crate) use shivini::boojum;
 pub(crate) use shivini::boojum::field::goldilocks::{GoldilocksExt2, GoldilocksField};
 
+#[cfg(feature = "allocator")]
 type BoojumAssembly<CSConfig, A> =
     CSReferenceAssembly<GoldilocksField, GoldilocksField, CSConfig, A>;
+#[cfg(not(feature = "allocator"))]
+type BoojumAssembly<CSConfig> = CSReferenceAssembly<GoldilocksField, GoldilocksField, CSConfig>;
 
 impl<CF> ProofSystemDefinition for CF
 where
@@ -39,13 +42,20 @@ where
         > + 'static,
 {
     type FieldElement = GoldilocksField;
+    #[cfg(feature = "allocator")]
     type ExternalWitnessData = WitnessVec<Self::FieldElement, Self::Allocator>;
+    #[cfg(not(feature = "allocator"))]
+    type ExternalWitnessData = WitnessVec<Self::FieldElement>;
     type Precomputation = BoojumDeviceSetupWrapper<CF::ThisLayerHasher>;
     type Proof = Proof<Self::FieldElement, CF::ThisLayerHasher, GoldilocksExt2>;
     type VK = VerificationKey<Self::FieldElement, CF::ThisLayerHasher>;
     type FinalizationHint = FinalizationHintsForProver;
+    #[cfg(feature = "allocator")]
     type Allocator = std::alloc::Global;
+    #[cfg(feature = "allocator")]
     type ProvingAssembly = BoojumAssembly<ProvingCSConfig, Self::Allocator>;
+    #[cfg(not(feature = "allocator"))]
+    type ProvingAssembly = BoojumAssembly<ProvingCSConfig>;
     type Transcript = CF::ThisLayerTranscript;
     fn verify(proof: &Self::Proof, vk: &Self::VK) -> bool {
         let verifier_builder =
@@ -117,7 +127,10 @@ where
         circuit.add_tables(&mut cs);
         circuit.synthesize_into_cs(&mut cs);
         let _ = cs.pad_and_shrink_using_hint(&finalization_hint);
+        #[cfg(feature = "allocator")]
         let cs = cs.into_assembly::<std::alloc::Global>();
+        #[cfg(not(feature = "allocator"))]
+        let cs = cs.into_assembly();
 
         cs
     }
@@ -159,11 +172,29 @@ where
         let worker = Worker::new();
         let precomputation = precomputation.wait().into_inner();
         let ctx = ctx.wait();
+        // TODO: shivini requires huge changes to make allocator_api conditional
+        #[cfg(feature = "allocator")]
         let gpu_proof = shivini::gpu_prove_from_external_witness_data_with_cache_strategy::<
             CF::ThisLayerTranscript,
             CF::ThisLayerHasher,
             CF::ThisLayerPoW,
             Self::Allocator,
+        >(
+            &aux_config,
+            &witness,
+            CF::proof_config_for_compression_step(),
+            &precomputation,
+            &vk,
+            (),
+            &worker,
+            cache_strategy,
+        )
+        .expect("gpu proof");
+        #[cfg(not(feature = "allocator"))]
+        let gpu_proof = shivini::gpu_prove_from_external_witness_data_with_cache_strategy::<
+            CF::ThisLayerTranscript,
+            CF::ThisLayerHasher,
+            CF::ThisLayerPoW,
         >(
             &aux_config,
             &witness,
@@ -193,9 +224,11 @@ where
             >,
             ThisLayerPoW: GPUPoWRunner,
         > + 'static,
-    Self::Allocator: GoodAllocator,
 {
+    #[cfg(feature = "allocator")]
     type SetupAssembly = BoojumAssembly<SetupCSConfig, Self::Allocator>;
+    #[cfg(not(feature = "allocator"))]
+    type SetupAssembly = BoojumAssembly<SetupCSConfig>;
     fn generate_precomputation_and_vk(
         ctx: AsyncHandler<Self::Context>,
         setup_assembly: Self::SetupAssembly,
@@ -238,7 +271,10 @@ where
         circuit.add_tables(&mut cs);
         circuit.synthesize_into_cs(&mut cs);
         let (_domain_size, finalization_hint) = cs.pad_and_shrink();
+        #[cfg(feature = "allocator")]
         let cs = cs.into_assembly::<std::alloc::Global>();
+        #[cfg(not(feature = "allocator"))]
+        let cs = cs.into_assembly();
 
         (finalization_hint, cs)
     }

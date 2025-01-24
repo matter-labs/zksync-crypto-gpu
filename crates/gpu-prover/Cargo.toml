@@ -20,9 +20,8 @@ num_cpus = "1"
 itertools = "0.10"
 cfg-if = "1"
 bit-vec = "0.6"
-serde = {version = "1", features = ["derive", "rc"]}
+serde = { version = "1", features = ["derive", "rc"] }
 
 [features]
-default = ["allocator"]
-no_allocator = ["franklin-crypto"]
+default = ["franklin-crypto"]
 allocator = ["franklin-crypto/allocator"]

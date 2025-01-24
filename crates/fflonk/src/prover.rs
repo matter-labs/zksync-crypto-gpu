@@ -2,7 +2,7 @@ use super::*;
 
 use bellman::{
     plonk::{
-        better_better_cs::cs::{Circuit, SynthesisMode},
+        better_better_cs::cs::{Circuit, SynthesisMode, SynthesisModeProve},
         better_cs::generator::make_non_residues,
         commitments::transcript::Transcript,
     },
@@ -12,9 +12,11 @@ use fflonk::{
     commit_point_as_xy, compute_generators, horner_evaluation, FflonkAssembly, FflonkProof,
 };
 
-pub fn create_proof<E, C, S, T, A>(
-    assembly: &FflonkAssembly<E, S, A>,
-    setup: &FflonkDeviceSetup<E, C, A>,
+pub fn create_proof<E, C, S, T, #[cfg(feature = "allocator")] A: HostAllocator>(
+    #[cfg(feature = "allocator")] assembly: &FflonkAssembly<E, S, A>,
+    #[cfg(not(feature = "allocator"))] assembly: &FflonkAssembly<E, S>,
+    #[cfg(feature = "allocator")] setup: &FflonkDeviceSetup<E, C, A>,
+    #[cfg(not(feature = "allocator"))] setup: &FflonkDeviceSetup<E, C>,
     raw_trace_len: usize,
 ) -> CudaResult<FflonkProof<E, C>>
 where
@@ -22,7 +24,6 @@ where
     C: Circuit<E>,
     S: SynthesisMode,
     T: Transcript<E::Fr>,
-    A: HostAllocator,
 {
     assert!(S::PRODUCE_WITNESS);
     assert!(assembly.is_finalized);
@@ -57,8 +58,9 @@ where
     // Allocate same length buffer to prevent fragmentation
     let common_combined_degree = MAX_COMBINED_DEGREE_FACTOR * domain_size;
     let device = Device::model();
+
     let mut combined_monomial_storage =
-        GenericCombinedStorage::<E::Fr, GlobalStaticHost>::allocate_on(&device, domain_size)?;
+        GenericCombinedStorage::<E::Fr>::allocate_on(&device, domain_size)?;
     let start = std::time::Instant::now();
     let ([c1_commitment, c2_commitment], h_all_evaluations, h_aux_evaluations, challenges) =
         prove_arguments(
@@ -99,9 +101,11 @@ where
     Ok(proof)
 }
 
-pub fn prove_arguments<E, C, S, T, CM, A>(
-    assembly: &FflonkAssembly<E, S, A>,
-    setup: &FflonkDeviceSetup<E, C, A>,
+pub fn prove_arguments<E, C, S, T, CM, #[cfg(feature = "allocator")] A: HostAllocator>(
+    #[cfg(feature = "allocator")] assembly: &FflonkAssembly<E, S, A>,
+    #[cfg(not(feature = "allocator"))] assembly: &FflonkAssembly<E, S>,
+    #[cfg(feature = "allocator")] setup: &FflonkDeviceSetup<E, C, A>,
+    #[cfg(not(feature = "allocator"))] setup: &FflonkDeviceSetup<E, C>,
     combined_monomial_stoarge: &mut CM,
     transcript: &mut T,
     raw_trace_len: usize,
@@ -114,7 +118,6 @@ where
     S: SynthesisMode,
     T: Transcript<E::Fr>,
     CM: CombinedMonomialStorage<Poly = Poly<E::Fr, MonomialBasis>>,
-    A: HostAllocator,
 {
     assert!(assembly.is_finalized);
     let domain_size = (raw_trace_len + 1).next_power_of_two();
@@ -590,8 +593,9 @@ where
     ))
 }
 
-pub fn load_main_gate_selectors<F: PrimeField, A: HostAllocator>(
-    h_main_gate_selector_monomials: &[Vec<F, A>; 5],
+pub fn load_main_gate_selectors<F: PrimeField, #[cfg(feature = "allocator")] A: HostAllocator>(
+    #[cfg(feature = "allocator")] h_main_gate_selector_monomials: &[Vec<F, A>; 5],
+    #[cfg(not(feature = "allocator"))] h_main_gate_selector_monomials: &[Vec<F>; 5],
     domain_size: usize,
     stream: bc_stream,
 ) -> CudaResult<MainGateSelectors<F>> {
@@ -609,8 +613,13 @@ pub fn load_main_gate_selectors<F: PrimeField, A: HostAllocator>(
     Ok(selectors_monomial)
 }
 
-pub fn load_permutation_monomials<E: Engine, S: SynthesisMode, A: HostAllocator>(
-    assembly: &FflonkAssembly<E, S, A>,
+pub fn load_permutation_monomials<
+    E: Engine,
+    S: SynthesisMode,
+    #[cfg(feature = "allocator")] A: HostAllocator,
+>(
+    #[cfg(feature = "allocator")] assembly: &FflonkAssembly<E, S, A>,
+    #[cfg(not(feature = "allocator"))] assembly: &FflonkAssembly<E, S>,
     domain_size: usize,
     stream: bc_stream,
 ) -> CudaResult<Permutations<E::Fr>> {
@@ -642,8 +651,13 @@ pub fn load_permutation_monomials<E: Engine, S: SynthesisMode, A: HostAllocator>
     Ok(permutation_monomials)
 }
 
-pub fn load_trace_from_precomputations<E: Engine, S: SynthesisMode, A: HostAllocator>(
-    assembly: &FflonkAssembly<E, S, A>,
+pub fn load_trace_from_precomputations<
+    E: Engine,
+    S: SynthesisMode,
+    #[cfg(feature = "allocator")] A: HostAllocator,
+>(
+    #[cfg(feature = "allocator")] assembly: &FflonkAssembly<E, S, A>,
+    #[cfg(not(feature = "allocator"))] assembly: &FflonkAssembly<E, S>,
     raw_trace_len: usize,
     stream: bc_stream,
 ) -> CudaResult<Trace<E::Fr>> {
@@ -669,9 +683,11 @@ pub fn load_trace_from_precomputations<E: Engine, S: SynthesisMode, A: HostAlloc
     Ok(trace_monomials)
 }
 
-pub fn load_trace<E: Engine, S: SynthesisMode, A: HostAllocator>(
-    assembly: &FflonkAssembly<E, S, A>,
-    h_index_cols: &[Vec<u32, A>; 3],
+pub fn load_trace<E: Engine, S: SynthesisMode, #[cfg(feature = "allocator")] A: HostAllocator>(
+    #[cfg(feature = "allocator")] assembly: &FflonkAssembly<E, S, A>,
+    #[cfg(not(feature = "allocator"))] assembly: &FflonkAssembly<E, S>,
+    #[cfg(feature = "allocator")] h_index_cols: &[Vec<u32, A>; 3],
+    #[cfg(not(feature = "allocator"))] h_index_cols: &[Vec<u32>; 3],
     raw_trace_len: usize,
     stream: bc_stream,
 ) -> CudaResult<(Trace<E::Fr>, DVec<u32, PoolAllocator>)> {

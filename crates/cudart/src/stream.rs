@@ -129,6 +129,8 @@ impl Drop for CudaStream {
     }
 }
 
+unsafe impl Sync for CudaStream {}
+
 impl From<&CudaStream> for cudaStream_t {
     fn from(stream: &CudaStream) -> Self {
         stream.handle

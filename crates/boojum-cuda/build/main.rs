@@ -17,13 +17,12 @@ fn main() {
         println!("cargo::rustc-cfg=no_cuda");
     } else {
         use era_cudart_sys::{get_cuda_lib_path, get_cuda_version};
-        use std::env::var;
         let cuda_version =
             get_cuda_version().expect("Failed to determine the CUDA Toolkit version.");
         if !cuda_version.starts_with("12.") {
             println!("cargo::warning=CUDA Toolkit version {cuda_version} detected. This crate is only tested with CUDA Toolkit 12.*.");
         }
-        let cudaarchs = var("CUDAARCHS").unwrap_or("native".to_string());
+        let cudaarchs = std::env::var("CUDAARCHS").unwrap_or("native".to_string());
         let dst = cmake::Config::new("native")
             .profile("Release")
             .define("CMAKE_CUDA_ARCHITECTURES", cudaarchs)

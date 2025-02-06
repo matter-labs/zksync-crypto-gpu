@@ -1,13 +1,12 @@
 // Stream Ordered Memory Allocator
 // https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__MEMORY__POOLS.html
 
+use era_cudart_sys::*;
 use std::alloc::Layout;
 use std::mem;
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
-use std::os::raw::c_void;
-
-use era_cudart_sys::*;
+use std::ptr::NonNull;
 
 use crate::result::{CudaResult, CudaResultWrap};
 use crate::slice::{AllocationData, CudaSlice, CudaSliceMut, DeviceSlice};
@@ -55,7 +54,7 @@ impl CudaMemPool {
     }
 
     pub fn get_access(&self, location: CudaMemLocation) -> CudaResult<CudaMemAccessFlags> {
-        let mut result = MaybeUninit::<CudaMemAccessFlags>::uninit();
+        let mut result = MaybeUninit::uninit();
         unsafe {
             cudaMemPoolGetAccess(
                 result.as_mut_ptr(),
@@ -67,12 +66,12 @@ impl CudaMemPool {
     }
 
     pub fn get_attribute_value<T: Into<i32>, U>(&self, attribute: T) -> CudaResult<U> {
-        let mut value = MaybeUninit::<U>::uninit();
+        let mut value = MaybeUninit::uninit();
         unsafe {
             cudaMemPoolGetAttribute(
                 self.handle,
                 mem::transmute::<i32, CudaMemPoolAttribute>(attribute.into()),
-                value.as_mut_ptr() as *mut c_void,
+                value.as_mut_ptr() as _,
             )
             .wrap_maybe_uninit(value)
         }
@@ -87,7 +86,7 @@ impl CudaMemPool {
             cudaMemPoolSetAttribute(
                 self.handle,
                 mem::transmute::<i32, CudaMemPoolAttribute>(attribute.into()),
-                &value as *const _ as *mut c_void,
+                &value as *const _ as _,
             )
             .wrap()
         }
@@ -156,7 +155,7 @@ impl CudaOwnedMemPool {
     }
 
     pub fn create(properties: &CudaMemPoolProperties) -> CudaResult<Self> {
-        let mut handle = MaybeUninit::<cudaMemPool_t>::uninit();
+        let mut handle = MaybeUninit::uninit();
         unsafe {
             cudaMemPoolCreate(handle.as_mut_ptr(), properties)
                 .wrap_maybe_uninit(handle)
@@ -207,15 +206,12 @@ pub struct DevicePoolAllocation<'a, T> {
 impl<'a, T> DevicePoolAllocation<'a, T> {
     pub fn alloc_async(length: usize, stream: &'a CudaStream) -> CudaResult<Self> {
         let layout = Layout::array::<T>(length).unwrap();
-        let mut dev_ptr = MaybeUninit::<*mut c_void>::uninit();
+        let mut dev_ptr = MaybeUninit::uninit();
         unsafe {
             cudaMallocAsync(dev_ptr.as_mut_ptr(), layout.size(), stream.into())
                 .wrap_maybe_uninit(dev_ptr)
                 .map(|ptr| Self {
-                    data: AllocationData {
-                        ptr: ptr as *mut T,
-                        len: length,
-                    },
+                    data: AllocationData::new_unchecked(ptr as _, length),
                     stream,
                 })
         }
@@ -227,7 +223,7 @@ impl<'a, T> DevicePoolAllocation<'a, T> {
         stream: &'a CudaStream,
     ) -> CudaResult<Self> {
         let layout = Layout::array::<T>(length).unwrap();
-        let mut dev_ptr = MaybeUninit::<*mut c_void>::uninit();
+        let mut dev_ptr = MaybeUninit::uninit();
         unsafe {
             cudaMallocFromPoolAsync(
                 dev_ptr.as_mut_ptr(),
@@ -237,10 +233,7 @@ impl<'a, T> DevicePoolAllocation<'a, T> {
             )
             .wrap_maybe_uninit(dev_ptr)
             .map(|ptr| Self {
-                data: AllocationData {
-                    ptr: ptr as *mut T,
-                    len: length,
-                },
+                data: AllocationData::new_unchecked(ptr as _, length),
                 stream,
             })
         }
@@ -248,17 +241,14 @@ impl<'a, T> DevicePoolAllocation<'a, T> {
 
     pub fn free_async(self, stream: &CudaStream) -> CudaResult<()> {
         unsafe {
-            let ptr = self.as_c_void_ptr() as *mut c_void;
+            let ptr = self.as_c_void_ptr() as _;
             mem::forget(self);
             cudaFreeAsync(ptr, stream.into()).wrap()
         }
     }
 
     pub fn swap_stream(self, stream: &CudaStream) -> DevicePoolAllocation<T> {
-        let data = AllocationData {
-            ptr: self.data.ptr,
-            len: self.data.len,
-        };
+        let data = AllocationData::new(self.data.ptr, self.data.len);
         mem::forget(self);
         DevicePoolAllocation { data, stream }
     }
@@ -266,14 +256,14 @@ impl<'a, T> DevicePoolAllocation<'a, T> {
     /// # Safety
     ///
     /// The caller must ensure that the inputs are valid.
-    pub unsafe fn from_raw_parts(ptr: *mut T, len: usize, stream: &'a CudaStream) -> Self {
+    pub unsafe fn from_raw_parts(ptr: NonNull<T>, len: usize, stream: &'a CudaStream) -> Self {
         Self {
-            data: AllocationData { ptr, len },
+            data: AllocationData::new(ptr, len),
             stream,
         }
     }
 
-    pub fn into_raw_parts(self) -> (*mut T, usize, &'a CudaStream) {
+    pub fn into_raw_parts(self) -> (NonNull<T>, usize, &'a CudaStream) {
         let result = (self.data.ptr, self.data.len, self.stream);
         mem::forget(self);
         result
@@ -509,7 +499,7 @@ mod tests {
         let stream = CudaStream::create().unwrap();
         let allocation =
             DevicePoolAllocation::<u32>::alloc_from_pool_async(LENGTH, &pool, &stream).unwrap();
-        let size = mem::size_of::<u32>() * LENGTH;
+        let size = size_of::<u32>() * LENGTH;
         let used = pool
             .get_attribute(CudaMemPoolAttributeU64::AttrUsedMemCurrent)
             .unwrap() as usize;

@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.152.12](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.11...v0.152.12) (2025-02-07)
+
+
+### Features
+
+* Bump crypto versions ([#76](https://github.com/matter-labs/zksync-crypto-gpu/issues/76)) ([b8cec04](https://github.com/matter-labs/zksync-crypto-gpu/commit/b8cec04e0266fb60f83f95f350c9e711f6acf75b))
+* **cudart:** refactor allocations and stream ([#75](https://github.com/matter-labs/zksync-crypto-gpu/issues/75)) ([9c0bedc](https://github.com/matter-labs/zksync-crypto-gpu/commit/9c0bedc1fe29afcf7fcef03af7a0611e5611dcde))
+
+
+### Bug Fixes
+
+* **ci:** bump deprecated actions/download-artifact and actions/upload-artifact v3 to v4 ([#74](https://github.com/matter-labs/zksync-crypto-gpu/issues/74)) ([5727c7c](https://github.com/matter-labs/zksync-crypto-gpu/commit/5727c7c37a10a1be555cb9dac5685245491ae9fa))
+* **ci:** Update github-hosted runner label ([#70](https://github.com/matter-labs/zksync-crypto-gpu/issues/70)) ([822c276](https://github.com/matter-labs/zksync-crypto-gpu/commit/822c276de858d69188ef8874aa8a00208fadc6a4))
+* **cudart-sys:** strip the "V" from the version string ([#73](https://github.com/matter-labs/zksync-crypto-gpu/issues/73)) ([76cfc1c](https://github.com/matter-labs/zksync-crypto-gpu/commit/76cfc1c8f6fb5e0042b78bf675b6a6a1f52373e8))
+
 ## [0.152.11](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.10...v0.152.11) (2025-01-17)
 
 

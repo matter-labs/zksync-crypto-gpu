@@ -15,7 +15,7 @@ version = "0.152.11"
 
 [workspace.dependencies]
 # Local dependencies
-boojum-cuda = { version = "=0.152.1", path = "crates/boojum-cuda" }
+boojum-cuda = { version = "=0.152.11", path = "crates/boojum-cuda" }
 era_criterion_cuda = { version = "=0.152.11", path = "crates/criterion-cuda" }
 era_cudart = { version = "=0.152.11", path = "crates/cudart" }
 era_cudart_sys = { version = "=0.152.11", path = "crates/cudart-sys" }

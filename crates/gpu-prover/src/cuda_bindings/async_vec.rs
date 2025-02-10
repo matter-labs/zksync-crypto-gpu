@@ -3,11 +3,12 @@ use bellman::PrimeField;
 use core::ops::Range;
 use std::io::{Read, Write};
 
-pub struct AsyncVec<T, #[cfg(feature = "allocator")] A: Allocator = CudaAllocator> {
+pub struct AsyncVec<T: Copy, #[cfg(feature = "allocator")] A: Allocator = CudaAllocator> {
     #[cfg(feature = "allocator")]
-    pub values: Option<Vec<T, A>>,
+    values: Option<Vec<T, A>>,
     #[cfg(not(feature = "allocator"))]
-    pub values: Option<Vec<T>>,
+    values: Option<Vec<T>>,
+    pub(crate) data_is_set: bool,
     pub(crate) read_event: Event,
     pub(crate) write_event: Event,
 }
@@ -17,10 +18,10 @@ use std::fmt;
 macro_rules! impl_async_vec {
     (impl AsyncVec $inherent:tt) => {
         #[cfg(feature = "allocator")]
-        impl<T, A: Allocator + Default> AsyncVec<T, A> $inherent
+        impl<T: Copy, A: Allocator + Default> AsyncVec<T, A> $inherent
 
         #[cfg(not(feature = "allocator"))]
-        impl<T> AsyncVec<T> $inherent
+        impl<T: Copy> AsyncVec<T> $inherent
     };
 }
 
@@ -37,17 +38,20 @@ impl_async_vec! {
 
             Self {
                 values: Some(values),
+                data_is_set: false,
                 read_event: Event::new(),
                 write_event: Event::new(),
             }
         }
 
         pub fn get_values(&self) -> GpuResult<&[T]> {
+            assert!(self.data_is_set, "AsyncVec should be filled with some data");
             self.write_event.sync()?;
             Ok(self.values.as_ref().expect("async_vec inner is none"))
         }
 
         pub fn get_values_mut(&mut self) -> GpuResult<&mut [T]> {
+            assert!(self.data_is_set, "AsyncVec should be filled with some data");
             self.read_event.sync()?;
             self.write_event.sync()?;
             Ok(self.values.as_mut().expect("async_vec inner is none"))
@@ -60,6 +64,7 @@ impl_async_vec! {
             this_range: Range<usize>,
             other_range: Range<usize>,
         ) -> GpuResult<()> {
+            assert!(self.data_is_set, "AsyncVec should be filled with some data");
             assert_eq!(this_range.len(), other_range.len());
             let length = std::mem::size_of::<T>() * this_range.len();
             set_device(ctx.device_id())?;
@@ -76,6 +81,7 @@ impl_async_vec! {
                     ctx.h2d_stream().inner,
                 )
             };
+            other.data_is_set = true;
 
             if result != 0 {
                 return Err(GpuError::AsyncH2DErr(result));
@@ -94,6 +100,7 @@ impl_async_vec! {
             this_range: Range<usize>,
             other_range: Range<usize>,
         ) -> GpuResult<()> {
+            assert!(other.data_is_set, "DeviceBuf should be filled with some data");
             assert_eq!(this_range.len(), other_range.len());
             let length = std::mem::size_of::<T>() * this_range.len();
             set_device(ctx.device_id())?;
@@ -117,6 +124,7 @@ impl_async_vec! {
 
             self.write_event.record(ctx.d2h_stream())?;
             other.read_event.record(ctx.d2h_stream())?;
+            self.data_is_set = true;
 
             Ok(())
         }
@@ -126,6 +134,7 @@ impl_async_vec! {
         }
         #[cfg(feature = "allocator")]
         pub fn into_inner(mut self) -> GpuResult<std::vec::Vec<T, A>> {
+            assert!(self.data_is_set, "AsyncVec should be filled with some data");
             self.read_event.sync()?;
             self.write_event.sync()?;
 
@@ -134,6 +143,7 @@ impl_async_vec! {
 
         #[cfg(not(feature = "allocator"))]
         pub fn into_inner(mut self) -> GpuResult<std::vec::Vec<T>> {
+            assert!(self.data_is_set, "AsyncVec should be filled with some data");
             self.read_event.sync()?;
             self.write_event.sync()?;
 
@@ -156,26 +166,59 @@ impl_async_vec! {
             self.values.as_mut().expect("async_vec inner is none")[range].as_mut_ptr()
         }
 
-        pub fn zeroize(&mut self){
-            let unit_len = std::mem::size_of::<T>();
-            let total_len = unit_len * self.len();
-            let dst = self.as_mut_ptr(0..self.len()) as *mut u8;
-            unsafe{std::ptr::write_bytes(dst, 0, total_len)};
+        pub fn fill(&mut self, value: T) -> GpuResult<()> {
+            self.read_event.sync()?;
+            self.write_event.sync()?;
+
+            self.values.as_mut().unwrap().fill(value);
+            self.data_is_set = true;
+
+            Ok(())
+        }
+
+        pub fn copy_from_slice(&mut self, src: &[T]) -> GpuResult<()> {
+            self.read_event.sync()?;
+            self.write_event.sync()?;
+
+            // copy_from_slice checks the equality of lengths
+            self.values.as_mut().unwrap().copy_from_slice(src);
+            self.data_is_set = true;
+
+            Ok(())
+        }
+
+        pub fn async_copy_from_slice(&mut self, worker: &Worker, src: &[T]) -> GpuResult<()> 
+            where T: Send + Sync
+        {
+            self.read_event.sync()?;
+            self.write_event.sync()?;
+
+            // async_copy checks the equality of lengths
+            async_copy(
+                worker,
+                self.values.as_mut().unwrap(),
+                src,
+            );
+            self.data_is_set = true;
+
+            Ok(())
         }
     }
 }
 
 #[cfg(feature = "allocator")]
-impl<T: fmt::Debug, A: Allocator + Default> fmt::Debug for AsyncVec<T, A> {
+impl<T: fmt::Debug + Copy, A: Allocator + Default> fmt::Debug for AsyncVec<T, A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        assert!(self.data_is_set, "AsyncVec should be filled with some data");
         f.debug_struct("AsyncVec")
             .field("Values", &self.get_values().unwrap())
             .finish()
     }
 }
 #[cfg(not(feature = "allocator"))]
-impl<T: fmt::Debug> fmt::Debug for AsyncVec<T> {
+impl<T: fmt::Debug + Copy> fmt::Debug for AsyncVec<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        assert!(self.data_is_set, "AsyncVec should be filled with some data");
         f.debug_struct("AsyncVec")
             .field("Values", &self.get_values().unwrap())
             .finish()
@@ -183,20 +226,22 @@ impl<T: fmt::Debug> fmt::Debug for AsyncVec<T> {
 }
 
 #[cfg(feature = "allocator")]
-impl<T, A: Allocator> From<Vec<T, A>> for AsyncVec<T, A> {
+impl<T: Copy, A: Allocator> From<Vec<T, A>> for AsyncVec<T, A> {
     fn from(values: Vec<T, A>) -> Self {
         Self {
             values: Some(values),
+            data_is_set: true,
             read_event: Event::new(),
             write_event: Event::new(),
         }
     }
 }
 #[cfg(not(feature = "allocator"))]
-impl<T> From<Vec<T>> for AsyncVec<T> {
+impl<T: Copy> From<Vec<T>> for AsyncVec<T> {
     fn from(values: Vec<T>) -> Self {
         Self {
             values: Some(values),
+            data_is_set: true,
             read_event: Event::new(),
             write_event: Event::new(),
         }
@@ -204,21 +249,21 @@ impl<T> From<Vec<T>> for AsyncVec<T> {
 }
 
 #[cfg(feature = "allocator")]
-impl<T, A: Allocator + Default> From<AsyncVec<T, A>> for Vec<T, A> {
+impl<T: Copy, A: Allocator + Default> From<AsyncVec<T, A>> for Vec<T, A> {
     fn from(vector: AsyncVec<T, A>) -> Self {
         vector.into_inner().unwrap()
     }
 }
 
 #[cfg(not(feature = "allocator"))]
-impl<T> From<AsyncVec<T>> for Vec<T> {
+impl<T: Copy> From<AsyncVec<T>> for Vec<T> {
     fn from(vector: AsyncVec<T>) -> Self {
         vector.into_inner().unwrap()
     }
 }
 
 #[cfg(feature = "allocator")]
-impl<T, A: Allocator> Drop for AsyncVec<T, A> {
+impl<T: Copy, A: Allocator> Drop for AsyncVec<T, A> {
     fn drop(&mut self) {
         self.read_event.sync().unwrap();
         self.write_event.sync().unwrap();
@@ -226,7 +271,7 @@ impl<T, A: Allocator> Drop for AsyncVec<T, A> {
 }
 
 #[cfg(not(feature = "allocator"))]
-impl<T> Drop for AsyncVec<T> {
+impl<T: Copy> Drop for AsyncVec<T> {
     fn drop(&mut self) {
         self.read_event.sync().unwrap();
         self.write_event.sync().unwrap();
@@ -263,6 +308,7 @@ impl_async_vec_for_field! {
         }
 
         pub fn to_bytes(&self, dst: &mut [u8]) -> GpuResult<()> {
+            assert!(self.data_is_set, "AsyncVec should be filled with some data");
             let length = self.len();
             let F_SIZE = F::zero().into_raw_repr().as_ref().len() * 8;
             assert_eq!(length * F_SIZE, dst.len(), "Wrong destination length");
@@ -305,6 +351,8 @@ impl_async_vec_for_field! {
                     self.len() * FIELD_ELEMENT_LEN,
                 )
             };
+
+            self.data_is_set = true;
 
             Ok(())
         }

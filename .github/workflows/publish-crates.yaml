@@ -1,45 +1,17 @@
-name: Release-please
+name: Publish crates (manual)
 
-# Give permissions to the release-please bot to open and update PRs
-# and commit to PRs the repository to update Cargo.lock
-permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
-  attestations: write
-  packages: write
-
-# Run the workflow on push to the main branch and manually
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
 
-  # Prepare the release PR with changelog updates and create github releases
-  release-please:
-    uses: matter-labs/zksync-ci-common/.github/workflows/release-please.yaml@v1
-    secrets:
-      slack_webhook: ${{ secrets.SLACK_WEBHOOK_RELEASES }}
-      gh_token: ${{ secrets.RELEASE_TOKEN }}
-    with:
-      config: '.github/release-please/config.json'     # Specify the path to the configuration file
-      manifest: '.github/release-please/manifest.json' # Specify the path to the manifest file
-      update-cargo-lock: true                          # Update Cargo.lock file
-      publish-to-crates-io: false                      # Custom publishing logic is implemented in the next job
-
-  # Publish packages to crates.io
-  process-release:
+  publish-crates:
     runs-on: [ubuntu-24.04-github-hosted-32core]
     container:
       image: nvidia/cuda:12.5.0-devel-ubuntu20.04
     env:
       BELLMAN_CUDA_DIR: ${{ github.workspace }}/bellman-cuda
       CUDAARCHS: 89
-    needs: [release-please]
-    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
     steps:
 
       - name: Prepare environment

@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.153.1](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.153.0...v0.153.1) (2025-02-20)
+
+
+### Features
+
+* Release 0.153.1 ([#81](https://github.com/matter-labs/zksync-crypto-gpu/issues/81)) ([6e8a0c0](https://github.com/matter-labs/zksync-crypto-gpu/commit/6e8a0c04adf613a2480ff9cc11b80f7d3590f4e4))
+
+## [0.153.0](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.12...v0.153.0) (2025-02-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* Update zksync-protocol deps ([#77](https://github.com/matter-labs/zksync-crypto-gpu/issues/77))
+
+### Features
+
+* Update zksync-protocol deps ([#77](https://github.com/matter-labs/zksync-crypto-gpu/issues/77)) ([3a55169](https://github.com/matter-labs/zksync-crypto-gpu/commit/3a5516926ae2e7031257ad0bf0c6afea78e699d6))
+
+## [0.152.12](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.11...v0.152.12) (2025-02-07)
+
+
+### Features
+
+* Bump crypto versions ([#76](https://github.com/matter-labs/zksync-crypto-gpu/issues/76)) ([b8cec04](https://github.com/matter-labs/zksync-crypto-gpu/commit/b8cec04e0266fb60f83f95f350c9e711f6acf75b))
+* **cudart:** refactor allocations and stream ([#75](https://github.com/matter-labs/zksync-crypto-gpu/issues/75)) ([9c0bedc](https://github.com/matter-labs/zksync-crypto-gpu/commit/9c0bedc1fe29afcf7fcef03af7a0611e5611dcde))
+
+
+### Bug Fixes
+
+* **ci:** bump deprecated actions/download-artifact and actions/upload-artifact v3 to v4 ([#74](https://github.com/matter-labs/zksync-crypto-gpu/issues/74)) ([5727c7c](https://github.com/matter-labs/zksync-crypto-gpu/commit/5727c7c37a10a1be555cb9dac5685245491ae9fa))
+* **ci:** Update github-hosted runner label ([#70](https://github.com/matter-labs/zksync-crypto-gpu/issues/70)) ([822c276](https://github.com/matter-labs/zksync-crypto-gpu/commit/822c276de858d69188ef8874aa8a00208fadc6a4))
+* **cudart-sys:** strip the "V" from the version string ([#73](https://github.com/matter-labs/zksync-crypto-gpu/issues/73)) ([76cfc1c](https://github.com/matter-labs/zksync-crypto-gpu/commit/76cfc1c8f6fb5e0042b78bf675b6a6a1f52373e8))
+
 ## [0.152.11](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.152.10...v0.152.11) (2025-01-17)
 
 

@@ -29,15 +29,21 @@ wrapper-prover = { version = "0.153.1", path = "crates/wrapper-prover", package 
 
 # These dependencies should be shared by all the crates.
 # zksync-crypto repository
-boojum = "=0.31.0"
+#boojum = "=0.31.0"
+boojum = { git = "https://github.com/matter-labs/zksync-crypto.git", branch = "feature/ec_precompiles", package = "boojum" }
+
 fflonk-cpu = {package = "fflonk", version = "=0.31.0"}
 franklin-crypto = "=0.31.0"
 rescue_poseidon = "=0.31.0"
-snark_wrapper = "=0.31.0"
+snark_wrapper = { git = "https://github.com/matter-labs/zksync-crypto.git", branch = "feature/ec_precompiles", package = "snark_wrapper" }
+#snark_wrapper = "=0.31.0"
 
 # zksync-protocol repository
-circuit_definitions = { version = "=0.151.3" }
-zkevm_test_harness = { version = "=0.151.3" }
+#circuit_definitions = { version = "=0.151.3" }
+#zkevm_test_harness = { version = "=0.151.3" }
+circuit_definitions = { git = "https://github.com/matter-labs/zksync-protocol.git", branch = "feature/ec_precompiles", package = "circuit_definitions" }
+zkevm_test_harness = { git = "https://github.com/matter-labs/zksync-protocol.git", branch = "feature/ec_precompiles", package = "zkevm_test_harness" }
+
 
 [profile.release]
 debug = "line-tables-only"

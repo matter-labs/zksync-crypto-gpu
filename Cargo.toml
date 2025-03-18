@@ -35,8 +35,10 @@ boojum = { git = "https://github.com/matter-labs/zksync-crypto.git", branch = "f
 #fflonk-cpu = {package = "fflonk", version = "=0.31.0"}
 fflonk-cpu = { git = "https://github.com/matter-labs/zksync-crypto.git", branch = "feature/ec_precompiles", package = "fflonk" }
 
-franklin-crypto = "=0.31.0"
-rescue_poseidon = "=0.31.0"
+#franklin-crypto = "=0.31.0"
+franklin-crypto = { git = "https://github.com/matter-labs/zksync-crypto.git", branch = "feature/ec_precompiles" }
+#rescue_poseidon = "=0.31.0"
+rescue_poseidon = { git = "https://github.com/matter-labs/zksync-crypto.git", branch = "feature/ec_precompiles" }
 snark_wrapper = { git = "https://github.com/matter-labs/zksync-crypto.git", branch = "feature/ec_precompiles", package = "snark_wrapper" }
 #snark_wrapper = "=0.31.0"
 

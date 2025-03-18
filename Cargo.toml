@@ -32,7 +32,9 @@ wrapper-prover = { version = "0.153.1", path = "crates/wrapper-prover", package 
 #boojum = "=0.31.0"
 boojum = { git = "https://github.com/matter-labs/zksync-crypto.git", branch = "feature/ec_precompiles", package = "boojum" }
 
-fflonk-cpu = {package = "fflonk", version = "=0.31.0"}
+#fflonk-cpu = {package = "fflonk", version = "=0.31.0"}
+fflonk-cpu = { git = "https://github.com/matter-labs/zksync-crypto.git", branch = "feature/ec_precompiles", package = "fflonk" }
+
 franklin-crypto = "=0.31.0"
 rescue_poseidon = "=0.31.0"
 snark_wrapper = { git = "https://github.com/matter-labs/zksync-crypto.git", branch = "feature/ec_precompiles", package = "snark_wrapper" }

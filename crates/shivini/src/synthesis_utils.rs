@@ -432,6 +432,45 @@ pub(crate) fn init_or_synthesize_assembly<CFG: AllowInitOrSynthesize, const DO_S
                 }
                 into_assembly(cs, DO_SYNTH, finalization_hint)
             }
+            ZkSyncBaseLayerCircuit::Modexp(inner) => {
+                let builder = inner.configure_builder_proxy(builder);
+                let mut cs = builder.build(builder_arg);
+                inner.add_tables_proxy(&mut cs);
+                if DO_SYNTH {
+                    inner.synthesize_proxy(&mut cs);
+                }
+                into_assembly(cs, DO_SYNTH, finalization_hint)
+            }
+
+            ZkSyncBaseLayerCircuit::ECAdd(inner) => {
+                let builder = inner.configure_builder_proxy(builder);
+                let mut cs = builder.build(builder_arg);
+                inner.add_tables_proxy(&mut cs);
+                if DO_SYNTH {
+                    inner.synthesize_proxy(&mut cs);
+                }
+                into_assembly(cs, DO_SYNTH, finalization_hint)
+            }
+
+            ZkSyncBaseLayerCircuit::ECMul(inner) => {
+                let builder = inner.configure_builder_proxy(builder);
+                let mut cs = builder.build(builder_arg);
+                inner.add_tables_proxy(&mut cs);
+                if DO_SYNTH {
+                    inner.synthesize_proxy(&mut cs);
+                }
+                into_assembly(cs, DO_SYNTH, finalization_hint)
+            }
+
+            ZkSyncBaseLayerCircuit::ECPairing(inner) => {
+                let builder = inner.configure_builder_proxy(builder);
+                let mut cs = builder.build(builder_arg);
+                inner.add_tables_proxy(&mut cs);
+                if DO_SYNTH {
+                    inner.synthesize_proxy(&mut cs);
+                }
+                into_assembly(cs, DO_SYNTH, finalization_hint)
+            }
         },
         CircuitWrapper::Recursive(recursive_circuit) => match recursive_circuit {
             ZkSyncRecursiveLayerCircuit::SchedulerCircuit(inner) => {
@@ -467,6 +506,10 @@ pub(crate) fn init_or_synthesize_assembly<CFG: AllowInitOrSynthesize, const DO_S
             | ZkSyncRecursiveLayerCircuit::LeafLayerCircuitForL1MessagesHasher(inner)
             | ZkSyncRecursiveLayerCircuit::LeafLayerCircuitForTransientStorageSorter(inner)
             | ZkSyncRecursiveLayerCircuit::LeafLayerCircuitForSecp256r1Verify(inner)
+            | ZkSyncRecursiveLayerCircuit::LeafLayerCircuitForModexp(inner)
+            | ZkSyncRecursiveLayerCircuit::LeafLayerCircuitForECAdd(inner)
+            | ZkSyncRecursiveLayerCircuit::LeafLayerCircuitForECMul(inner)
+            | ZkSyncRecursiveLayerCircuit::LeafLayerCircuitForECPairing(inner)
             | ZkSyncRecursiveLayerCircuit::LeafLayerCircuitForEIP4844Repack(inner) => {
                 let builder = inner.configure_builder_proxy(builder);
                 let mut cs = builder.build(builder_arg);

@@ -51,6 +51,9 @@ jobs:
             clang openssl libssl-dev gcc g++ wget curl jq
           echo "/usr/local/nvidia/bin:/usr/local/cuda/bin" >> $GITHUB_PATH
 
+      - name: Checkout code
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4
+
       - name: Setup CMake
         run: |
           curl -LO https://github.com/Kitware/CMake/releases/download/v3.24.3/cmake-3.24.3-linux-x86_64.sh && \
@@ -71,6 +74,7 @@ jobs:
       - name: Publish crates
         uses: matter-labs/zksync-ci-common/.github/actions/publish-crates@v1
         with:
+          skip_checkout: true
           gh_token: ${{ secrets.RELEASE_TOKEN }}
           cargo_registry_token: ${{ secrets.CRATES_IO_TOKEN }}
           slack_webhook: ${{ secrets.SLACK_WEBHOOK_RELEASES }}

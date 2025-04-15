@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.154.0](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.153.3...v0.154.0) (2025-04-15)
+
+
+### Features
+
+* **shivini:** add circuit types for ec precompiles ([#85](https://github.com/matter-labs/zksync-crypto-gpu/issues/85)) ([6f90744](https://github.com/matter-labs/zksync-crypto-gpu/commit/6f90744b53323caf7cc1ada2c23c9e6edcfd27c7))
+
+
+### Miscellaneous Chores
+
+* release 0.154.0 ([#93](https://github.com/matter-labs/zksync-crypto-gpu/issues/93)) ([7e1c6da](https://github.com/matter-labs/zksync-crypto-gpu/commit/7e1c6da34a69cdf456c96620b6ebd42c70ad1189))
+
 ## [0.153.3](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.153.2...v0.153.3) (2025-04-02)
 
 

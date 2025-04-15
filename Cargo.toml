@@ -29,15 +29,15 @@ wrapper-prover = { version = "=0.153.3", path = "crates/wrapper-prover", package
 
 # These dependencies should be shared by all the crates.
 # zksync-crypto repository
-boojum = "=0.31.0"
-fflonk-cpu = {package = "fflonk", version = "=0.31.0"}
-franklin-crypto = "=0.31.0"
-rescue_poseidon = "=0.31.0"
-snark_wrapper = "=0.31.0"
+boojum = "=0.32.0"
+fflonk-cpu = {package = "fflonk", version = "=0.32.0"}
+franklin-crypto = "=0.32.0"
+rescue_poseidon = "=0.32.0"
+snark_wrapper = "=0.32.0"
 
 # zksync-protocol repository
-circuit_definitions = { version = "=0.151.5" }
-zkevm_test_harness = { version = "=0.151.5" }
+circuit_definitions = { version = "0.152.0" }
+zkevm_test_harness = { version = "0.152.0" }
 
 [profile.release]
 debug = "line-tables-only"

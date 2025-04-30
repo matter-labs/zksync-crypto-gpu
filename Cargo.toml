@@ -36,8 +36,8 @@ rescue_poseidon = "=0.31.0"
 snark_wrapper = "=0.31.0"
 
 # zksync-protocol repository
-circuit_definitions = { version = "=0.151.5" }
-zkevm_test_harness = { version = "=0.151.5" }
+circuit_definitions = { git = "https://github.com/matter-labs/zksync-protocol", branch = "vv-add-evm-deploy-tracer-in-witgen", package="circuit_definitions"}
+zkevm_test_harness = { git = "https://github.com/matter-labs/zksync-protocol", branch = "vv-add-evm-deploy-tracer-in-witgen", package="zkevm_test_harness"}
 
 [profile.release]
 debug = "line-tables-only"

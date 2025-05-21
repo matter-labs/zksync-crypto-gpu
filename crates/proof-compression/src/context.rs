@@ -1,13 +1,13 @@
 use std::sync::atomic::AtomicBool;
 
-use crate::{AsyncHandler, CompressionProofSystem, SnarkWrapperProofSystem, SnarkWrapperStep};
+use crate::{CompressionProofSystem, SnarkWrapperProofSystem, SnarkWrapperStep};
 
 pub(crate) trait ContextManagerInterface {
-    fn init_compression_context<P>(&self, config: P::ContextConfig) -> AsyncHandler<P::Context>
+    fn init_compression_context<P>(&self, config: P::ContextConfig) -> P::Context
     where
         P: CompressionProofSystem;
 
-    fn init_snark_context<S>(&self, crs: AsyncHandler<S::CRS>) -> AsyncHandler<S::Context>
+    fn init_snark_context<S>(&self, crs: S::CRS) -> S::Context
     where
         S: SnarkWrapperStep;
 }
@@ -25,7 +25,7 @@ impl SimpleContextManager {
 }
 
 impl ContextManagerInterface for SimpleContextManager {
-    fn init_compression_context<P>(&self, config: P::ContextConfig) -> AsyncHandler<P::Context>
+    fn init_compression_context<P>(&self, config: P::ContextConfig) -> P::Context
     where
         P: CompressionProofSystem,
     {
@@ -34,21 +34,20 @@ impl ContextManagerInterface for SimpleContextManager {
                 .load(std::sync::atomic::Ordering::Relaxed)
                 == false
         );
-        let flag = self.context_status.clone();
-        let f = move || {
-            let (sender, receiver) = std::sync::mpsc::channel();
-            let context = P::init_context(config);
-            sender.send(context).unwrap();
-            flag.store(false, std::sync::atomic::Ordering::Relaxed);
-            receiver
-        };
+        // let flag = self.context_status.clone();
+        // let f = move || {
+        //     let (sender, receiver) = std::sync::mpsc::channel();
+        //     let context = P::init_context(config);
+        //     sender.send(context).unwrap();
+        //     flag.store(false, std::sync::atomic::Ordering::Relaxed);
+        //     receiver
+        // };
 
-        AsyncHandler::spawn(f)
+        // AsyncHandler::spawn(f)
+
+        P::init_context(config)
     }
-    fn init_snark_context<S>(
-        &self,
-        compact_raw_crs: AsyncHandler<S::CRS>,
-    ) -> AsyncHandler<S::Context>
+    fn init_snark_context<S>(&self, compact_raw_crs: S::CRS) -> S::Context
     where
         S: SnarkWrapperProofSystem,
     {
@@ -58,15 +57,17 @@ impl ContextManagerInterface for SimpleContextManager {
                 == false
         );
         // load next context
-        let flag = self.context_status.clone();
-        let f = move || {
-            let (sender, receiver) = std::sync::mpsc::channel();
-            let context = S::init_context(compact_raw_crs);
-            sender.send(context).unwrap();
-            flag.store(false, std::sync::atomic::Ordering::Relaxed);
-            receiver
-        };
+        // let flag = self.context_status.clone();
+        // let f = move || {
+        //     let (sender, receiver) = std::sync::mpsc::channel();
+        //     let context = S::init_context(compact_raw_crs);
+        //     sender.send(context).unwrap();
+        //     flag.store(false, std::sync::atomic::Ordering::Relaxed);
+        //     receiver
+        // };
 
-        AsyncHandler::spawn(f)
+        // AsyncHandler::spawn(f)
+
+        S::init_context(compact_raw_crs)
     }
 }

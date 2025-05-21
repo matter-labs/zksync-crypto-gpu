@@ -123,11 +123,11 @@ where
     }
 
     fn prove(
-        ctx: AsyncHandler<Self::Context>,
+        ctx: Self::Context,
         proving_assembly: Self::ProvingAssembly,
         aux_config: Self::AuxConfig,
-        precomputation: AsyncHandler<Self::Precomputation>,
-        finalization_hint: Self::FinalizationHint,
+        precomputation: &Self::Precomputation,
+        finalization_hint: &Self::FinalizationHint,
         vk: &Self::VK,
     ) -> Self::Proof {
         Self::prove_from_witnesses(
@@ -141,11 +141,11 @@ where
     }
 
     fn prove_from_witnesses(
-        ctx: AsyncHandler<Self::Context>,
+        ctx: Self::Context,
         witness: Self::ExternalWitnessData,
         aux_config: Self::AuxConfig,
-        precomputation: AsyncHandler<Self::Precomputation>,
-        finalization_hint: Self::FinalizationHint,
+        precomputation: &Self::Precomputation,
+        finalization_hint: &Self::FinalizationHint,
         vk: &Self::VK,
     ) -> Self::Proof {
         let domain_size = vk.fixed_parameters.domain_size as usize;
@@ -157,8 +157,7 @@ where
             commitment: CommitmentCacheStrategy::CacheCosetCaps,
         };
         let worker = Worker::new();
-        let precomputation = precomputation.wait().into_inner();
-        let ctx = ctx.wait();
+        let precomputation = &precomputation.0; //into_inner();
         let gpu_proof = shivini::gpu_prove_from_external_witness_data_with_cache_strategy::<
             CF::ThisLayerTranscript,
             CF::ThisLayerHasher,
@@ -197,7 +196,7 @@ where
 {
     type SetupAssembly = BoojumAssembly<SetupCSConfig, Self::Allocator>;
     fn generate_precomputation_and_vk(
-        ctx: AsyncHandler<Self::Context>,
+        ctx: Self::Context,
         setup_assembly: Self::SetupAssembly,
         finalization_hint: &Self::FinalizationHint,
     ) -> (Self::Precomputation, Self::VK) {
@@ -210,7 +209,6 @@ where
         );
         let domain_size = vk_params.domain_size as usize;
         assert_eq!(finalization_hint.final_trace_len, domain_size);
-        let ctx = ctx.wait();
         let (precomputation, vk) =
             shivini::cs::gpu_setup_and_vk_from_base_setup_vk_params_and_hints::<
                 CF::ThisLayerHasher,

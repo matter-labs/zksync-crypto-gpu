@@ -1,13 +1,13 @@
 use super::*;
 
-use fflonk::bellman::bn256::Bn256;
+use crate::bellman::bn256::Bn256;
 use gpu_prover::ManagerConfigs;
 use shivini::{
     boojum::cs::implementations::fast_serialization::MemcopySerializable, cs::GpuSetup,
     GpuTreeHasher,
 };
 
-pub(crate) trait GenericWrapper: Sized {
+pub trait GenericWrapper: Sized {
     type Inner;
     fn into_inner(self) -> Self::Inner;
     fn from_inner(inner: Self::Inner) -> Self;
@@ -15,7 +15,7 @@ pub(crate) trait GenericWrapper: Sized {
 
 use crate::PlonkSnarkVerifierCircuitDeviceSetup;
 
-pub(crate) struct BoojumDeviceSetupWrapper<H: GpuTreeHasher>(GpuSetup<H>);
+pub struct BoojumDeviceSetupWrapper<H: GpuTreeHasher>(pub GpuSetup<H>);
 impl<H> GenericWrapper for BoojumDeviceSetupWrapper<H>
 where
     H: GpuTreeHasher,
@@ -45,7 +45,7 @@ impl<H: GpuTreeHasher> shivini::boojum::cs::implementations::fast_serialization:
     }
 }
 
-pub(crate) struct PlonkSnarkVerifierCircuitDeviceSetupWrapper(PlonkSnarkVerifierCircuitDeviceSetup);
+pub struct PlonkSnarkVerifierCircuitDeviceSetupWrapper(pub PlonkSnarkVerifierCircuitDeviceSetup);
 
 impl MemcopySerializable for PlonkSnarkVerifierCircuitDeviceSetupWrapper {
     fn write_into_buffer<W: std::io::Write>(
@@ -76,8 +76,8 @@ impl GenericWrapper for PlonkSnarkVerifierCircuitDeviceSetupWrapper {
     }
 }
 
-pub(crate) struct FflonkSnarkVerifierCircuitDeviceSetupWrapper<A: HostAllocator>(
-    pub fflonk::FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, A>,
+pub struct FflonkSnarkVerifierCircuitDeviceSetupWrapper<A: HostAllocator>(
+    pub ::fflonk::FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, A>,
 );
 
 impl<A> MemcopySerializable for FflonkSnarkVerifierCircuitDeviceSetupWrapper<A>
@@ -92,7 +92,7 @@ where
     }
 
     fn read_from_buffer<R: std::io::Read>(src: R) -> Result<Self, Box<dyn std::error::Error>> {
-        let precomputation = fflonk::FflonkDeviceSetup::<Bn256, _, A>::read(src).unwrap();
+        let precomputation = ::fflonk::FflonkDeviceSetup::<Bn256, _, A>::read(src).unwrap();
 
         Ok(Self(precomputation))
     }
@@ -102,7 +102,7 @@ impl<A> GenericWrapper for FflonkSnarkVerifierCircuitDeviceSetupWrapper<A>
 where
     A: HostAllocator,
 {
-    type Inner = fflonk::FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, A>;
+    type Inner = ::fflonk::FflonkDeviceSetup<Bn256, FflonkSnarkVerifierCircuit, A>;
     fn into_inner(self) -> Self::Inner {
         self.0
     }

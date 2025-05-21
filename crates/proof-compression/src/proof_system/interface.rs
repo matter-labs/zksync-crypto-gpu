@@ -10,7 +10,7 @@ use shivini::{
     GPUPoWRunner, GpuTreeHasher,
 };
 
-pub(crate) trait ProofSystemDefinition: Sized {
+pub trait ProofSystemDefinition: Sized {
     type FieldElement;
     type ExternalWitnessData;
     type Precomputation: MemcopySerializable + Send + Sync + 'static;
@@ -24,7 +24,7 @@ pub(crate) trait ProofSystemDefinition: Sized {
     fn verify(_: &Self::Proof, _: &Self::VK) -> bool;
 }
 
-pub(crate) trait CompressionProofSystem:
+pub trait CompressionProofSystem:
     ProofCompressionFunction<
         ThisLayerHasher: GpuTreeHasher,
         ThisLayerTranscript: Transcript<GoldilocksField, TransciptParameters = ()>,
@@ -45,20 +45,20 @@ pub(crate) trait CompressionProofSystem:
     ) -> Self::ProvingAssembly;
 
     fn prove(
-        _: AsyncHandler<Self::Context>,
+        _: Self::Context,
         _: Self::ProvingAssembly,
         _: Self::AuxConfig,
-        _: AsyncHandler<Self::Precomputation>,
-        _: Self::FinalizationHint,
+        _: &Self::Precomputation,
+        _: &Self::FinalizationHint,
         _: &Self::VK,
     ) -> Self::Proof;
 
     fn prove_from_witnesses(
-        _: AsyncHandler<Self::Context>,
+        _: Self::Context,
         _: Self::ExternalWitnessData,
         _: Self::AuxConfig,
-        _: AsyncHandler<Self::Precomputation>,
-        _: Self::FinalizationHint,
+        _: &Self::Precomputation,
+        _: &Self::FinalizationHint,
         _: &Self::VK,
     ) -> Self::Proof;
 }
@@ -66,7 +66,7 @@ pub(crate) trait CompressionProofSystem:
 pub(crate) trait CompressionProofSystemExt: CompressionProofSystem {
     type SetupAssembly;
     fn generate_precomputation_and_vk(
-        _: AsyncHandler<Self::Context>,
+        _: Self::Context,
         _: Self::SetupAssembly,
         _: &Self::FinalizationHint,
     ) -> (Self::Precomputation, Self::VK);
@@ -75,26 +75,26 @@ pub(crate) trait CompressionProofSystemExt: CompressionProofSystem {
     ) -> (Self::FinalizationHint, Self::SetupAssembly);
 }
 
-pub(crate) trait SnarkWrapperProofSystem: ProofSystemDefinition {
+pub trait SnarkWrapperProofSystem: ProofSystemDefinition {
     type Circuit;
     type Context: Send + Sync + 'static;
     type CRS: Send + Sync + 'static;
     fn pre_init();
-    fn init_context(crs: AsyncHandler<Self::CRS>) -> Self::Context;
+    fn init_context(crs: Self::CRS) -> Self::Context;
     fn load_compact_raw_crs<R: std::io::Read>(src: R) -> Self::CRS;
     fn synthesize_for_proving(circuit: Self::Circuit) -> Self::ProvingAssembly;
     fn prove(
-        _: AsyncHandler<Self::Context>,
+        _: &Self::Context,
         _: Self::ProvingAssembly,
-        _: AsyncHandler<Self::Precomputation>,
-        _: Self::FinalizationHint,
+        _: &Self::Precomputation,
+        _: &Self::FinalizationHint,
     ) -> Self::Proof;
 
     fn prove_from_witnesses(
-        _: AsyncHandler<Self::Context>,
+        _: &Self::Context,
         _: Self::ExternalWitnessData,
-        _: AsyncHandler<Self::Precomputation>,
-        _: Self::FinalizationHint,
+        _: &Self::Precomputation,
+        _: &Self::FinalizationHint,
     ) -> Self::Proof;
 }
 
@@ -102,7 +102,7 @@ pub(crate) trait SnarkWrapperProofSystemExt: SnarkWrapperProofSystem {
     type SetupAssembly;
     fn synthesize_for_setup(circuit: Self::Circuit) -> Self::SetupAssembly;
     fn generate_precomputation_and_vk(
-        _: AsyncHandler<Self::Context>,
+        _: &Self::Context,
         _: Self::SetupAssembly,
         _: Self::FinalizationHint,
     ) -> (Self::Precomputation, Self::VK);

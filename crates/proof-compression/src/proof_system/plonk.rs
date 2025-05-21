@@ -1,3 +1,5 @@
+use std::fs::File;
+
 use bellman::{
     kate_commitment::{Crs, CrsForMonomialForm},
     plonk::{
@@ -36,7 +38,9 @@ type PlonkAssembly<CSConfig, A> = Assembly<
     A,
 >;
 
-pub(crate) struct UnsafePlonkProverDeviceMemoryManagerWrapper(
+const COMPACT_CRS_ENV_VAR: &str = "COMPACT_CRS_FILE";
+
+pub struct UnsafePlonkProverDeviceMemoryManagerWrapper(
     DeviceMemoryManager<Fr, PlonkProverDeviceMemoryManagerConfig>,
 );
 impl GenericWrapper for UnsafePlonkProverDeviceMemoryManagerWrapper {
@@ -52,7 +56,7 @@ impl GenericWrapper for UnsafePlonkProverDeviceMemoryManagerWrapper {
 }
 unsafe impl Send for UnsafePlonkProverDeviceMemoryManagerWrapper {}
 unsafe impl Sync for UnsafePlonkProverDeviceMemoryManagerWrapper {}
-pub(crate) struct PlonkProverDeviceMemoryManagerConfig;
+pub struct PlonkProverDeviceMemoryManagerConfig;
 
 impl ManagerConfigs for PlonkProverDeviceMemoryManagerConfig {
     const NUM_GPUS_LOG: usize = 0;
@@ -61,7 +65,7 @@ impl ManagerConfigs for PlonkProverDeviceMemoryManagerConfig {
     const NUM_HOST_SLOTS: usize = 2;
 }
 
-pub(crate) struct PlonkSnarkWrapper;
+pub struct PlonkSnarkWrapper;
 
 impl ProofSystemDefinition for PlonkSnarkWrapper {
     type FieldElement = Fr;
@@ -111,10 +115,9 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
         read_crs_from_raw_compact_form(src, num_g1_points_for_crs).unwrap()
     }
 
-    fn init_context(compact_raw_crs: AsyncHandler<Self::CRS>) -> Self::Context {
+    fn init_context(compact_raw_crs: Self::CRS) -> Self::Context {
         let device_ids: Vec<_> =
             (0..<PlonkProverDeviceMemoryManagerConfig as ManagerConfigs>::NUM_GPUS).collect();
-        let compact_raw_crs = compact_raw_crs.wait();
         let manager = DeviceMemoryManager::init(&device_ids, &compact_raw_crs.g1_bases).unwrap();
         UnsafePlonkProverDeviceMemoryManagerWrapper(manager)
     }
@@ -128,21 +131,29 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
     }
 
     fn prove(
-        ctx: AsyncHandler<Self::Context>,
+        ctx: &Self::Context,
         mut proving_assembly: Self::ProvingAssembly,
-        precomputation: AsyncHandler<Self::Precomputation>,
-        finalization_hint: Self::FinalizationHint,
+        precomputation: &Self::Precomputation,
+        finalization_hint: &Self::FinalizationHint,
     ) -> Self::Proof {
         assert!(proving_assembly.is_satisfied());
         assert!(finalization_hint.is_power_of_two());
         proving_assembly.finalize_to_size_log_2(finalization_hint.trailing_zeros() as usize);
         let domain_size = proving_assembly.n() + 1;
         assert!(domain_size.is_power_of_two());
-        assert_eq!(domain_size, finalization_hint);
+        assert_eq!(domain_size, finalization_hint.clone());
 
-        let ctx = ctx.wait();
+        // ctx loading
+        let filepath =
+            std::env::var(COMPACT_CRS_ENV_VAR).expect("No compact CRS file path provided");
+        let reader = Box::new(File::open(filepath).unwrap());
+        let crs = <Self as SnarkWrapperProofSystem>::load_compact_raw_crs(reader);
+        let ctx = Self::init_context(crs);
         let mut ctx = ctx.into_inner();
-        let mut precomputation = precomputation.wait().into_inner();
+
+        // precomputation placeholder
+        let mut precomputation = AsyncSetup::empty();
+
         let worker = bellman::worker::Worker::new();
         let start = std::time::Instant::now();
         let proof = gpu_prover::create_proof::<_, _, Self::Transcript, _>(
@@ -160,10 +171,10 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
     }
 
     fn prove_from_witnesses(
-        _: AsyncHandler<Self::Context>,
+        _: &Self::Context,
         _: Vec<Self::FieldElement, Self::Allocator>,
-        _: AsyncHandler<Self::Precomputation>,
-        _: Self::FinalizationHint,
+        _: &Self::Precomputation,
+        _: &Self::FinalizationHint,
     ) -> Self::Proof {
         unimplemented!()
     }
@@ -180,7 +191,7 @@ impl SnarkWrapperProofSystemExt for PlonkSnarkWrapper {
     }
 
     fn generate_precomputation_and_vk(
-        ctx: AsyncHandler<Self::Context>,
+        ctx: &Self::Context,
         mut setup_assembly: Self::SetupAssembly,
         hardcoded_finalization_hint: Self::FinalizationHint,
     ) -> (Self::Precomputation, Self::VK) {
@@ -192,8 +203,14 @@ impl SnarkWrapperProofSystemExt for PlonkSnarkWrapper {
         assert!(domain_size.is_power_of_two());
         assert_eq!(domain_size, hardcoded_finalization_hint);
 
-        let ctx = ctx.wait();
+        // let mut ctx = ctx.into_inner();
+        let filepath =
+            std::env::var(COMPACT_CRS_ENV_VAR).expect("No compact CRS file path provided");
+        let reader = Box::new(File::open(filepath).unwrap());
+        let crs = <Self as SnarkWrapperProofSystem>::load_compact_raw_crs(reader);
+        let ctx = Self::init_context(crs);
         let mut ctx = ctx.into_inner();
+
         let worker = bellman::worker::Worker::new();
         let mut precomputation =
             AsyncSetup::<Self::Allocator>::allocate(hardcoded_finalization_hint);

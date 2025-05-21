@@ -1,7 +1,7 @@
 use super::*;
 
-mod compression;
-pub(crate) use compression::*;
+pub mod compression;
+pub use compression::*;
 
-mod snark_wrapper;
-pub(crate) use snark_wrapper::*;
+pub mod snark_wrapper;
+pub use snark_wrapper::*;

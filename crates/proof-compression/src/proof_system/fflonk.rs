@@ -26,7 +26,7 @@ pub(crate) type FflonkSnarkVerifierCircuitVK =
     FflonkVerificationKey<Bn256, FflonkSnarkVerifierCircuit>;
 pub(crate) type FflonkSnarkVerifierCircuitProof = FflonkProof<Bn256, FflonkSnarkVerifierCircuit>;
 type FflonkAssembly<CSConfig, A> = Assembly<Bn256, PlonkCsWidth3Params, NaiveMainGate, CSConfig, A>;
-pub(crate) struct FflonkSnarkWrapper;
+pub struct FflonkSnarkWrapper;
 
 impl ProofSystemDefinition for FflonkSnarkWrapper {
     type FieldElement = Fr;
@@ -81,8 +81,7 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
         read_crs_from_raw_compact_form(src, num_g1_bases_for_crs).unwrap()
     }
 
-    fn init_context(compact_raw_crs: AsyncHandler<Self::CRS>) -> Self::Context {
-        let compact_raw_crs = compact_raw_crs.wait();
+    fn init_context(compact_raw_crs: Self::CRS) -> Self::Context {
         let domain_size = 1 << ::fflonk::fflonk_cpu::L1_VERIFIER_DOMAIN_SIZE_LOG;
         let context = DeviceContextWithSingleDevice::init_from_preloaded_crs::<Self::Allocator>(
             domain_size,
@@ -101,10 +100,10 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
     }
 
     fn prove(
-        ctx: AsyncHandler<Self::Context>,
+        ctx: &Self::Context,
         mut proving_assembly: Self::ProvingAssembly,
-        precomputation: AsyncHandler<Self::Precomputation>,
-        finalization_hint: Self::FinalizationHint,
+        precomputation: &Self::Precomputation,
+        finalization_hint: &Self::FinalizationHint,
     ) -> Self::Proof {
         assert!(proving_assembly.is_satisfied());
         let raw_trace_len = proving_assembly.n();
@@ -112,9 +111,8 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
         proving_assembly.finalize_to_size_log_2(finalization_hint.trailing_zeros() as usize);
         let domain_size = proving_assembly.n() + 1;
         assert!(domain_size.is_power_of_two());
-        assert_eq!(domain_size, finalization_hint);
-        let ctx = ctx.wait();
-        let precomputation = precomputation.wait().into_inner();
+        assert_eq!(domain_size, finalization_hint.clone());
+        let precomputation = &precomputation.0;
         let start = std::time::Instant::now();
         let proof = ::fflonk::create_proof::<_, _, _, RollingKeccakTranscript<_>, _>(
             &proving_assembly,
@@ -128,10 +126,10 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
     }
 
     fn prove_from_witnesses(
-        _: AsyncHandler<Self::Context>,
+        _: &Self::Context,
         _: Self::ExternalWitnessData,
-        _: AsyncHandler<Self::Precomputation>,
-        _: Self::FinalizationHint,
+        _: &Self::Precomputation,
+        _: &Self::FinalizationHint,
     ) -> Self::Proof {
         unimplemented!()
     }
@@ -149,11 +147,10 @@ impl SnarkWrapperProofSystemExt for FflonkSnarkWrapper {
     }
 
     fn generate_precomputation_and_vk(
-        ctx: AsyncHandler<Self::Context>,
+        ctx: &Self::Context,
         setup_assembly: Self::SetupAssembly,
         _hardcoded_finalization_hint: Self::FinalizationHint,
     ) -> (Self::Precomputation, Self::VK) {
-        let ctx = ctx.wait();
         let device_setup =
             FflonkSnarkVerifierCircuitDeviceSetup::<Self::Allocator>::create_setup_from_assembly_on_device(
                 &setup_assembly,

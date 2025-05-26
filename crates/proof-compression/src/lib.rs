@@ -16,5 +16,8 @@ use serialization::*;
 pub mod step;
 pub use step::*;
 
+pub mod blob_storage;
+pub use blob_storage::*;
+
 // #[cfg(test)]
 // mod test;

@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::{io::Read, sync::Arc};
 
 use super::*;
 
@@ -21,10 +21,21 @@ use franklin_crypto::boojum::cs::{
 };
 
 pub struct CompressionSetupData<T: CompressionStep> {
-    pub precomputation: <T as ProofSystemDefinition>::Precomputation,
-    pub vk: <T as ProofSystemDefinition>::VK,
-    pub finalization_hint: <T as ProofSystemDefinition>::FinalizationHint,
-    pub previous_vk: VerificationKey<GoldilocksField, T::PreviousStepTreeHasher>,
+    pub precomputation: Option<<T as ProofSystemDefinition>::Precomputation>,
+    pub vk: Option<<T as ProofSystemDefinition>::VK>,
+    pub finalization_hint: Option<<T as ProofSystemDefinition>::FinalizationHint>,
+    pub previous_vk: Option<VerificationKey<GoldilocksField, T::PreviousStepTreeHasher>>,
+}
+
+impl<T: CompressionStep> CompressionSetupData<T> {
+    pub fn new() -> Self {
+        Self {
+            precomputation: None,
+            vk: None,
+            finalization_hint: None,
+            previous_vk: None,
+        }
+    }
 }
 
 pub trait CompressionStep: CompressionProofSystem {
@@ -72,13 +83,13 @@ pub trait CompressionStep: CompressionProofSystem {
     where
         CI: ContextManagerInterface,
     {
-        let input_vk = setup_data_cache.previous_vk.clone();
-        let vk = &setup_data_cache.vk;
-        let precomputation = &setup_data_cache.precomputation;
-        let finalization_hint = &setup_data_cache.finalization_hint;
+        let input_vk = setup_data_cache.previous_vk.as_ref().unwrap();
+        let vk = setup_data_cache.vk.as_ref().unwrap();
+        let precomputation = setup_data_cache.precomputation.as_ref().unwrap();
+        let finalization_hint = setup_data_cache.finalization_hint.as_ref().unwrap();
         let ctx_config = Self::get_context_config_from_hint(&finalization_hint);
         let ctx = context_handler.init_compression_context::<Self>(ctx_config);
-        let circuit = Self::build_circuit(input_vk, Some(input_proof));
+        let circuit = Self::build_circuit(input_vk.clone(), Some(input_proof));
         let proving_assembly = <Self as CompressionProofSystem>::synthesize_for_proving(
             circuit,
             finalization_hint.clone(),
@@ -106,14 +117,14 @@ pub trait CompressionStep: CompressionProofSystem {
 }
 
 pub(crate) trait CompressionStepExt: CompressionProofSystemExt + CompressionStep {
-    fn precomputae_and_store_compression_circuits<CM>(
+    fn precompute_and_store_compression_circuits<CM>(
         setup_data_cache: CompressionSetupData<Self>,
         context_manager: &CM,
     ) -> CompressionSetupData<Self>
     where
         CM: ContextManagerInterface,
     {
-        let input_vk = setup_data_cache.previous_vk.clone();
+        let input_vk = setup_data_cache.previous_vk.clone().unwrap();
         let circuit = Self::build_circuit(input_vk, None);
         // Workaround: trace length is not known at this point, so thats totally fine
         // to use a hardcoded trace length
@@ -128,14 +139,12 @@ pub(crate) trait CompressionStepExt: CompressionProofSystemExt + CompressionStep
                 &finalization_hint,
             );
 
-        let setup_data = CompressionSetupData {
-            precomputation,
-            vk,
-            finalization_hint,
+        CompressionSetupData {
+            precomputation: Some(precomputation),
+            vk: Some(vk),
+            finalization_hint: Some(finalization_hint),
             previous_vk: setup_data_cache.previous_vk,
-        };
-
-        setup_data
+        }
 
         // let (precompuatation_writer, vk_writer, hint_writer) = if Self::IS_WRAPPER {
         //     (

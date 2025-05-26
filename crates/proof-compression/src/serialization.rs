@@ -112,7 +112,7 @@ where
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub(crate) struct MarkerPrecomputation;
 impl MemcopySerializable for MarkerPrecomputation {
     fn write_into_buffer<W: std::io::Write>(

@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::{io::Read, sync::Arc};
 
 use circuit_definitions::circuit_definitions::aux_layer::{
     compression::ProofCompressionFunction,
@@ -15,11 +15,23 @@ use franklin_crypto::boojum::cs::{
 use super::*;
 
 pub struct SnarkWrapperSetupData<T: SnarkWrapperStep> {
-    pub precomputation: <T as ProofSystemDefinition>::Precomputation,
-    pub vk: <T as ProofSystemDefinition>::VK,
-    pub finalization_hint: <T as ProofSystemDefinition>::FinalizationHint,
-    pub previous_vk: VerificationKey<GoldilocksField, T::PreviousStepTreeHasher>,
+    pub precomputation: Option<<T as ProofSystemDefinition>::Precomputation>,
+    pub vk: Option<<T as ProofSystemDefinition>::VK>,
+    pub finalization_hint: Option<<T as ProofSystemDefinition>::FinalizationHint>,
+    pub previous_vk: Option<VerificationKey<GoldilocksField, T::PreviousStepTreeHasher>>,
     pub ctx: Option<<T as SnarkWrapperProofSystem>::Context>,
+}
+
+impl<T: SnarkWrapperStep> SnarkWrapperSetupData<T> {
+    pub fn new() -> Self {
+        Self {
+            precomputation: None,
+            vk: None,
+            finalization_hint: None,
+            previous_vk: None,
+            ctx: None,
+        }
+    }
 }
 
 pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
@@ -84,18 +96,17 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
     fn prove_snark_wrapper_step(
         input_proof: Proof<GoldilocksField, Self::PreviousStepTreeHasher, GoldilocksExt2>,
         setup_data_cache: &SnarkWrapperSetupData<Self>,
-    ) -> <Self as ProofSystemDefinition>::Proof
-    {
+    ) -> <Self as ProofSystemDefinition>::Proof {
         assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
-        let input_vk = &setup_data_cache.previous_vk;
+        let input_vk = setup_data_cache.previous_vk.as_ref().unwrap();
 
-        let ctx = setup_data_cache.ctx.as_ref().unwrap();
+        let ctx = &setup_data_cache.ctx.as_ref().unwrap();
         // let ctx = context_handler.init_snark_context::<Self>(ctx.clone());
-        let finalization_hint = &setup_data_cache.finalization_hint;
+        let finalization_hint = &setup_data_cache.finalization_hint.as_ref().unwrap();
         let circuit = Self::build_circuit(input_vk.clone(), Some(input_proof));
         let proving_assembly = <Self as SnarkWrapperProofSystem>::synthesize_for_proving(circuit);
-        let vk = &setup_data_cache.vk;
-        let precomputation = &setup_data_cache.precomputation;
+        let vk = setup_data_cache.vk.as_ref().unwrap();
+        let precomputation = &setup_data_cache.precomputation.as_ref().unwrap();
 
         let proof = <Self as SnarkWrapperProofSystem>::prove(
             ctx,
@@ -117,33 +128,31 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
 
 pub(crate) trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperStep {
     fn precompute_and_store_snark_wrapper_circuit(
-        setup_data_cache: &SnarkWrapperSetupData<Self>,
+        setup_data_cache: SnarkWrapperSetupData<Self>,
     ) -> SnarkWrapperSetupData<Self>
     where
         <Self as ProofSystemDefinition>::VK: 'static,
     {
-        let input_vk = setup_data_cache.previous_vk.clone();
-        let finalization_hint = setup_data_cache.finalization_hint.clone();
+        let input_vk = setup_data_cache.previous_vk.clone().unwrap();
+        let finalization_hint = setup_data_cache.finalization_hint.clone().unwrap();
         let circuit = Self::build_circuit(input_vk, None);
-        let ctx = setup_data_cache.ctx.as_ref().unwrap();
+        let ctx = setup_data_cache.ctx.unwrap();
         let setup_assembly = <Self as SnarkWrapperProofSystemExt>::synthesize_for_setup(circuit);
 
         let (precomputation, vk) =
             <Self as SnarkWrapperProofSystemExt>::generate_precomputation_and_vk(
-                ctx,
+                &ctx,
                 setup_assembly,
                 finalization_hint,
             );
 
-        let setup_data = SnarkWrapperSetupData {
-            previous_vk: setup_data_cache.previous_vk.clone(),
-            vk,
-            precomputation,
-            finalization_hint: setup_data_cache.finalization_hint.clone(),
+        SnarkWrapperSetupData {
+            precomputation: Some(precomputation),
+            vk: Some(vk),
+            finalization_hint: setup_data_cache.finalization_hint,
+            previous_vk: setup_data_cache.previous_vk,
             ctx: None,
-        };
-
-        setup_data
+        }
 
         // let (precompuatation_writer, vk_writer) = if Self::IS_FFLONK {
         //     (

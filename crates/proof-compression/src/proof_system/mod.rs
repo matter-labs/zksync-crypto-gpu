@@ -2,10 +2,9 @@ use std::alloc::Allocator;
 
 use super::*;
 
-pub mod boojum;
+mod boojum;
 pub use boojum::*;
 mod crs;
-pub(crate) use crs::*;
 pub use crs::*;
 pub mod fflonk;
 pub use fflonk::*;

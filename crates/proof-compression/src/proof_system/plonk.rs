@@ -39,7 +39,6 @@ type PlonkAssembly<CSConfig, A> = Assembly<
 >;
 
 const COMPACT_CRS_ENV_VAR: &str = "COMPACT_CRS_FILE";
-
 pub struct UnsafePlonkProverDeviceMemoryManagerWrapper(
     DeviceMemoryManager<Fr, PlonkProverDeviceMemoryManagerConfig>,
 );
@@ -49,7 +48,9 @@ impl GenericWrapper for UnsafePlonkProverDeviceMemoryManagerWrapper {
     fn into_inner(self) -> Self::Inner {
         self.0
     }
-
+    fn into_inner_ref(&self) -> &Self::Inner {
+        &self.0
+    }
     fn from_inner(inner: Self::Inner) -> Self {
         Self(inner)
     }
@@ -131,9 +132,9 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
     }
 
     fn prove(
-        ctx: &Self::Context,
+        _ctx: &Self::Context,
         mut proving_assembly: Self::ProvingAssembly,
-        precomputation: &Self::Precomputation,
+        _precomputation: &Self::Precomputation,
         finalization_hint: &Self::FinalizationHint,
     ) -> Self::Proof {
         assert!(proving_assembly.is_satisfied());
@@ -143,15 +144,15 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
         assert!(domain_size.is_power_of_two());
         assert_eq!(domain_size, finalization_hint.clone());
 
-        // ctx loading
+        // Workaround on having mut ownership of context
         let filepath =
             std::env::var(COMPACT_CRS_ENV_VAR).expect("No compact CRS file path provided");
         let reader = Box::new(File::open(filepath).unwrap());
-        let crs = <Self as SnarkWrapperProofSystem>::load_compact_raw_crs(reader);
+        let crs = <Self as SnarkWrapperStep>::load_compact_raw_crs(reader);
         let ctx = Self::init_context(crs);
         let mut ctx = ctx.into_inner();
 
-        // precomputation placeholder
+        // TODO: implement a workaround instead of precomputation placeholder
         let mut precomputation = AsyncSetup::empty();
 
         let worker = bellman::worker::Worker::new();
@@ -191,7 +192,7 @@ impl SnarkWrapperProofSystemExt for PlonkSnarkWrapper {
     }
 
     fn generate_precomputation_and_vk(
-        ctx: &Self::Context,
+        _ctx: &Self::Context,
         mut setup_assembly: Self::SetupAssembly,
         hardcoded_finalization_hint: Self::FinalizationHint,
     ) -> (Self::Precomputation, Self::VK) {
@@ -203,11 +204,11 @@ impl SnarkWrapperProofSystemExt for PlonkSnarkWrapper {
         assert!(domain_size.is_power_of_two());
         assert_eq!(domain_size, hardcoded_finalization_hint);
 
-        // let mut ctx = ctx.into_inner();
+        // Workaround on having mut ownership of context
         let filepath =
             std::env::var(COMPACT_CRS_ENV_VAR).expect("No compact CRS file path provided");
         let reader = Box::new(File::open(filepath).unwrap());
-        let crs = <Self as SnarkWrapperProofSystem>::load_compact_raw_crs(reader);
+        let crs = <Self as SnarkWrapperStep>::load_compact_raw_crs(reader);
         let ctx = Self::init_context(crs);
         let mut ctx = ctx.into_inner();
 

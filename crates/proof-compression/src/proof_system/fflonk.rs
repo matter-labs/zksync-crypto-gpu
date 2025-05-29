@@ -1,8 +1,5 @@
 use ::fflonk::fflonk_cpu::{FflonkProof, FflonkVerificationKey};
-use ::fflonk::{
-    CombinedMonomialDeviceStorage, DeviceContextWithSingleDevice,
-    FflonkSnarkVerifierCircuitDeviceSetup,
-};
+use ::fflonk::{DeviceContextWithSingleDevice, FflonkSnarkVerifierCircuitDeviceSetup};
 use bellman::bn256::{Bn256, Fr};
 use bellman::{
     kate_commitment::CrsForMonomialForm,
@@ -112,7 +109,7 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
         let domain_size = proving_assembly.n() + 1;
         assert!(domain_size.is_power_of_two());
         assert_eq!(domain_size, finalization_hint.clone());
-        let precomputation = &precomputation.0;
+        let precomputation = precomputation.into_inner_ref();
         let start = std::time::Instant::now();
         let proof = ::fflonk::create_proof::<_, _, _, RollingKeccakTranscript<_>, _>(
             &proving_assembly,

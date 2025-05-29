@@ -10,6 +10,7 @@ use shivini::{
 pub trait GenericWrapper: Sized {
     type Inner;
     fn into_inner(self) -> Self::Inner;
+    fn into_inner_ref(&self) -> &Self::Inner;
     fn from_inner(inner: Self::Inner) -> Self;
 }
 
@@ -24,7 +25,9 @@ where
     fn into_inner(self) -> Self::Inner {
         self.0
     }
-
+    fn into_inner_ref(&self) -> &Self::Inner {
+        &self.0
+    }
     fn from_inner(inner: Self::Inner) -> Self {
         Self(inner)
     }
@@ -70,7 +73,9 @@ impl GenericWrapper for PlonkSnarkVerifierCircuitDeviceSetupWrapper {
     fn into_inner(self) -> Self::Inner {
         self.0
     }
-
+    fn into_inner_ref(&self) -> &Self::Inner {
+        &self.0
+    }
     fn from_inner(inner: Self::Inner) -> Self {
         Self(inner)
     }
@@ -106,7 +111,9 @@ where
     fn into_inner(self) -> Self::Inner {
         self.0
     }
-
+    fn into_inner_ref(&self) -> &Self::Inner {
+        &self.0
+    }
     fn from_inner(inner: Self::Inner) -> Self {
         Self(inner)
     }

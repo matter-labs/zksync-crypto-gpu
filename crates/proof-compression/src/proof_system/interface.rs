@@ -16,7 +16,12 @@ pub trait ProofSystemDefinition: Sized {
     type Precomputation: MemcopySerializable + Send + Sync + 'static;
     type Proof: serde::Serialize + serde::de::DeserializeOwned;
     type VK: serde::Serialize + serde::de::DeserializeOwned + Send + Sync + Clone + 'static;
-    type FinalizationHint: serde::Serialize + serde::de::DeserializeOwned + Clone;
+    type FinalizationHint: serde::Serialize
+        + serde::de::DeserializeOwned
+        + Clone
+        + Send
+        + Sync
+        + 'static;
     type Allocator: std::alloc::Allocator + Default;
     type ProvingAssembly: Sized + Send + Sync + 'static;
     type Transcript;
@@ -45,7 +50,7 @@ pub trait CompressionProofSystem:
     ) -> Self::ProvingAssembly;
 
     fn prove(
-        _: Self::Context,
+        _: &Self::Context,
         _: Self::ProvingAssembly,
         _: Self::AuxConfig,
         _: &Self::Precomputation,
@@ -54,7 +59,7 @@ pub trait CompressionProofSystem:
     ) -> Self::Proof;
 
     fn prove_from_witnesses(
-        _: Self::Context,
+        _: &Self::Context,
         _: Self::ExternalWitnessData,
         _: Self::AuxConfig,
         _: &Self::Precomputation,
@@ -63,7 +68,7 @@ pub trait CompressionProofSystem:
     ) -> Self::Proof;
 }
 
-pub(crate) trait CompressionProofSystemExt: CompressionProofSystem {
+pub trait CompressionProofSystemExt: CompressionProofSystem {
     type SetupAssembly;
     fn generate_precomputation_and_vk(
         _: Self::Context,
@@ -98,7 +103,7 @@ pub trait SnarkWrapperProofSystem: ProofSystemDefinition {
     ) -> Self::Proof;
 }
 
-pub(crate) trait SnarkWrapperProofSystemExt: SnarkWrapperProofSystem {
+pub trait SnarkWrapperProofSystemExt: SnarkWrapperProofSystem {
     type SetupAssembly;
     fn synthesize_for_setup(circuit: Self::Circuit) -> Self::SetupAssembly;
     fn generate_precomputation_and_vk(

@@ -123,7 +123,7 @@ where
     }
 
     fn prove(
-        ctx: Self::Context,
+        ctx: &Self::Context,
         proving_assembly: Self::ProvingAssembly,
         aux_config: Self::AuxConfig,
         precomputation: &Self::Precomputation,
@@ -141,7 +141,7 @@ where
     }
 
     fn prove_from_witnesses(
-        ctx: Self::Context,
+        ctx: &Self::Context,
         witness: Self::ExternalWitnessData,
         aux_config: Self::AuxConfig,
         precomputation: &Self::Precomputation,
@@ -157,7 +157,7 @@ where
             commitment: CommitmentCacheStrategy::CacheCosetCaps,
         };
         let worker = Worker::new();
-        let precomputation = &precomputation.0; //into_inner();
+        let precomputation = precomputation.into_inner_ref();
         let gpu_proof = shivini::gpu_prove_from_external_witness_data_with_cache_strategy::<
             CF::ThisLayerTranscript,
             CF::ThisLayerHasher,

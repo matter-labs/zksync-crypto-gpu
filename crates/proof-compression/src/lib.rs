@@ -4,9 +4,6 @@
 mod chain;
 pub use chain::*;
 
-mod context;
-use context::*;
-
 pub mod proof_system;
 pub use proof_system::*;
 

@@ -1,4 +1,4 @@
-use std::{io::Read, sync::Arc};
+use std::io::{Read, Write};
 
 use circuit_definitions::circuit_definitions::aux_layer::{
     compression::ProofCompressionFunction,
@@ -15,23 +15,11 @@ use franklin_crypto::boojum::cs::{
 use super::*;
 
 pub struct SnarkWrapperSetupData<T: SnarkWrapperStep> {
-    pub precomputation: Option<<T as ProofSystemDefinition>::Precomputation>,
-    pub vk: Option<<T as ProofSystemDefinition>::VK>,
-    pub finalization_hint: Option<<T as ProofSystemDefinition>::FinalizationHint>,
-    pub previous_vk: Option<VerificationKey<GoldilocksField, T::PreviousStepTreeHasher>>,
-    pub ctx: Option<<T as SnarkWrapperProofSystem>::Context>,
-}
-
-impl<T: SnarkWrapperStep> SnarkWrapperSetupData<T> {
-    pub fn new() -> Self {
-        Self {
-            precomputation: None,
-            vk: None,
-            finalization_hint: None,
-            previous_vk: None,
-            ctx: None,
-        }
-    }
+    pub precomputation: <T as ProofSystemDefinition>::Precomputation,
+    pub vk: <T as ProofSystemDefinition>::VK,
+    pub finalization_hint: <T as ProofSystemDefinition>::FinalizationHint,
+    pub previous_vk: VerificationKey<GoldilocksField, T::PreviousStepTreeHasher>,
+    pub ctx: <T as SnarkWrapperProofSystem>::Context,
 }
 
 pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
@@ -62,31 +50,17 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
         serde_json::from_reader(reader).unwrap()
     }
 
-    fn load_compact_raw_crs(reader: Box<dyn Read>) -> Self::CRS {
-        let start = std::time::Instant::now();
-        let compact_raw_crs = <Self as SnarkWrapperProofSystem>::load_compact_raw_crs(reader);
-        println!(
-            "Compact raw CRS loading takes {}s",
-            start.elapsed().as_secs()
-        );
-        compact_raw_crs
+    fn load_compact_raw_crs(reader: Box<dyn Read>) -> <Self as SnarkWrapperProofSystem>::CRS {
+        <Self as SnarkWrapperProofSystem>::load_compact_raw_crs(reader)
     }
 
     fn get_precomputation(
         reader: Box<dyn Read>,
     ) -> <Self as ProofSystemDefinition>::Precomputation {
-        let start = std::time::Instant::now();
-        let precomputation =
-            <<Self as ProofSystemDefinition>::Precomputation as MemcopySerializable>::read_from_buffer(
-                reader,
-            )
-            .unwrap();
-        println!(
-            "Snark wrapper device setup loading takes {}s",
-            start.elapsed().as_secs()
-        );
-
-        precomputation
+        <<Self as ProofSystemDefinition>::Precomputation as MemcopySerializable>::read_from_buffer(
+            reader,
+        )
+        .unwrap()
     }
 
     fn run_pre_initialization_tasks() {
@@ -98,18 +72,16 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
         setup_data_cache: &SnarkWrapperSetupData<Self>,
     ) -> <Self as ProofSystemDefinition>::Proof {
         assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
-        let input_vk = setup_data_cache.previous_vk.as_ref().unwrap();
-
-        let ctx = &setup_data_cache.ctx.as_ref().unwrap();
-        // let ctx = context_handler.init_snark_context::<Self>(ctx.clone());
-        let finalization_hint = &setup_data_cache.finalization_hint.as_ref().unwrap();
+        let input_vk = &setup_data_cache.previous_vk;
+        let ctx = &setup_data_cache.ctx;
+        let finalization_hint = &setup_data_cache.finalization_hint;
         let circuit = Self::build_circuit(input_vk.clone(), Some(input_proof));
         let proving_assembly = <Self as SnarkWrapperProofSystem>::synthesize_for_proving(circuit);
-        let vk = setup_data_cache.vk.as_ref().unwrap();
-        let precomputation = &setup_data_cache.precomputation.as_ref().unwrap();
+        let vk = &setup_data_cache.vk;
+        let precomputation = &setup_data_cache.precomputation;
 
         let proof = <Self as SnarkWrapperProofSystem>::prove(
-            ctx,
+            &ctx,
             proving_assembly,
             precomputation,
             finalization_hint,
@@ -126,17 +98,28 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
     ) -> Self::Circuit;
 }
 
-pub(crate) trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperStep {
-    fn precompute_and_store_snark_wrapper_circuit(
-        setup_data_cache: SnarkWrapperSetupData<Self>,
-    ) -> SnarkWrapperSetupData<Self>
-    where
-        <Self as ProofSystemDefinition>::VK: 'static,
-    {
-        let input_vk = setup_data_cache.previous_vk.clone().unwrap();
-        let finalization_hint = setup_data_cache.finalization_hint.clone().unwrap();
+pub trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperStep {
+    fn store_precomputation(
+        precomputation: &<Self as ProofSystemDefinition>::Precomputation,
+        writer: Box<dyn Write>,
+    ) {
+        <Self as ProofSystemDefinition>::Precomputation::write_into_buffer(precomputation, writer)
+            .unwrap();
+    }
+
+    fn store_vk(vk: &<Self as ProofSystemDefinition>::VK, writer: Box<dyn Write>) {
+        serde_json::to_writer_pretty(writer, vk).unwrap();
+    }
+
+    fn precompute_snark_wrapper_circuit(
+        input_vk: VerificationKey<GoldilocksField, Self::PreviousStepTreeHasher>,
+        finalization_hint: <Self as ProofSystemDefinition>::FinalizationHint,
+        ctx: <Self as SnarkWrapperProofSystem>::Context,
+    ) -> (
+        <Self as ProofSystemDefinition>::Precomputation,
+        <Self as ProofSystemDefinition>::VK,
+    ) {
         let circuit = Self::build_circuit(input_vk, None);
-        let ctx = setup_data_cache.ctx.unwrap();
         let setup_assembly = <Self as SnarkWrapperProofSystemExt>::synthesize_for_setup(circuit);
 
         let (precomputation, vk) =
@@ -146,30 +129,7 @@ pub(crate) trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperS
                 finalization_hint,
             );
 
-        SnarkWrapperSetupData {
-            precomputation: Some(precomputation),
-            vk: Some(vk),
-            finalization_hint: setup_data_cache.finalization_hint,
-            previous_vk: setup_data_cache.previous_vk,
-            ctx: None,
-        }
-
-        // let (precompuatation_writer, vk_writer) = if Self::IS_FFLONK {
-        //     (
-        //         blob_storage.write_fflonk_precomputation(),
-        //         blob_storage.write_fflonk_vk(),
-        //     )
-        // } else {
-        //     (
-        //         blob_storage.write_plonk_precomputation(),
-        //         blob_storage.write_plonk_vk(),
-        //     )
-        // };
-        // precomputation
-        //     .write_into_buffer(precompuatation_writer)
-        //     .unwrap();
-        // serde_json::to_writer_pretty(vk_writer, &vk).unwrap();
-        // println!("Pecomputation and vk of snark wrapper circuit saved into blob storage");
+        (precomputation, vk)
     }
 }
 

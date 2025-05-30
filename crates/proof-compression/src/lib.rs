@@ -16,5 +16,5 @@ pub use step::*;
 pub mod blob_storage;
 pub use blob_storage::*;
 
-// #[cfg(test)]
-// mod test;
+#[cfg(test)]
+mod test;

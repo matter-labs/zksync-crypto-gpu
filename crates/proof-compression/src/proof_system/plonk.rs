@@ -71,7 +71,11 @@ pub struct PlonkSnarkWrapper;
 
 impl PlonkSnarkWrapper {
     pub fn prove_plonk_snark_wrapper_step(
-        input_proof: Proof<GoldilocksField, <Self as SnarkWrapperStep>::PreviousStepTreeHasher, GoldilocksExt2>,
+        input_proof: Proof<
+            GoldilocksField,
+            <Self as SnarkWrapperStep>::PreviousStepTreeHasher,
+            GoldilocksExt2,
+        >,
         setup_data_cache: SnarkWrapperSetupData<Self>,
     ) -> <Self as ProofSystemDefinition>::Proof {
         assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
@@ -79,7 +83,8 @@ impl PlonkSnarkWrapper {
         let mut ctx = setup_data_cache.ctx.into_inner();
         let finalization_hint = setup_data_cache.finalization_hint;
         let circuit = Self::build_circuit(input_vk.clone(), Some(input_proof));
-        let mut proving_assembly = <Self as SnarkWrapperProofSystem>::synthesize_for_proving(circuit);
+        let mut proving_assembly =
+            <Self as SnarkWrapperProofSystem>::synthesize_for_proving(circuit);
         let vk = setup_data_cache.vk;
         let mut precomputation = setup_data_cache.precomputation.into_inner();
 
@@ -92,14 +97,15 @@ impl PlonkSnarkWrapper {
 
         let worker = bellman::worker::Worker::new();
         let start = std::time::Instant::now();
-        let proof = gpu_prover::create_proof::<_, _, <Self as ProofSystemDefinition>::Transcript, _>(
-            &proving_assembly,
-            &mut ctx,
-            &worker,
-            &mut precomputation,
-            None,
-        )
-        .unwrap();
+        let proof =
+            gpu_prover::create_proof::<_, _, <Self as ProofSystemDefinition>::Transcript, _>(
+                &proving_assembly,
+                &mut ctx,
+                &worker,
+                &mut precomputation,
+                None,
+            )
+            .unwrap();
         println!("plonk proving takes {} s", start.elapsed().as_secs());
         ctx.free_all_slots();
 
@@ -109,7 +115,10 @@ impl PlonkSnarkWrapper {
     }
 
     pub fn precompute_plonk_snark_wrapper_circuit(
-        input_vk: VerificationKey<GoldilocksField, <Self as SnarkWrapperStep>::PreviousStepTreeHasher>,
+        input_vk: VerificationKey<
+            GoldilocksField,
+            <Self as SnarkWrapperStep>::PreviousStepTreeHasher,
+        >,
         hardcoded_finalization_hint: <Self as ProofSystemDefinition>::FinalizationHint,
         ctx: <Self as SnarkWrapperProofSystem>::Context,
     ) -> (
@@ -117,7 +126,8 @@ impl PlonkSnarkWrapper {
         <Self as ProofSystemDefinition>::VK,
     ) {
         let circuit = Self::build_circuit(input_vk, None);
-        let mut setup_assembly = <Self as SnarkWrapperProofSystemExt>::synthesize_for_setup(circuit);
+        let mut setup_assembly =
+            <Self as SnarkWrapperProofSystemExt>::synthesize_for_setup(circuit);
         assert!(setup_assembly.is_satisfied());
         assert!(hardcoded_finalization_hint.is_power_of_two());
         setup_assembly
@@ -128,8 +138,9 @@ impl PlonkSnarkWrapper {
         let mut ctx = ctx.into_inner();
 
         let worker = bellman::worker::Worker::new();
-        let mut precomputation =
-            AsyncSetup::<<Self as ProofSystemDefinition>::Allocator>::allocate(hardcoded_finalization_hint);
+        let mut precomputation = AsyncSetup::<<Self as ProofSystemDefinition>::Allocator>::allocate(
+            hardcoded_finalization_hint,
+        );
         precomputation
             .generate_from_assembly(&worker, &setup_assembly, &mut ctx)
             .unwrap();

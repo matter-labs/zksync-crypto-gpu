@@ -258,8 +258,11 @@ pub fn precompute_proof_chain_with_plonk(setup_data_cache: Arc<dyn CompressorBlo
     let (previous_vk, finalization_hint, ctx) = setup_data_cache
         .get_plonk_snark_wrapper_previous_vk_finalization_hint_and_ctx()
         .unwrap();
-    let (precomputation, vk) =
-        PlonkSnarkWrapper::precompute_plonk_snark_wrapper_circuit(previous_vk, finalization_hint, ctx);
+    let (precomputation, vk) = PlonkSnarkWrapper::precompute_plonk_snark_wrapper_circuit(
+        previous_vk,
+        finalization_hint,
+        ctx,
+    );
     setup_data_cache
         .set_plonk_snark_wrapper_setup_data(&precomputation, &vk)
         .context("Failed to set Plonk snark wrapper setup data")

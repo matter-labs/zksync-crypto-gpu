@@ -227,7 +227,7 @@ pub fn run_proof_chain_with_plonk(
         setup_data_cache.get_compression_mode1_for_wrapper_setup_data(),
     );
 
-    let final_proof = PlonkSnarkWrapper::prove_snark_wrapper_step(
+    let final_proof = PlonkSnarkWrapper::prove_plonk_snark_wrapper_step(
         next_proof,
         setup_data_cache.get_plonk_snark_wrapper_setup_data(),
     );
@@ -259,7 +259,7 @@ pub fn precompute_proof_chain_with_plonk(setup_data_cache: Arc<dyn CompressorBlo
         .get_plonk_snark_wrapper_previous_vk_finalization_hint_and_ctx()
         .unwrap();
     let (precomputation, vk) =
-        PlonkSnarkWrapper::precompute_snark_wrapper_circuit(previous_vk, finalization_hint, ctx);
+        PlonkSnarkWrapper::precompute_plonk_snark_wrapper_circuit(previous_vk, finalization_hint, ctx);
     setup_data_cache
         .set_plonk_snark_wrapper_setup_data(&precomputation, &vk)
         .context("Failed to set Plonk snark wrapper setup data")

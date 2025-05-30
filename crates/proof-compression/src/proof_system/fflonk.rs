@@ -118,7 +118,7 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
         )
         .unwrap();
         println!("fflonk proving takes {} s", start.elapsed().as_secs());
-        drop(ctx);
+        // drop(ctx);
         proof
     }
 
@@ -154,7 +154,7 @@ impl SnarkWrapperProofSystemExt for FflonkSnarkWrapper {
             )
             .unwrap();
         let vk = device_setup.get_verification_key();
-        drop(ctx);
+        // drop(ctx);
         (
             FflonkSnarkVerifierCircuitDeviceSetupWrapper(device_setup),
             vk,

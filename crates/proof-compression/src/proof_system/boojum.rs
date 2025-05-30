@@ -174,7 +174,7 @@ where
             cache_strategy,
         )
         .expect("gpu proof");
-        drop(ctx);
+        // drop(ctx);
         let proof = gpu_proof.into();
 
         proof

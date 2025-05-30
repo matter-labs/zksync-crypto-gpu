@@ -26,7 +26,7 @@ pub trait CompressorBlobStorage: Send + Sync + 'static {
         &self,
     ) -> &CompressionSetupData<CompressionMode1ForWrapper>;
 
-    fn get_plonk_snark_wrapper_setup_data(&self) -> &SnarkWrapperSetupData<PlonkSnarkWrapper>;
+    fn get_plonk_snark_wrapper_setup_data(&self) -> SnarkWrapperSetupData<PlonkSnarkWrapper>;
     fn get_fflonk_snark_wrapper_setup_data(&self) -> &SnarkWrapperSetupData<FflonkSnarkWrapper>;
 }
 

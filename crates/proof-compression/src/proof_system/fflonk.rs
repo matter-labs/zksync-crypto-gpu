@@ -15,7 +15,6 @@ use bellman::{
     },
 };
 use circuit_definitions::circuit_definitions::aux_layer::ZkSyncSnarkWrapperCircuitNoLookupCustomGate;
-
 use super::*;
 pub(crate) use ::fflonk::HostAllocator;
 pub(crate) type FflonkSnarkVerifierCircuit = ZkSyncSnarkWrapperCircuitNoLookupCustomGate;
@@ -72,20 +71,19 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
         Self::Context::init_pinned_memory(domain_size).unwrap();
     }
 
-    fn load_compact_raw_crs<R: std::io::Read>(src: R) -> Self::CRS {
+    fn load_compact_raw_crs<R: std::io::Read>(src: R) -> anyhow::Result<Self::CRS> {
         let domain_size = 1 << ::fflonk::fflonk_cpu::L1_VERIFIER_DOMAIN_SIZE_LOG;
         let num_g1_bases_for_crs = ::fflonk::fflonk_cpu::MAX_COMBINED_DEGREE_FACTOR * domain_size;
-        read_crs_from_raw_compact_form(src, num_g1_bases_for_crs).unwrap()
+        Ok(read_crs_from_raw_compact_form(src, num_g1_bases_for_crs)?)
     }
 
-    fn init_context(compact_raw_crs: Self::CRS) -> Self::Context {
+    fn init_context(compact_raw_crs: Self::CRS) -> anyhow::Result<Self::Context> {
         let domain_size = 1 << ::fflonk::fflonk_cpu::L1_VERIFIER_DOMAIN_SIZE_LOG;
         let context = DeviceContextWithSingleDevice::init_from_preloaded_crs::<Self::Allocator>(
             domain_size,
             compact_raw_crs,
-        )
-        .unwrap();
-        context
+        ).unwrap();
+        Ok(context)
     }
 
     fn synthesize_for_proving(circuit: Self::Circuit) -> Self::ProvingAssembly {
@@ -97,11 +95,11 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
     }
 
     fn prove(
-        ctx: &Self::Context,
+        _ctx: &Self::Context,
         mut proving_assembly: Self::ProvingAssembly,
         precomputation: &Self::Precomputation,
         finalization_hint: &Self::FinalizationHint,
-    ) -> Self::Proof {
+    ) -> anyhow::Result<Self::Proof> {
         assert!(proving_assembly.is_satisfied());
         let raw_trace_len = proving_assembly.n();
         assert!(finalization_hint.is_power_of_two());
@@ -116,10 +114,14 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
             &precomputation,
             raw_trace_len,
         )
-        .unwrap();
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to create proof for FflonkSnarkWrapper: {:?}",
+                e
+            )
+        })?;
         println!("fflonk proving takes {} s", start.elapsed().as_secs());
-        // drop(ctx);
-        proof
+        Ok(proof)
     }
 
     fn prove_from_witnesses(
@@ -127,7 +129,7 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
         _: Self::ExternalWitnessData,
         _: &Self::Precomputation,
         _: &Self::FinalizationHint,
-    ) -> Self::Proof {
+    ) -> anyhow::Result<Self::Proof> {
         unimplemented!()
     }
 }
@@ -144,20 +146,24 @@ impl SnarkWrapperProofSystemExt for FflonkSnarkWrapper {
     }
 
     fn generate_precomputation_and_vk(
-        ctx: &Self::Context,
+        _ctx: &Self::Context,
         setup_assembly: Self::SetupAssembly,
         _hardcoded_finalization_hint: Self::FinalizationHint,
-    ) -> (Self::Precomputation, Self::VK) {
+    ) -> anyhow::Result<(Self::Precomputation, Self::VK)> {
         let device_setup =
             FflonkSnarkVerifierCircuitDeviceSetup::<Self::Allocator>::create_setup_from_assembly_on_device(
                 &setup_assembly,
             )
-            .unwrap();
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to create setup from assembly on device: {:?}",
+                    e
+                )
+            })?;
         let vk = device_setup.get_verification_key();
-        // drop(ctx);
-        (
+        Ok((
             FflonkSnarkVerifierCircuitDeviceSetupWrapper(device_setup),
             vk,
-        )
+        ))
     }
 }

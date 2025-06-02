@@ -77,7 +77,7 @@ impl PlonkSnarkWrapper {
             GoldilocksExt2,
         >,
         setup_data_cache: SnarkWrapperSetupData<Self>,
-    ) -> <Self as ProofSystemDefinition>::Proof {
+    ) -> anyhow::Result<<Self as ProofSystemDefinition>::Proof> {
         assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
         let input_vk = setup_data_cache.previous_vk;
         let mut ctx = setup_data_cache.ctx.into_inner();
@@ -105,13 +105,18 @@ impl PlonkSnarkWrapper {
                 &mut precomputation,
                 None,
             )
-            .unwrap();
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to create proof for PlonkSnarkWrapper: {:?}",
+                    e
+                )
+            })?;
         println!("plonk proving takes {} s", start.elapsed().as_secs());
         ctx.free_all_slots();
 
         assert!(<Self as ProofSystemDefinition>::verify(&proof, &vk));
 
-        proof
+        Ok(proof)
     }
 
     pub fn precompute_plonk_snark_wrapper_circuit(
@@ -121,10 +126,10 @@ impl PlonkSnarkWrapper {
         >,
         hardcoded_finalization_hint: <Self as ProofSystemDefinition>::FinalizationHint,
         ctx: <Self as SnarkWrapperProofSystem>::Context,
-    ) -> (
+    ) -> anyhow::Result<(
         <Self as ProofSystemDefinition>::Precomputation,
         <Self as ProofSystemDefinition>::VK,
-    ) {
+    )> {
         let circuit = Self::build_circuit(input_vk, None);
         let mut setup_assembly =
             <Self as SnarkWrapperProofSystemExt>::synthesize_for_setup(circuit);
@@ -143,7 +148,12 @@ impl PlonkSnarkWrapper {
         );
         precomputation
             .generate_from_assembly(&worker, &setup_assembly, &mut ctx)
-            .unwrap();
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to generate precomputation for PlonkSnarkWrapper: {:?}",
+                    e
+                )
+            })?;
 
         let hardcoded_g2_bases = hardcoded_canonical_g2_bases();
         let mut dummy_crs = Crs::<bellman::bn256::Bn256, CrsForMonomialForm>::dummy_crs(1);
@@ -154,14 +164,19 @@ impl PlonkSnarkWrapper {
             PlonkCsWidth4WithNextStepAndCustomGatesParams,
             SynthesisModeGenerateSetup,
         >(&mut ctx, &setup_assembly, &dummy_crs)
-        .unwrap();
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to compute verification key for PlonkSnarkWrapper: {:?}",
+                e
+            )
+        })?;
 
         ctx.free_all_slots();
 
-        (
+        Ok((
             PlonkSnarkVerifierCircuitDeviceSetupWrapper::from_inner(precomputation),
             vk,
-        )
+        ))
     }
 }
 
@@ -208,16 +223,21 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
         // TODO: initialize static pinned memory
     }
 
-    fn load_compact_raw_crs<R: std::io::Read>(src: R) -> Self::CRS {
+    fn load_compact_raw_crs<R: std::io::Read>(src: R) -> anyhow::Result<Self::CRS> {
         let num_g1_points_for_crs = 1 << PlonkProverDeviceMemoryManagerConfig::FULL_SLOT_SIZE_LOG;
-        read_crs_from_raw_compact_form(src, num_g1_points_for_crs).unwrap()
+        Ok(read_crs_from_raw_compact_form(src, num_g1_points_for_crs)?)
     }
 
-    fn init_context(compact_raw_crs: Self::CRS) -> Self::Context {
+    fn init_context(compact_raw_crs: Self::CRS) -> anyhow::Result<Self::Context> {
         let device_ids: Vec<_> =
             (0..<PlonkProverDeviceMemoryManagerConfig as ManagerConfigs>::NUM_GPUS).collect();
-        let manager = DeviceMemoryManager::init(&device_ids, &compact_raw_crs.g1_bases).unwrap();
-        UnsafePlonkProverDeviceMemoryManagerWrapper(manager)
+        let manager = DeviceMemoryManager::init(&device_ids, &compact_raw_crs.g1_bases).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to initialize Plonk device memory manager: {:?}",
+                e
+            )
+        })?;
+        Ok(UnsafePlonkProverDeviceMemoryManagerWrapper(manager))
     }
 
     fn synthesize_for_proving(circuit: Self::Circuit) -> Self::ProvingAssembly {
@@ -233,7 +253,8 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
         _: Self::ProvingAssembly,
         _: &Self::Precomputation,
         _: &Self::FinalizationHint,
-    ) -> Self::Proof {
+    ) -> anyhow::Result<Self::Proof> {
+        // We use a custom proving function because Plonk requires mutable ownership of the setup data
         unimplemented!()
     }
 
@@ -242,7 +263,7 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
         _: Vec<Self::FieldElement, Self::Allocator>,
         _: &Self::Precomputation,
         _: &Self::FinalizationHint,
-    ) -> Self::Proof {
+    ) -> anyhow::Result<Self::Proof> {
         unimplemented!()
     }
 }
@@ -261,7 +282,7 @@ impl SnarkWrapperProofSystemExt for PlonkSnarkWrapper {
         _: &Self::Context,
         _: Self::SetupAssembly,
         _: Self::FinalizationHint,
-    ) -> (Self::Precomputation, Self::VK) {
+    ) -> anyhow::Result<(Self::Precomputation, Self::VK)> {
         unimplemented!()
     }
 }

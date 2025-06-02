@@ -1,3 +1,4 @@
+use anyhow::Context;
 use shivini::{
     boojum::{
         config::{ProvingCSConfig, SetupCSConfig},
@@ -84,10 +85,10 @@ where
         1 << 17
     }
 
-    fn init_context(domain_size: Self::ContextConfig) -> Self::Context {
+    fn init_context(domain_size: Self::ContextConfig) -> anyhow::Result<Self::Context> {
         let config =
             ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
-        let context = Self::Context::create_with_config(config).expect("gpu prover context");
+        let context = Self::Context::create_with_config(config).context("gpu prover context");
 
         context
     }
@@ -129,10 +130,10 @@ where
         precomputation: &Self::Precomputation,
         finalization_hint: &Self::FinalizationHint,
         vk: &Self::VK,
-    ) -> Self::Proof {
+    ) -> anyhow::Result<Self::Proof> {
         Self::prove_from_witnesses(
             ctx,
-            proving_assembly.witness.unwrap(),
+            proving_assembly.witness.context("missing witness")?,
             aux_config,
             precomputation,
             finalization_hint,
@@ -141,13 +142,13 @@ where
     }
 
     fn prove_from_witnesses(
-        ctx: &Self::Context,
+        _ctx: &Self::Context,
         witness: Self::ExternalWitnessData,
         aux_config: Self::AuxConfig,
         precomputation: &Self::Precomputation,
         finalization_hint: &Self::FinalizationHint,
         vk: &Self::VK,
-    ) -> Self::Proof {
+    ) -> anyhow::Result<Self::Proof> {
         let domain_size = vk.fixed_parameters.domain_size as usize;
         assert_eq!(finalization_hint.final_trace_len, domain_size);
         let cache_strategy = CacheStrategy {
@@ -173,11 +174,10 @@ where
             &worker,
             cache_strategy,
         )
-        .expect("gpu proof");
-        // drop(ctx);
+        .context("failed to generate gpu compression proof")?;
         let proof = gpu_proof.into();
 
-        proof
+        Ok(proof)
     }
 }
 
@@ -199,7 +199,7 @@ where
         ctx: Self::Context,
         setup_assembly: Self::SetupAssembly,
         finalization_hint: &Self::FinalizationHint,
-    ) -> (Self::Precomputation, Self::VK) {
+    ) -> anyhow::Result<(Self::Precomputation, Self::VK)> {
         let worker = Worker::new();
         let proof_config = CF::proof_config_for_compression_step();
         let (setup_base, vk_params, vars_hint, wits_hint) = setup_assembly.get_light_setup(
@@ -214,9 +214,9 @@ where
                 CF::ThisLayerHasher,
                 _,
             >(setup_base, vk_params, vars_hint, wits_hint, &worker)
-            .unwrap();
+            .context("failed to generate precomputation and vk for compression")?;
         drop(ctx);
-        (BoojumDeviceSetupWrapper::from_inner(precomputation), vk)
+        Ok((BoojumDeviceSetupWrapper::from_inner(precomputation), vk))
     }
     fn synthesize_for_setup(
         circuit: CompressionLayerCircuit<Self>,

@@ -37,39 +37,40 @@ pub trait CompressionStep: CompressionProofSystem {
     const IS_WRAPPER: bool;
     fn load_finalization_hint(
         reader: Box<dyn Read>,
-    ) -> <Self as ProofSystemDefinition>::FinalizationHint {
-        serde_json::from_reader(reader).unwrap()
+    ) -> anyhow::Result<<Self as ProofSystemDefinition>::FinalizationHint> {
+        Ok(serde_json::from_reader(reader)?)
     }
 
     fn load_previous_vk(
         reader: Box<dyn Read>,
-    ) -> VerificationKey<GoldilocksField, Self::PreviousStepTreeHasher> {
-        serde_json::from_reader(reader).unwrap()
+    ) -> anyhow::Result<VerificationKey<GoldilocksField, Self::PreviousStepTreeHasher>> {
+        Ok(serde_json::from_reader(reader)?)
     }
 
-    fn load_this_vk(reader: Box<dyn Read>) -> <Self as ProofSystemDefinition>::VK {
-        serde_json::from_reader(reader).unwrap()
+    fn load_this_vk(reader: Box<dyn Read>) -> anyhow::Result<<Self as ProofSystemDefinition>::VK> {
+        Ok(serde_json::from_reader(reader)?)
     }
 
     fn get_precomputation(
         reader: Box<dyn Read>,
-    ) -> <Self as ProofSystemDefinition>::Precomputation {
-        <<Self as ProofSystemDefinition>::Precomputation as MemcopySerializable>::read_from_buffer(
+    ) -> anyhow::Result<<Self as ProofSystemDefinition>::Precomputation> {
+        Ok(<<Self as ProofSystemDefinition>::Precomputation as MemcopySerializable>::read_from_buffer(
             reader,
-        )
-        .unwrap()
+        ).map_err(|e| {
+            anyhow::anyhow!("Failed to read precomputation: {}", e)
+        })?)
     }
 
     fn prove_compression_step(
         input_proof: Proof<GoldilocksField, Self::PreviousStepTreeHasher, GoldilocksExt2>,
         setup_data_cache: &CompressionSetupData<Self>,
-    ) -> <Self as ProofSystemDefinition>::Proof {
+    ) -> anyhow::Result<<Self as ProofSystemDefinition>::Proof> {
         let input_vk = &setup_data_cache.previous_vk;
         let vk = &setup_data_cache.vk;
         let precomputation = &setup_data_cache.precomputation;
         let finalization_hint = &setup_data_cache.finalization_hint;
         let ctx_config = Self::get_context_config_from_hint(&finalization_hint);
-        let ctx = Self::init_context(ctx_config);
+        let ctx = Self::init_context(ctx_config)?;
         let circuit = Self::build_circuit(input_vk.clone(), Some(input_proof));
         let proving_assembly = <Self as CompressionProofSystem>::synthesize_for_proving(
             circuit,
@@ -84,10 +85,10 @@ pub trait CompressionStep: CompressionProofSystem {
             precomputation,
             &finalization_hint,
             &vk,
-        );
+        )?;
         assert!(<Self as ProofSystemDefinition>::verify(&proof, &vk));
 
-        proof
+        Ok(proof)
     }
 
     // CompressionLayerCircuit is unified type for both compression circuits
@@ -101,33 +102,38 @@ pub trait CompressionStepExt: CompressionProofSystemExt + CompressionStep {
     fn store_precomputation(
         precomputation: &<Self as ProofSystemDefinition>::Precomputation,
         writer: Box<dyn Write>,
-    ) {
-        precomputation.write_into_buffer(writer).unwrap();
+    ) -> anyhow::Result<()> {
+        precomputation.write_into_buffer(writer).map_err(|e| {
+            anyhow::anyhow!("Failed to write precomputation: {}", e)
+        })?;
+        Ok(())
     }
 
-    fn store_vk(vk: &<Self as ProofSystemDefinition>::VK, writer: Box<dyn Write>) {
-        serde_json::to_writer_pretty(writer, vk).unwrap();
+    fn store_vk(vk: &<Self as ProofSystemDefinition>::VK, writer: Box<dyn Write>) -> anyhow::Result<()> {
+        serde_json::to_writer_pretty(writer, vk)?;
+        Ok(())
     }
 
     fn store_finalization_hint(
         finalization_hint: &<Self as ProofSystemDefinition>::FinalizationHint,
         writer: Box<dyn Write>,
-    ) {
-        serde_json::to_writer_pretty(writer, finalization_hint).unwrap();
+    ) -> anyhow::Result<()> {
+        serde_json::to_writer_pretty(writer, finalization_hint)?;
+        Ok(())
     }
 
     fn precompute_compression_circuits(
         input_vk: VerificationKey<GoldilocksField, Self::PreviousStepTreeHasher>,
-    ) -> (
+    ) -> anyhow::Result<(
         <Self as ProofSystemDefinition>::Precomputation,
         <Self as ProofSystemDefinition>::VK,
         <Self as ProofSystemDefinition>::FinalizationHint,
-    ) {
+    )> {
         let circuit = Self::build_circuit(input_vk.clone(), None);
         // Workaround: trace length is not known at this point, so thats totally fine
         // to use a hardcoded trace length
         let ctx_config = Self::get_context_config();
-        let ctx = Self::init_context(ctx_config);
+        let ctx = Self::init_context(ctx_config)?;
         let (finalization_hint, setup_assembly) =
             <Self as CompressionProofSystemExt>::synthesize_for_setup(circuit);
         let (precomputation, vk) =
@@ -135,9 +141,9 @@ pub trait CompressionStepExt: CompressionProofSystemExt + CompressionStep {
                 ctx,
                 setup_assembly,
                 &finalization_hint,
-            );
+            )?;
 
-        (precomputation, vk, finalization_hint)
+        Ok((precomputation, vk, finalization_hint))
     }
 }
 

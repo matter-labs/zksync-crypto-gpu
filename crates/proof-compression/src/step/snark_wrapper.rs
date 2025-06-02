@@ -30,37 +30,38 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
         GoldilocksField,
         Output: serde::Serialize + serde::de::DeserializeOwned,
     >;
-    fn load_finalization_hint() -> <Self as ProofSystemDefinition>::FinalizationHint {
+    fn load_finalization_hint() -> anyhow::Result<<Self as ProofSystemDefinition>::FinalizationHint> {
         assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
         let hint = if Self::IS_PLONK {
             (1 << <PlonkProverDeviceMemoryManagerConfig as gpu_prover::ManagerConfigs>::FULL_SLOT_SIZE_LOG).to_string()
         } else {
             (1 << ::fflonk::fflonk::L1_VERIFIER_DOMAIN_SIZE_LOG).to_string()
         };
-        serde_json::from_str(&hint).unwrap()
+        Ok(serde_json::from_str(&hint)?)
     }
 
     fn load_previous_vk(
         reader: Box<dyn Read>,
-    ) -> VerificationKey<GoldilocksField, Self::PreviousStepTreeHasher> {
-        serde_json::from_reader(reader).unwrap()
+    ) -> anyhow::Result<VerificationKey<GoldilocksField, Self::PreviousStepTreeHasher>> {
+        Ok(serde_json::from_reader(reader)?)
     }
 
-    fn load_this_vk(reader: Box<dyn Read>) -> <Self as ProofSystemDefinition>::VK {
-        serde_json::from_reader(reader).unwrap()
+    fn load_this_vk(reader: Box<dyn Read>) -> anyhow::Result<<Self as ProofSystemDefinition>::VK> {
+        Ok(serde_json::from_reader(reader)?)
     }
 
-    fn load_compact_raw_crs(reader: Box<dyn Read>) -> <Self as SnarkWrapperProofSystem>::CRS {
+    fn load_compact_raw_crs(reader: Box<dyn Read>) -> anyhow::Result<<Self as SnarkWrapperProofSystem>::CRS> {
         <Self as SnarkWrapperProofSystem>::load_compact_raw_crs(reader)
     }
 
     fn get_precomputation(
         reader: Box<dyn Read>,
-    ) -> <Self as ProofSystemDefinition>::Precomputation {
-        <<Self as ProofSystemDefinition>::Precomputation as MemcopySerializable>::read_from_buffer(
+    ) -> anyhow::Result<<Self as ProofSystemDefinition>::Precomputation> {
+        Ok(<<Self as ProofSystemDefinition>::Precomputation as MemcopySerializable>::read_from_buffer(
             reader,
-        )
-        .unwrap()
+        ).map_err(|e| {
+            anyhow::anyhow!("Failed to read precomputation: {}", e)
+        })?)
     }
 
     fn run_pre_initialization_tasks() {
@@ -70,7 +71,7 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
     fn prove_snark_wrapper_step(
         input_proof: Proof<GoldilocksField, Self::PreviousStepTreeHasher, GoldilocksExt2>,
         setup_data_cache: &SnarkWrapperSetupData<Self>,
-    ) -> <Self as ProofSystemDefinition>::Proof {
+    ) -> anyhow::Result<<Self as ProofSystemDefinition>::Proof> {
         assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
         let input_vk = &setup_data_cache.previous_vk;
         let ctx = &setup_data_cache.ctx;
@@ -85,11 +86,11 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
             proving_assembly,
             precomputation,
             finalization_hint,
-        );
+        )?;
 
         assert!(<Self as ProofSystemDefinition>::verify(&proof, &vk));
 
-        proof
+        Ok(proof)
     }
 
     fn build_circuit(
@@ -102,23 +103,25 @@ pub trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperStep {
     fn store_precomputation(
         precomputation: &<Self as ProofSystemDefinition>::Precomputation,
         writer: Box<dyn Write>,
-    ) {
+    ) -> anyhow::Result<()> {
         <Self as ProofSystemDefinition>::Precomputation::write_into_buffer(precomputation, writer)
-            .unwrap();
+            .map_err(|e| anyhow::anyhow!("Failed to write precomputation: {}", e))?;
+        Ok(())
     }
 
-    fn store_vk(vk: &<Self as ProofSystemDefinition>::VK, writer: Box<dyn Write>) {
-        serde_json::to_writer_pretty(writer, vk).unwrap();
+    fn store_vk(vk: &<Self as ProofSystemDefinition>::VK, writer: Box<dyn Write>) -> anyhow::Result<()> {
+        serde_json::to_writer_pretty(writer, vk)?;
+        Ok(())
     }
 
     fn precompute_snark_wrapper_circuit(
         input_vk: VerificationKey<GoldilocksField, Self::PreviousStepTreeHasher>,
         finalization_hint: <Self as ProofSystemDefinition>::FinalizationHint,
         ctx: <Self as SnarkWrapperProofSystem>::Context,
-    ) -> (
+    ) -> anyhow::Result<(
         <Self as ProofSystemDefinition>::Precomputation,
         <Self as ProofSystemDefinition>::VK,
-    ) {
+    )> {
         let circuit = Self::build_circuit(input_vk, None);
         let setup_assembly = <Self as SnarkWrapperProofSystemExt>::synthesize_for_setup(circuit);
 
@@ -127,9 +130,9 @@ pub trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperStep {
                 &ctx,
                 setup_assembly,
                 finalization_hint,
-            );
+            )?;
 
-        (precomputation, vk)
+        Ok((precomputation, vk))
     }
 }
 

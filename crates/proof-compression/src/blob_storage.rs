@@ -8,6 +8,7 @@ use crate::SnarkWrapperProofSystem;
 use crate::SnarkWrapperSetupData;
 use crate::SnarkWrapperStep;
 use crate::SnarkWrapperStepExt;
+use anyhow::Context;
 use circuit_definitions::boojum::{
     cs::implementations::verifier::VerificationKey, field::goldilocks::GoldilocksField,
 };
@@ -17,19 +18,19 @@ use circuit_definitions::circuit_definitions::aux_layer::compression_modes::{
 };
 
 pub trait CompressorBlobStorage: Send + Sync + 'static {
-    fn get_compression_mode1_setup_data(&self) -> &CompressionSetupData<CompressionMode1>;
-    fn get_compression_mode2_setup_data(&self) -> &CompressionSetupData<CompressionMode2>;
-    fn get_compression_mode3_setup_data(&self) -> &CompressionSetupData<CompressionMode3>;
-    fn get_compression_mode4_setup_data(&self) -> &CompressionSetupData<CompressionMode4>;
+    fn get_compression_mode1_setup_data(&self) -> anyhow::Result<&CompressionSetupData<CompressionMode1>>;
+    fn get_compression_mode2_setup_data(&self) -> anyhow::Result<&CompressionSetupData<CompressionMode2>>;
+    fn get_compression_mode3_setup_data(&self) -> anyhow::Result<&CompressionSetupData<CompressionMode3>>;
+    fn get_compression_mode4_setup_data(&self) -> anyhow::Result<&CompressionSetupData<CompressionMode4>>;
     fn get_compression_mode5_for_wrapper_setup_data(
         &self,
-    ) -> &CompressionSetupData<CompressionMode5ForWrapper>;
+    ) -> anyhow::Result<&CompressionSetupData<CompressionMode5ForWrapper>>;
     fn get_compression_mode1_for_wrapper_setup_data(
         &self,
-    ) -> &CompressionSetupData<CompressionMode1ForWrapper>;
+    ) -> anyhow::Result<&CompressionSetupData<CompressionMode1ForWrapper>>;
 
-    fn get_plonk_snark_wrapper_setup_data(&self) -> SnarkWrapperSetupData<PlonkSnarkWrapper>;
-    fn get_fflonk_snark_wrapper_setup_data(&self) -> &SnarkWrapperSetupData<FflonkSnarkWrapper>;
+    fn get_plonk_snark_wrapper_setup_data(&self) -> anyhow::Result<SnarkWrapperSetupData<PlonkSnarkWrapper>>;
+    fn get_fflonk_snark_wrapper_setup_data(&self) -> anyhow::Result<&SnarkWrapperSetupData<FflonkSnarkWrapper>>;
 }
 
 pub trait CompressorBlobStorageExt: CompressorBlobStorage {
@@ -172,14 +173,16 @@ impl FileSystemBlobStorage {
     const FFLONK_PREFIX: &str = "fflonk";
     const PLONK_PREFIX: &str = "plonk";
 
-    fn open_file(path: &str) -> Box<dyn Read + Send + Sync> {
-        let file = std::fs::File::open(path).unwrap();
-        Box::new(file)
+    fn open_file(path: &str) -> anyhow::Result<Box<dyn Read + Send + Sync>> {
+        let file = std::fs::File::open(path)
+            .with_context(|| format!("Failed to open file at path: {}", path))?;
+        Ok(Box::new(file))
     }
 
-    fn create_file(path: &str) -> Box<dyn Write> {
-        let file = std::fs::File::create(path).unwrap();
-        Box::new(file)
+    fn create_file(path: &str) -> anyhow::Result<Box<dyn Write>> {
+        let file = std::fs::File::create(path)
+            .with_context(|| format!("Failed to create file at path: {}", path))?;
+        Ok(Box::new(file))
     }
 }
 
@@ -197,54 +200,55 @@ impl FileSystemBlobStorage {
         }
     }
 
-    pub fn load_all_resources_for_fflonk(&self) -> Self {
-        Self {
+    pub fn load_all_resources_for_fflonk(&self) -> anyhow::Result<Self> {
+        Ok(Self {
             compression_mode1_setup_data: Some(
-                self.get_compression_setup_data::<CompressionMode1>()
-                    .expect("Failed to get compression mode 1 setup data"),
+                self.load_compression_setup_data::<CompressionMode1>()
+                    .context("Failed to get compression mode 1 setup data")?,
             ),
             compression_mode2_setup_data: Some(
-                self.get_compression_setup_data::<CompressionMode2>()
-                    .expect("Failed to get compression mode 2 setup data"),
+                self.load_compression_setup_data::<CompressionMode2>()
+                    .context("Failed to get compression mode 2 setup data")?,
             ),
             compression_mode3_setup_data: Some(
-                self.get_compression_setup_data::<CompressionMode3>()
-                    .expect("Failed to get compression mode 3 setup data"),
+                self.load_compression_setup_data::<CompressionMode3>()
+                    .context("Failed to get compression mode 3 setup data")?,
             ),
             compression_mode4_setup_data: Some(
-                self.get_compression_setup_data::<CompressionMode4>()
-                    .expect("Failed to get compression mode 4 setup data"),
+                self.load_compression_setup_data::<CompressionMode4>()
+                    .context("Failed to get compression mode 4 setup data")?,
             ),
             compression_mode5_for_wrapper_setup_data: Some(
-                self.get_compression_setup_data::<CompressionMode5ForWrapper>()
-                    .expect("Failed to get compression mode 5 for wrapper setup data"),
+                self.load_compression_setup_data::<CompressionMode5ForWrapper>()
+                    .context("Failed to get compression mode 5 for wrapper setup data")?,
             ),
             fflonk_snark_wrapper_setup_data: Some(
-                self.get_snark_wrapper_setup_data::<FflonkSnarkWrapper>()
-                    .expect("Failed to get Fflonk snark wrapper setup data"),
+                self.load_snark_wrapper_setup_data::<FflonkSnarkWrapper>()
+                    .context("Failed to get Fflonk snark wrapper setup data")?,
             ),
             compression_mode1_for_wrapper_setup_data: None,
             plonk_snark_wrapper_setup_data: None,
-        }
+        })
     }
 
-    pub fn load_all_resources_for_plonk(&self) -> Self {
-        Self {
+    pub fn load_all_resources_for_plonk(&self) -> anyhow::Result<Self> {
+        Ok(Self {
             compression_mode1_setup_data: None,
             compression_mode2_setup_data: None,
             compression_mode3_setup_data: None,
             compression_mode4_setup_data: None,
             compression_mode5_for_wrapper_setup_data: None,
             compression_mode1_for_wrapper_setup_data: Some(
-                self.get_compression_setup_data::<CompressionMode1ForWrapper>()
-                    .expect("Failed to get compression mode 1 for wrapper setup data"),
+                self.load_compression_setup_data::<CompressionMode1ForWrapper>()
+                    .context("Failed to get compression mode 1 for wrapper setup data")?,
             ),
+            // We will load the Plonk snark wrapper setup data later in-place
             plonk_snark_wrapper_setup_data: None,
             fflonk_snark_wrapper_setup_data: None,
-        }
+        })
     }
 
-    fn get_compression_vk<CS: CompressionStep>(&self) -> anyhow::Result<CS::VK> {
+    fn load_compression_vk<CS: CompressionStep>(&self) -> anyhow::Result<CS::VK> {
         let prefix = if CS::IS_WRAPPER {
             Self::COMPRESSION_WRAPPER_PREFIX
         } else {
@@ -252,11 +256,11 @@ impl FileSystemBlobStorage {
         };
         let path = format!("{}/{}_{}_vk.json", Self::DATA_DIR_PATH, prefix, CS::MODE);
         println!("Reading compression vk at path {}", path);
-        let reader = Self::open_file(&path);
+        let reader = Self::open_file(&path)?;
         let vk = CS::load_this_vk(reader);
-        Ok(vk)
+        vk
     }
-    fn get_compression_precomputation<CS: CompressionStep>(
+    fn load_compression_precomputation<CS: CompressionStep>(
         &self,
     ) -> anyhow::Result<CS::Precomputation> {
         let prefix = if CS::IS_WRAPPER {
@@ -266,11 +270,11 @@ impl FileSystemBlobStorage {
         };
         let path = format!("{}/{}_{}_setup.bin", Self::DATA_DIR_PATH, prefix, CS::MODE);
         println!("Reading compression precomputation at path {}", path);
-        let reader = Self::open_file(&path);
+        let reader = Self::open_file(&path)?;
         let precomputation = CS::get_precomputation(reader);
-        Ok(precomputation)
+        precomputation
     }
-    fn get_compression_finalization_hint<CS: CompressionStep>(
+    fn load_compression_finalization_hint<CS: CompressionStep>(
         &self,
     ) -> anyhow::Result<CS::FinalizationHint> {
         let prefix = if CS::IS_WRAPPER {
@@ -280,11 +284,11 @@ impl FileSystemBlobStorage {
         };
         let path = format!("{}/{}_{}_hint.json", Self::DATA_DIR_PATH, prefix, CS::MODE);
         println!("Reading compression finalization hint at path {}", path);
-        let reader = Self::open_file(&path);
+        let reader = Self::open_file(&path)?;
         let finalization_hint = CS::load_finalization_hint(reader);
-        Ok(finalization_hint)
+        finalization_hint
     }
-    fn get_compression_previous_vk<CS: CompressionStep>(
+    fn load_compression_previous_vk<CS: CompressionStep>(
         &self,
     ) -> anyhow::Result<
         VerificationKey<GoldilocksField, <CS as CompressionStep>::PreviousStepTreeHasher>,
@@ -301,17 +305,17 @@ impl FileSystemBlobStorage {
             )
         };
         println!("Reading compression previous vk at path {}", path);
-        let reader = Self::open_file(&path);
+        let reader = Self::open_file(&path)?;
         let previous_vk = CS::load_previous_vk(reader);
-        Ok(previous_vk)
+        previous_vk
     }
-    fn get_compression_setup_data<CS: CompressionStep>(
+    fn load_compression_setup_data<CS: CompressionStep>(
         &self,
     ) -> anyhow::Result<CompressionSetupData<CS>> {
-        let vk = self.get_compression_vk::<CS>()?;
-        let previous_vk = self.get_compression_previous_vk::<CS>()?;
-        let precomputation = self.get_compression_precomputation::<CS>()?;
-        let finalization_hint = self.get_compression_finalization_hint::<CS>()?;
+        let vk = self.load_compression_vk::<CS>()?;
+        let previous_vk = self.load_compression_previous_vk::<CS>()?;
+        let precomputation = self.load_compression_precomputation::<CS>()?;
+        let finalization_hint = self.load_compression_finalization_hint::<CS>()?;
         Ok(CompressionSetupData {
             vk,
             previous_vk,
@@ -320,7 +324,7 @@ impl FileSystemBlobStorage {
         })
     }
 
-    fn get_snark_wrapper_vk<SW: SnarkWrapperStep>(&self) -> anyhow::Result<SW::VK> {
+    fn load_snark_wrapper_vk<SW: SnarkWrapperStep>(&self) -> anyhow::Result<SW::VK> {
         let prefix = if SW::IS_FFLONK {
             Self::FFLONK_PREFIX
         } else {
@@ -328,11 +332,11 @@ impl FileSystemBlobStorage {
         };
         let path = format!("{}/{}_vk.json", Self::DATA_DIR_PATH, prefix);
         println!("Reading snark wrapper vk at path {}", path);
-        let reader = Self::open_file(&path);
+        let reader = Self::open_file(&path)?;
         let vk = SW::load_this_vk(reader);
-        Ok(vk)
+        vk
     }
-    fn get_snark_wrapper_precomputation<SW: SnarkWrapperStep>(
+    fn load_snark_wrapper_precomputation<SW: SnarkWrapperStep>(
         &self,
     ) -> anyhow::Result<SW::Precomputation> {
         let prefix = if SW::IS_FFLONK {
@@ -342,17 +346,17 @@ impl FileSystemBlobStorage {
         };
         let path = format!("{}/{}_setup.bin", Self::DATA_DIR_PATH, prefix);
         println!("Reading snark wrapper precomputation at path {}", path);
-        let reader = Self::open_file(&path);
+        let reader = Self::open_file(&path)?;
         let precomputation = SW::get_precomputation(reader);
-        Ok(precomputation)
+        precomputation
     }
-    fn get_snark_wrapper_finalization_hint<SW: SnarkWrapperStep>(
+    fn load_snark_wrapper_finalization_hint<SW: SnarkWrapperStep>(
         &self,
     ) -> anyhow::Result<SW::FinalizationHint> {
         let finalization_hint = SW::load_finalization_hint();
-        Ok(finalization_hint)
+        finalization_hint
     }
-    fn get_snark_wrapper_previous_vk<SW: SnarkWrapperStep>(
+    fn load_snark_wrapper_previous_vk<SW: SnarkWrapperStep>(
         &self,
     ) -> anyhow::Result<
         VerificationKey<GoldilocksField, <SW as SnarkWrapperStep>::PreviousStepTreeHasher>,
@@ -365,26 +369,26 @@ impl FileSystemBlobStorage {
             previous_compression_mode
         );
         println!("Reading snark wrapper previous vk at path {}", path);
-        let reader = Self::open_file(&path);
+        let reader = Self::open_file(&path)?;
         let previous_vk = SW::load_previous_vk(reader);
-        Ok(previous_vk)
+        previous_vk
     }
-    fn get_snark_wrapper_ctx<SW: SnarkWrapperStep>(&self) -> anyhow::Result<SW::Context> {
+    fn load_snark_wrapper_ctx<SW: SnarkWrapperStep>(&self) -> anyhow::Result<SW::Context> {
         let path = format!("{}/compact_raw_crs.key", Self::DATA_DIR_PATH,);
         println!("Reading CRS at path {}", path);
-        let reader = Self::open_file(&path);
-        let crs = <SW as SnarkWrapperStep>::load_compact_raw_crs(reader);
+        let reader = Self::open_file(&path)?;
+        let crs = <SW as SnarkWrapperStep>::load_compact_raw_crs(reader)?;
         let ctx = <SW as SnarkWrapperProofSystem>::init_context(crs);
-        Ok(ctx)
+        ctx
     }
-    fn get_snark_wrapper_setup_data<SW: SnarkWrapperStep>(
+    fn load_snark_wrapper_setup_data<SW: SnarkWrapperStep>(
         &self,
     ) -> anyhow::Result<SnarkWrapperSetupData<SW>> {
-        let vk = self.get_snark_wrapper_vk::<SW>()?;
-        let previous_vk = self.get_snark_wrapper_previous_vk::<SW>()?;
-        let precomputation = self.get_snark_wrapper_precomputation::<SW>()?;
-        let finalization_hint = self.get_snark_wrapper_finalization_hint::<SW>()?;
-        let ctx = self.get_snark_wrapper_ctx::<SW>()?;
+        let vk = self.load_snark_wrapper_vk::<SW>()?;
+        let previous_vk = self.load_snark_wrapper_previous_vk::<SW>()?;
+        let precomputation = self.load_snark_wrapper_precomputation::<SW>()?;
+        let finalization_hint = self.load_snark_wrapper_finalization_hint::<SW>()?;
+        let ctx = self.load_snark_wrapper_ctx::<SW>()?;
         Ok(SnarkWrapperSetupData {
             vk,
             previous_vk,
@@ -394,7 +398,7 @@ impl FileSystemBlobStorage {
         })
     }
 
-    fn set_compression_setup_data<CS: CompressionStepExt>(
+    fn store_compression_setup_data<CS: CompressionStepExt>(
         &self,
         precomputation: &CS::Precomputation,
         vk: &CS::VK,
@@ -407,23 +411,23 @@ impl FileSystemBlobStorage {
         };
         let path = format!("{}/{}_{}_setup.bin", Self::DATA_DIR_PATH, prefix, CS::MODE);
         println!("Writing compression setup data at path {}", path);
-        let writer = Self::create_file(&path);
-        <CS as CompressionStepExt>::store_precomputation(precomputation, writer);
+        let writer = Self::create_file(&path)?;
+        <CS as CompressionStepExt>::store_precomputation(precomputation, writer)?;
 
         let path = format!("{}/{}_{}_vk.json", Self::DATA_DIR_PATH, prefix, CS::MODE);
         println!("Writing compression vk at path {}", path);
-        let writer = Self::create_file(&path);
-        <CS as CompressionStepExt>::store_vk(vk, writer);
+        let writer = Self::create_file(&path)?;
+        <CS as CompressionStepExt>::store_vk(vk, writer)?;
 
         let path = format!("{}/{}_{}_hint.json", Self::DATA_DIR_PATH, prefix, CS::MODE);
         println!("Writing compression finalization hint at path {}", path);
-        let writer = Self::create_file(&path);
-        <CS as CompressionStepExt>::store_finalization_hint(finalization_hint, writer);
+        let writer = Self::create_file(&path)?;
+        <CS as CompressionStepExt>::store_finalization_hint(finalization_hint, writer)?;
 
         Ok(())
     }
 
-    fn set_snark_wrapper_setup_data<WS: SnarkWrapperStepExt>(
+    fn store_snark_wrapper_setup_data<WS: SnarkWrapperStepExt>(
         &self,
         precomputation: &<WS as ProofSystemDefinition>::Precomputation,
         vk: &<WS as ProofSystemDefinition>::VK,
@@ -435,18 +439,18 @@ impl FileSystemBlobStorage {
         };
         let path = format!("{}/{}_setup.bin", Self::DATA_DIR_PATH, prefix);
         println!("Writing snark wrapper precomputation at path {}", path);
-        let writer = Self::create_file(&path);
-        WS::store_precomputation(precomputation, writer);
+        let writer = Self::create_file(&path)?;
+        WS::store_precomputation(precomputation, writer)?;
 
         let path = format!("{}/{}_vk.json", Self::DATA_DIR_PATH, prefix);
         println!("Writing snark wrapper vk at path {}", path);
-        let writer = Self::create_file(&path);
-        WS::store_vk(vk, writer);
+        let writer = Self::create_file(&path)?;
+        WS::store_vk(vk, writer)?;
 
         Ok(())
     }
 
-    pub fn write_compact_raw_crs(&self) -> Box<dyn Write> {
+    pub fn write_compact_raw_crs(&self) -> anyhow::Result<Box<dyn Write>> {
         let path = format!("{}/compact_raw_crs.key", Self::DATA_DIR_PATH);
         println!("Writing compact raw CRS at path {}", path);
         Self::create_file(&path)
@@ -454,55 +458,56 @@ impl FileSystemBlobStorage {
 }
 
 impl CompressorBlobStorage for FileSystemBlobStorage {
-    fn get_compression_mode1_setup_data(&self) -> &CompressionSetupData<CompressionMode1> {
+    fn get_compression_mode1_setup_data(&self) -> anyhow::Result<&CompressionSetupData<CompressionMode1>> {
         self.compression_mode1_setup_data
             .as_ref()
-            .expect("Compression mode 1 setup data should be initialized")
+            .context("Compression mode 1 setup data should be initialized")
     }
 
-    fn get_compression_mode2_setup_data(&self) -> &CompressionSetupData<CompressionMode2> {
+    fn get_compression_mode2_setup_data(&self) -> anyhow::Result<&CompressionSetupData<CompressionMode2>> {
         self.compression_mode2_setup_data
             .as_ref()
-            .expect("Compression mode 2 setup data should be initialized")
+            .context("Compression mode 2 setup data should be initialized")
     }
 
-    fn get_compression_mode3_setup_data(&self) -> &CompressionSetupData<CompressionMode3> {
+    fn get_compression_mode3_setup_data(&self) -> anyhow::Result<&CompressionSetupData<CompressionMode3>> {
         self.compression_mode3_setup_data
             .as_ref()
-            .expect("Compression mode 3 setup data should be initialized")
+            .context("Compression mode 3 setup data should be initialized")
     }
 
-    fn get_compression_mode4_setup_data(&self) -> &CompressionSetupData<CompressionMode4> {
+    fn get_compression_mode4_setup_data(&self) -> anyhow::Result<&CompressionSetupData<CompressionMode4>> {
         self.compression_mode4_setup_data
             .as_ref()
-            .expect("Compression mode 4 setup data should be initialized")
+            .context("Compression mode 4 setup data should be initialized")
     }
 
     fn get_compression_mode5_for_wrapper_setup_data(
         &self,
-    ) -> &CompressionSetupData<CompressionMode5ForWrapper> {
+    ) -> anyhow::Result<&CompressionSetupData<CompressionMode5ForWrapper>> {
         self.compression_mode5_for_wrapper_setup_data
             .as_ref()
-            .expect("Compression mode 5 for wrapper setup data should be initialized")
+            .context("Compression mode 5 for wrapper setup data should be initialized")
     }
 
     fn get_compression_mode1_for_wrapper_setup_data(
         &self,
-    ) -> &CompressionSetupData<CompressionMode1ForWrapper> {
+    ) -> anyhow::Result<&CompressionSetupData<CompressionMode1ForWrapper>> {
         self.compression_mode1_for_wrapper_setup_data
             .as_ref()
-            .expect("Compression mode 1 for wrapper setup data should be initialized")
+            .context("Compression mode 1 for wrapper setup data should be initialized")
     }
 
-    fn get_plonk_snark_wrapper_setup_data(&self) -> SnarkWrapperSetupData<PlonkSnarkWrapper> {
-        self.get_snark_wrapper_setup_data::<PlonkSnarkWrapper>()
-            .expect("Failed to get Plonk snark wrapper setup data")
+    fn get_plonk_snark_wrapper_setup_data(&self) -> anyhow::Result<SnarkWrapperSetupData<PlonkSnarkWrapper>> {
+        // We load the Plonk snark wrapper setup data in-place
+        self.load_snark_wrapper_setup_data::<PlonkSnarkWrapper>()
+            .context("Failed to get Plonk snark wrapper setup data")
     }
 
-    fn get_fflonk_snark_wrapper_setup_data(&self) -> &SnarkWrapperSetupData<FflonkSnarkWrapper> {
+    fn get_fflonk_snark_wrapper_setup_data(&self) -> anyhow::Result<&SnarkWrapperSetupData<FflonkSnarkWrapper>> {
         self.fflonk_snark_wrapper_setup_data
             .as_ref()
-            .expect("Fflonk snark wrapper setup data should be initialized")
+            .context("Fflonk snark wrapper setup data should be initialized")
     }
 }
 
@@ -515,7 +520,7 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
             <CompressionMode1 as CompressionStep>::PreviousStepTreeHasher,
         >,
     > {
-        self.get_compression_previous_vk::<CompressionMode1>()
+        self.load_compression_previous_vk::<CompressionMode1>()
     }
 
     fn get_compression_mode2_previous_vk(
@@ -526,7 +531,7 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
             <CompressionMode2 as CompressionStep>::PreviousStepTreeHasher,
         >,
     > {
-        self.get_compression_previous_vk::<CompressionMode2>()
+        self.load_compression_previous_vk::<CompressionMode2>()
     }
 
     fn get_compression_mode3_previous_vk(
@@ -537,7 +542,7 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
             <CompressionMode3 as CompressionStep>::PreviousStepTreeHasher,
         >,
     > {
-        self.get_compression_previous_vk::<CompressionMode3>()
+        self.load_compression_previous_vk::<CompressionMode3>()
     }
 
     fn get_compression_mode4_previous_vk(
@@ -548,7 +553,7 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
             <CompressionMode4 as CompressionStep>::PreviousStepTreeHasher,
         >,
     > {
-        self.get_compression_previous_vk::<CompressionMode4>()
+        self.load_compression_previous_vk::<CompressionMode4>()
     }
 
     fn get_compression_mode5_for_wrapper_previous_vk(
@@ -559,7 +564,7 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
             <CompressionMode5ForWrapper as CompressionStep>::PreviousStepTreeHasher,
         >,
     > {
-        self.get_compression_previous_vk::<CompressionMode5ForWrapper>()
+        self.load_compression_previous_vk::<CompressionMode5ForWrapper>()
     }
 
     fn get_compression_mode1_for_wrapper_previous_vk(
@@ -570,7 +575,7 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
             <CompressionMode1ForWrapper as CompressionStep>::PreviousStepTreeHasher,
         >,
     > {
-        self.get_compression_previous_vk::<CompressionMode1ForWrapper>()
+        self.load_compression_previous_vk::<CompressionMode1ForWrapper>()
     }
 
     fn get_plonk_snark_wrapper_previous_vk_finalization_hint_and_ctx(
@@ -583,9 +588,9 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
         <PlonkSnarkWrapper as ProofSystemDefinition>::FinalizationHint,
         <PlonkSnarkWrapper as SnarkWrapperProofSystem>::Context,
     )> {
-        let vk = self.get_snark_wrapper_previous_vk::<PlonkSnarkWrapper>()?;
-        let finalization_hint = PlonkSnarkWrapper::load_finalization_hint();
-        let ctx = self.get_snark_wrapper_ctx::<PlonkSnarkWrapper>()?;
+        let vk = self.load_snark_wrapper_previous_vk::<PlonkSnarkWrapper>()?;
+        let finalization_hint = PlonkSnarkWrapper::load_finalization_hint()?;
+        let ctx = self.load_snark_wrapper_ctx::<PlonkSnarkWrapper>()?;
         Ok((vk, finalization_hint, ctx))
     }
 
@@ -599,9 +604,9 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
         <FflonkSnarkWrapper as ProofSystemDefinition>::FinalizationHint,
         <FflonkSnarkWrapper as SnarkWrapperProofSystem>::Context,
     )> {
-        let vk = self.get_snark_wrapper_previous_vk::<FflonkSnarkWrapper>()?;
-        let finalization_hint = FflonkSnarkWrapper::load_finalization_hint();
-        let ctx = self.get_snark_wrapper_ctx::<FflonkSnarkWrapper>()?;
+        let vk = self.load_snark_wrapper_previous_vk::<FflonkSnarkWrapper>()?;
+        let finalization_hint = FflonkSnarkWrapper::load_finalization_hint()?;
+        let ctx = self.load_snark_wrapper_ctx::<FflonkSnarkWrapper>()?;
         Ok((vk, finalization_hint, ctx))
     }
 
@@ -611,7 +616,7 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
         vk: &<CompressionMode1 as ProofSystemDefinition>::VK,
         finalization_hint: &<CompressionMode1 as ProofSystemDefinition>::FinalizationHint,
     ) -> anyhow::Result<()> {
-        self.set_compression_setup_data::<CompressionMode1>(precomputation, vk, finalization_hint)
+        self.store_compression_setup_data::<CompressionMode1>(precomputation, vk, finalization_hint)
     }
 
     fn set_compression_mode2_setup_data(
@@ -620,7 +625,7 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
         vk: &<CompressionMode2 as ProofSystemDefinition>::VK,
         finalization_hint: &<CompressionMode2 as ProofSystemDefinition>::FinalizationHint,
     ) -> anyhow::Result<()> {
-        self.set_compression_setup_data::<CompressionMode2>(precomputation, vk, finalization_hint)
+        self.store_compression_setup_data::<CompressionMode2>(precomputation, vk, finalization_hint)
     }
 
     fn set_compression_mode3_setup_data(
@@ -629,7 +634,7 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
         vk: &<CompressionMode3 as ProofSystemDefinition>::VK,
         finalization_hint: &<CompressionMode3 as ProofSystemDefinition>::FinalizationHint,
     ) -> anyhow::Result<()> {
-        self.set_compression_setup_data::<CompressionMode3>(precomputation, vk, finalization_hint)
+        self.store_compression_setup_data::<CompressionMode3>(precomputation, vk, finalization_hint)
     }
     fn set_compression_mode4_setup_data(
         &self,
@@ -637,7 +642,7 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
         vk: &<CompressionMode4 as ProofSystemDefinition>::VK,
         finalization_hint: &<CompressionMode4 as ProofSystemDefinition>::FinalizationHint,
     ) -> anyhow::Result<()> {
-        self.set_compression_setup_data::<CompressionMode4>(precomputation, vk, finalization_hint)
+        self.store_compression_setup_data::<CompressionMode4>(precomputation, vk, finalization_hint)
     }
     fn set_compression_mode5_for_wrapper_setup_data(
         &self,
@@ -645,7 +650,7 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
         vk: &<CompressionMode5ForWrapper as ProofSystemDefinition>::VK,
         finalization_hint: &<CompressionMode5ForWrapper as ProofSystemDefinition>::FinalizationHint,
     ) -> anyhow::Result<()> {
-        self.set_compression_setup_data::<CompressionMode5ForWrapper>(
+        self.store_compression_setup_data::<CompressionMode5ForWrapper>(
             precomputation,
             vk,
             finalization_hint,
@@ -657,7 +662,7 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
         vk: &<CompressionMode1ForWrapper as ProofSystemDefinition>::VK,
         finalization_hint: &<CompressionMode1ForWrapper as ProofSystemDefinition>::FinalizationHint,
     ) -> anyhow::Result<()> {
-        self.set_compression_setup_data::<CompressionMode1ForWrapper>(
+        self.store_compression_setup_data::<CompressionMode1ForWrapper>(
             precomputation,
             vk,
             finalization_hint,
@@ -668,13 +673,13 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
         precomputation: &<PlonkSnarkWrapper as ProofSystemDefinition>::Precomputation,
         vk: &<PlonkSnarkWrapper as ProofSystemDefinition>::VK,
     ) -> anyhow::Result<()> {
-        self.set_snark_wrapper_setup_data::<PlonkSnarkWrapper>(precomputation, vk)
+        self.store_snark_wrapper_setup_data::<PlonkSnarkWrapper>(precomputation, vk)
     }
     fn set_fflonk_snark_wrapper_setup_data(
         &self,
         precomputation: &<FflonkSnarkWrapper as ProofSystemDefinition>::Precomputation,
         vk: &<FflonkSnarkWrapper as ProofSystemDefinition>::VK,
     ) -> anyhow::Result<()> {
-        self.set_snark_wrapper_setup_data::<FflonkSnarkWrapper>(precomputation, vk)
+        self.store_snark_wrapper_setup_data::<FflonkSnarkWrapper>(precomputation, vk)
     }
 }

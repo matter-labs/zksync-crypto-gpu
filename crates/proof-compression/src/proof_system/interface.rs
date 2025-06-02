@@ -41,7 +41,7 @@ pub trait CompressionProofSystem:
     type AuxConfig;
     fn get_context_config() -> Self::ContextConfig;
     fn get_context_config_from_hint(_: &Self::FinalizationHint) -> Self::ContextConfig;
-    fn init_context(config: Self::ContextConfig) -> Self::Context;
+    fn init_context(config: Self::ContextConfig) -> anyhow::Result<Self::Context>;
     fn aux_config_from_assembly(proving_assembly: &Self::ProvingAssembly) -> Self::AuxConfig;
 
     fn synthesize_for_proving(
@@ -56,7 +56,7 @@ pub trait CompressionProofSystem:
         _: &Self::Precomputation,
         _: &Self::FinalizationHint,
         _: &Self::VK,
-    ) -> Self::Proof;
+    ) -> anyhow::Result<Self::Proof>;
 
     fn prove_from_witnesses(
         _: &Self::Context,
@@ -65,7 +65,7 @@ pub trait CompressionProofSystem:
         _: &Self::Precomputation,
         _: &Self::FinalizationHint,
         _: &Self::VK,
-    ) -> Self::Proof;
+    ) -> anyhow::Result<Self::Proof>;
 }
 
 pub trait CompressionProofSystemExt: CompressionProofSystem {
@@ -74,7 +74,7 @@ pub trait CompressionProofSystemExt: CompressionProofSystem {
         _: Self::Context,
         _: Self::SetupAssembly,
         _: &Self::FinalizationHint,
-    ) -> (Self::Precomputation, Self::VK);
+    ) -> anyhow::Result<(Self::Precomputation, Self::VK)>;
     fn synthesize_for_setup(
         circuit: CompressionLayerCircuit<Self>,
     ) -> (Self::FinalizationHint, Self::SetupAssembly);
@@ -85,22 +85,22 @@ pub trait SnarkWrapperProofSystem: ProofSystemDefinition {
     type Context: Send + Sync + 'static;
     type CRS: Send + Sync + 'static;
     fn pre_init();
-    fn init_context(crs: Self::CRS) -> Self::Context;
-    fn load_compact_raw_crs<R: std::io::Read>(src: R) -> Self::CRS;
+    fn init_context(crs: Self::CRS) -> anyhow::Result<Self::Context>;
+    fn load_compact_raw_crs<R: std::io::Read>(src: R) -> anyhow::Result<Self::CRS>;
     fn synthesize_for_proving(circuit: Self::Circuit) -> Self::ProvingAssembly;
     fn prove(
         _: &Self::Context,
         _: Self::ProvingAssembly,
         _: &Self::Precomputation,
         _: &Self::FinalizationHint,
-    ) -> Self::Proof;
+    ) -> anyhow::Result<Self::Proof>;
 
     fn prove_from_witnesses(
         _: &Self::Context,
         _: Self::ExternalWitnessData,
         _: &Self::Precomputation,
         _: &Self::FinalizationHint,
-    ) -> Self::Proof;
+    ) -> anyhow::Result<Self::Proof>;
 }
 
 pub trait SnarkWrapperProofSystemExt: SnarkWrapperProofSystem {
@@ -110,7 +110,7 @@ pub trait SnarkWrapperProofSystemExt: SnarkWrapperProofSystem {
         _: &Self::Context,
         _: Self::SetupAssembly,
         _: Self::FinalizationHint,
-    ) -> (Self::Precomputation, Self::VK);
+    ) -> anyhow::Result<(Self::Precomputation, Self::VK)>;
 }
 
 pub(crate) struct MarkerProofSystem;

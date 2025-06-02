@@ -103,13 +103,16 @@ pub trait CompressionStepExt: CompressionProofSystemExt + CompressionStep {
         precomputation: &<Self as ProofSystemDefinition>::Precomputation,
         writer: Box<dyn Write>,
     ) -> anyhow::Result<()> {
-        precomputation.write_into_buffer(writer).map_err(|e| {
-            anyhow::anyhow!("Failed to write precomputation: {}", e)
-        })?;
+        precomputation
+            .write_into_buffer(writer)
+            .map_err(|e| anyhow::anyhow!("Failed to write precomputation: {}", e))?;
         Ok(())
     }
 
-    fn store_vk(vk: &<Self as ProofSystemDefinition>::VK, writer: Box<dyn Write>) -> anyhow::Result<()> {
+    fn store_vk(
+        vk: &<Self as ProofSystemDefinition>::VK,
+        writer: Box<dyn Write>,
+    ) -> anyhow::Result<()> {
         serde_json::to_writer_pretty(writer, vk)?;
         Ok(())
     }

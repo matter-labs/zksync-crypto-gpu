@@ -1,4 +1,6 @@
+use super::*;
 use ::fflonk::fflonk_cpu::{FflonkProof, FflonkVerificationKey};
+pub(crate) use ::fflonk::HostAllocator;
 use ::fflonk::{DeviceContextWithSingleDevice, FflonkSnarkVerifierCircuitDeviceSetup};
 use bellman::bn256::{Bn256, Fr};
 use bellman::{
@@ -15,8 +17,6 @@ use bellman::{
     },
 };
 use circuit_definitions::circuit_definitions::aux_layer::ZkSyncSnarkWrapperCircuitNoLookupCustomGate;
-use super::*;
-pub(crate) use ::fflonk::HostAllocator;
 pub(crate) type FflonkSnarkVerifierCircuit = ZkSyncSnarkWrapperCircuitNoLookupCustomGate;
 pub(crate) type FflonkSnarkVerifierCircuitVK =
     FflonkVerificationKey<Bn256, FflonkSnarkVerifierCircuit>;
@@ -82,7 +82,8 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
         let context = DeviceContextWithSingleDevice::init_from_preloaded_crs::<Self::Allocator>(
             domain_size,
             compact_raw_crs,
-        ).unwrap();
+        )
+        .unwrap();
         Ok(context)
     }
 
@@ -114,12 +115,7 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
             &precomputation,
             raw_trace_len,
         )
-        .map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to create proof for FflonkSnarkWrapper: {:?}",
-                e
-            )
-        })?;
+        .map_err(|e| anyhow::anyhow!("Failed to create proof for FflonkSnarkWrapper: {:?}", e))?;
         println!("fflonk proving takes {} s", start.elapsed().as_secs());
         Ok(proof)
     }

@@ -18,10 +18,18 @@ use circuit_definitions::circuit_definitions::aux_layer::compression_modes::{
 };
 
 pub trait CompressorBlobStorage: Send + Sync + 'static {
-    fn get_compression_mode1_setup_data(&self) -> anyhow::Result<&CompressionSetupData<CompressionMode1>>;
-    fn get_compression_mode2_setup_data(&self) -> anyhow::Result<&CompressionSetupData<CompressionMode2>>;
-    fn get_compression_mode3_setup_data(&self) -> anyhow::Result<&CompressionSetupData<CompressionMode3>>;
-    fn get_compression_mode4_setup_data(&self) -> anyhow::Result<&CompressionSetupData<CompressionMode4>>;
+    fn get_compression_mode1_setup_data(
+        &self,
+    ) -> anyhow::Result<&CompressionSetupData<CompressionMode1>>;
+    fn get_compression_mode2_setup_data(
+        &self,
+    ) -> anyhow::Result<&CompressionSetupData<CompressionMode2>>;
+    fn get_compression_mode3_setup_data(
+        &self,
+    ) -> anyhow::Result<&CompressionSetupData<CompressionMode3>>;
+    fn get_compression_mode4_setup_data(
+        &self,
+    ) -> anyhow::Result<&CompressionSetupData<CompressionMode4>>;
     fn get_compression_mode5_for_wrapper_setup_data(
         &self,
     ) -> anyhow::Result<&CompressionSetupData<CompressionMode5ForWrapper>>;
@@ -29,8 +37,12 @@ pub trait CompressorBlobStorage: Send + Sync + 'static {
         &self,
     ) -> anyhow::Result<&CompressionSetupData<CompressionMode1ForWrapper>>;
 
-    fn get_plonk_snark_wrapper_setup_data(&self) -> anyhow::Result<SnarkWrapperSetupData<PlonkSnarkWrapper>>;
-    fn get_fflonk_snark_wrapper_setup_data(&self) -> anyhow::Result<&SnarkWrapperSetupData<FflonkSnarkWrapper>>;
+    fn get_plonk_snark_wrapper_setup_data(
+        &self,
+    ) -> anyhow::Result<SnarkWrapperSetupData<PlonkSnarkWrapper>>;
+    fn get_fflonk_snark_wrapper_setup_data(
+        &self,
+    ) -> anyhow::Result<&SnarkWrapperSetupData<FflonkSnarkWrapper>>;
 }
 
 pub trait CompressorBlobStorageExt: CompressorBlobStorage {
@@ -458,25 +470,33 @@ impl FileSystemBlobStorage {
 }
 
 impl CompressorBlobStorage for FileSystemBlobStorage {
-    fn get_compression_mode1_setup_data(&self) -> anyhow::Result<&CompressionSetupData<CompressionMode1>> {
+    fn get_compression_mode1_setup_data(
+        &self,
+    ) -> anyhow::Result<&CompressionSetupData<CompressionMode1>> {
         self.compression_mode1_setup_data
             .as_ref()
             .context("Compression mode 1 setup data should be initialized")
     }
 
-    fn get_compression_mode2_setup_data(&self) -> anyhow::Result<&CompressionSetupData<CompressionMode2>> {
+    fn get_compression_mode2_setup_data(
+        &self,
+    ) -> anyhow::Result<&CompressionSetupData<CompressionMode2>> {
         self.compression_mode2_setup_data
             .as_ref()
             .context("Compression mode 2 setup data should be initialized")
     }
 
-    fn get_compression_mode3_setup_data(&self) -> anyhow::Result<&CompressionSetupData<CompressionMode3>> {
+    fn get_compression_mode3_setup_data(
+        &self,
+    ) -> anyhow::Result<&CompressionSetupData<CompressionMode3>> {
         self.compression_mode3_setup_data
             .as_ref()
             .context("Compression mode 3 setup data should be initialized")
     }
 
-    fn get_compression_mode4_setup_data(&self) -> anyhow::Result<&CompressionSetupData<CompressionMode4>> {
+    fn get_compression_mode4_setup_data(
+        &self,
+    ) -> anyhow::Result<&CompressionSetupData<CompressionMode4>> {
         self.compression_mode4_setup_data
             .as_ref()
             .context("Compression mode 4 setup data should be initialized")
@@ -498,13 +518,17 @@ impl CompressorBlobStorage for FileSystemBlobStorage {
             .context("Compression mode 1 for wrapper setup data should be initialized")
     }
 
-    fn get_plonk_snark_wrapper_setup_data(&self) -> anyhow::Result<SnarkWrapperSetupData<PlonkSnarkWrapper>> {
+    fn get_plonk_snark_wrapper_setup_data(
+        &self,
+    ) -> anyhow::Result<SnarkWrapperSetupData<PlonkSnarkWrapper>> {
         // We load the Plonk snark wrapper setup data in-place
         self.load_snark_wrapper_setup_data::<PlonkSnarkWrapper>()
             .context("Failed to get Plonk snark wrapper setup data")
     }
 
-    fn get_fflonk_snark_wrapper_setup_data(&self) -> anyhow::Result<&SnarkWrapperSetupData<FflonkSnarkWrapper>> {
+    fn get_fflonk_snark_wrapper_setup_data(
+        &self,
+    ) -> anyhow::Result<&SnarkWrapperSetupData<FflonkSnarkWrapper>> {
         self.fflonk_snark_wrapper_setup_data
             .as_ref()
             .context("Fflonk snark wrapper setup data should be initialized")

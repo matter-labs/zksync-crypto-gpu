@@ -3,7 +3,8 @@ use std::sync::Arc;
 use super::*;
 #[test]
 fn test_proof_chain_with_fflonk() {
-    let simple_blob_storage = FileSystemBlobStorage::new().load_all_resources_for_fflonk()
+    let simple_blob_storage = FileSystemBlobStorage::new()
+        .load_all_resources_for_fflonk()
         .expect("Failed to load resources for fflonk");
     let simple_proof_storage = SimpleProofStorage::new();
     let proof = simple_proof_storage.get_scheduler_proof();
@@ -14,7 +15,8 @@ fn test_proof_chain_with_fflonk() {
 
 #[test]
 fn test_proof_chain_with_plonk() {
-    let simple_blob_storage = FileSystemBlobStorage::new().load_all_resources_for_plonk()
+    let simple_blob_storage = FileSystemBlobStorage::new()
+        .load_all_resources_for_plonk()
         .expect("Failed to load resources for plonk");
     let simple_proof_storage = SimpleProofStorage::new();
     let proof = simple_proof_storage.get_scheduler_proof();
@@ -41,7 +43,8 @@ fn test_precompute_compression_chain_artifacts_with_plonk() {
 #[test]
 fn test_create_compact_raw_crs() {
     let blob_storage = FileSystemBlobStorage::new();
-    let writer = blob_storage.write_compact_raw_crs()
+    let writer = blob_storage
+        .write_compact_raw_crs()
         .expect("Failed to create writer for compact raw CRS");
     create_compact_raw_crs(writer);
 }

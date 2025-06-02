@@ -106,10 +106,7 @@ impl PlonkSnarkWrapper {
                 None,
             )
             .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to create proof for PlonkSnarkWrapper: {:?}",
-                    e
-                )
+                anyhow::anyhow!("Failed to create proof for PlonkSnarkWrapper: {:?}", e)
             })?;
         println!("plonk proving takes {} s", start.elapsed().as_secs());
         ctx.free_all_slots();
@@ -231,12 +228,10 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
     fn init_context(compact_raw_crs: Self::CRS) -> anyhow::Result<Self::Context> {
         let device_ids: Vec<_> =
             (0..<PlonkProverDeviceMemoryManagerConfig as ManagerConfigs>::NUM_GPUS).collect();
-        let manager = DeviceMemoryManager::init(&device_ids, &compact_raw_crs.g1_bases).map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to initialize Plonk device memory manager: {:?}",
-                e
-            )
-        })?;
+        let manager =
+            DeviceMemoryManager::init(&device_ids, &compact_raw_crs.g1_bases).map_err(|e| {
+                anyhow::anyhow!("Failed to initialize Plonk device memory manager: {:?}", e)
+            })?;
         Ok(UnsafePlonkProverDeviceMemoryManagerWrapper(manager))
     }
 

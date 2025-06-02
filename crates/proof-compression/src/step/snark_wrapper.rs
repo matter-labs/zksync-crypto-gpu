@@ -30,7 +30,8 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
         GoldilocksField,
         Output: serde::Serialize + serde::de::DeserializeOwned,
     >;
-    fn load_finalization_hint() -> anyhow::Result<<Self as ProofSystemDefinition>::FinalizationHint> {
+    fn load_finalization_hint() -> anyhow::Result<<Self as ProofSystemDefinition>::FinalizationHint>
+    {
         assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
         let hint = if Self::IS_PLONK {
             (1 << <PlonkProverDeviceMemoryManagerConfig as gpu_prover::ManagerConfigs>::FULL_SLOT_SIZE_LOG).to_string()
@@ -50,7 +51,9 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
         Ok(serde_json::from_reader(reader)?)
     }
 
-    fn load_compact_raw_crs(reader: Box<dyn Read>) -> anyhow::Result<<Self as SnarkWrapperProofSystem>::CRS> {
+    fn load_compact_raw_crs(
+        reader: Box<dyn Read>,
+    ) -> anyhow::Result<<Self as SnarkWrapperProofSystem>::CRS> {
         <Self as SnarkWrapperProofSystem>::load_compact_raw_crs(reader)
     }
 
@@ -109,7 +112,10 @@ pub trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperStep {
         Ok(())
     }
 
-    fn store_vk(vk: &<Self as ProofSystemDefinition>::VK, writer: Box<dyn Write>) -> anyhow::Result<()> {
+    fn store_vk(
+        vk: &<Self as ProofSystemDefinition>::VK,
+        writer: Box<dyn Write>,
+    ) -> anyhow::Result<()> {
         serde_json::to_writer_pretty(writer, vk)?;
         Ok(())
     }

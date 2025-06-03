@@ -19,7 +19,7 @@ pub struct SnarkWrapperSetupData<T: SnarkWrapperStep> {
     pub vk: <T as ProofSystemDefinition>::VK,
     pub finalization_hint: <T as ProofSystemDefinition>::FinalizationHint,
     pub previous_vk: VerificationKey<GoldilocksField, T::PreviousStepTreeHasher>,
-    pub ctx: <T as SnarkWrapperProofSystem>::Context,
+    pub crs: <T as SnarkWrapperProofSystem>::CRS,
 }
 
 pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
@@ -77,7 +77,8 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
     ) -> anyhow::Result<<Self as ProofSystemDefinition>::Proof> {
         assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
         let input_vk = &setup_data_cache.previous_vk;
-        let ctx = &setup_data_cache.ctx;
+        let crs = &setup_data_cache.crs;
+        let ctx = Self::init_context(&crs)?;
         let finalization_hint = &setup_data_cache.finalization_hint;
         let circuit = Self::build_circuit(input_vk.clone(), Some(input_proof));
         let proving_assembly = <Self as SnarkWrapperProofSystem>::synthesize_for_proving(circuit);
@@ -123,14 +124,14 @@ pub trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperStep {
     fn precompute_snark_wrapper_circuit(
         input_vk: VerificationKey<GoldilocksField, Self::PreviousStepTreeHasher>,
         finalization_hint: <Self as ProofSystemDefinition>::FinalizationHint,
-        ctx: <Self as SnarkWrapperProofSystem>::Context,
+        crs: <Self as SnarkWrapperProofSystem>::CRS,
     ) -> anyhow::Result<(
         <Self as ProofSystemDefinition>::Precomputation,
         <Self as ProofSystemDefinition>::VK,
     )> {
         let circuit = Self::build_circuit(input_vk, None);
         let setup_assembly = <Self as SnarkWrapperProofSystemExt>::synthesize_for_setup(circuit);
-
+        let ctx = <Self as SnarkWrapperProofSystem>::init_context(&crs)?;
         let (precomputation, vk) =
             <Self as SnarkWrapperProofSystemExt>::generate_precomputation_and_vk(
                 &ctx,

@@ -156,7 +156,7 @@ impl<const N: usize> DeviceContext<N> {
 
     pub fn init_from_preloaded_crs<A>(
         domain_size: usize,
-        crs: Crs<CompactBn256, CrsForMonomialForm, A>,
+        crs: &Crs<CompactBn256, CrsForMonomialForm, A>,
     ) -> CudaResult<Self>
     where
         A: HostAllocator,
@@ -202,7 +202,7 @@ impl<const N: usize> DeviceContext<N> {
 
     fn init_msm_on_static_memory<A>(
         domain_size: usize,
-        crs: Option<Crs<CompactBn256, CrsForMonomialForm, A>>,
+        crs: Option<&Crs<CompactBn256, CrsForMonomialForm, A>>,
     ) -> CudaResult<()>
     where
         A: HostAllocator,
@@ -225,7 +225,7 @@ impl<const N: usize> DeviceContext<N> {
 
     fn inner_init_msm<A>(
         domain_size: usize,
-        crs: Option<Crs<CompactBn256, CrsForMonomialForm, A>>,
+        crs: Option<&Crs<CompactBn256, CrsForMonomialForm, A>>,
         pool: Option<bc_mem_pool>,
         stream: Option<bc_stream>,
     ) -> CudaResult<()>
@@ -241,7 +241,7 @@ impl<const N: usize> DeviceContext<N> {
         // multiple of the domain_size
         let crs = match crs {
             Some(preloaded_crs) => preloaded_crs,
-            None => init_compact_crs::<A>(domain_size),
+            None => &init_compact_crs::<A>(domain_size),
         };
         let num_bases = MAX_COMBINED_DEGREE_FACTOR * domain_size;
         assert!(crs.g1_bases.len() >= num_bases);

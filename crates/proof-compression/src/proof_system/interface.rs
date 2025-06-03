@@ -85,7 +85,7 @@ pub trait SnarkWrapperProofSystem: ProofSystemDefinition {
     type Context: Send + Sync + 'static;
     type CRS: Send + Sync + 'static;
     fn pre_init();
-    fn init_context(crs: Self::CRS) -> anyhow::Result<Self::Context>;
+    fn init_context(crs: &Self::CRS) -> anyhow::Result<Self::Context>;
     fn load_compact_raw_crs<R: std::io::Read>(src: R) -> anyhow::Result<Self::CRS>;
     fn synthesize_for_proving(circuit: Self::Circuit) -> Self::ProvingAssembly;
     fn prove(

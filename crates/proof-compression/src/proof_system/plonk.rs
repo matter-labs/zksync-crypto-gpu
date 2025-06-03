@@ -80,7 +80,7 @@ impl PlonkSnarkWrapper {
     ) -> anyhow::Result<<Self as ProofSystemDefinition>::Proof> {
         assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
         let input_vk = setup_data_cache.previous_vk;
-        let mut ctx = setup_data_cache.ctx.into_inner();
+        let mut ctx = Self::init_context(&setup_data_cache.crs)?.into_inner();
         let finalization_hint = setup_data_cache.finalization_hint;
         let circuit = Self::build_circuit(input_vk.clone(), Some(input_proof));
         let mut proving_assembly =
@@ -122,7 +122,7 @@ impl PlonkSnarkWrapper {
             <Self as SnarkWrapperStep>::PreviousStepTreeHasher,
         >,
         hardcoded_finalization_hint: <Self as ProofSystemDefinition>::FinalizationHint,
-        ctx: <Self as SnarkWrapperProofSystem>::Context,
+        crs: <Self as SnarkWrapperProofSystem>::CRS,
     ) -> anyhow::Result<(
         <Self as ProofSystemDefinition>::Precomputation,
         <Self as ProofSystemDefinition>::VK,
@@ -137,7 +137,7 @@ impl PlonkSnarkWrapper {
         let domain_size = setup_assembly.n() + 1;
         assert!(domain_size.is_power_of_two());
         assert_eq!(domain_size, hardcoded_finalization_hint);
-        let mut ctx = ctx.into_inner();
+        let mut ctx = Self::init_context(&crs)?.into_inner();
 
         let worker = bellman::worker::Worker::new();
         let mut precomputation = AsyncSetup::<<Self as ProofSystemDefinition>::Allocator>::allocate(
@@ -225,7 +225,7 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
         Ok(read_crs_from_raw_compact_form(src, num_g1_points_for_crs)?)
     }
 
-    fn init_context(compact_raw_crs: Self::CRS) -> anyhow::Result<Self::Context> {
+    fn init_context(compact_raw_crs: &Self::CRS) -> anyhow::Result<Self::Context> {
         let device_ids: Vec<_> =
             (0..<PlonkProverDeviceMemoryManagerConfig as ManagerConfigs>::NUM_GPUS).collect();
         let manager =

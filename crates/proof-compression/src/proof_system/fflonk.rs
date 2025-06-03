@@ -77,7 +77,7 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
         Ok(read_crs_from_raw_compact_form(src, num_g1_bases_for_crs)?)
     }
 
-    fn init_context(compact_raw_crs: Self::CRS) -> anyhow::Result<Self::Context> {
+    fn init_context(compact_raw_crs: &Self::CRS) -> anyhow::Result<Self::Context> {
         let domain_size = 1 << ::fflonk::fflonk_cpu::L1_VERIFIER_DOMAIN_SIZE_LOG;
         let context = DeviceContextWithSingleDevice::init_from_preloaded_crs::<Self::Allocator>(
             domain_size,

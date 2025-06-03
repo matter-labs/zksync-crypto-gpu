@@ -214,11 +214,11 @@ pub fn precompute_proof_chain_with_fflonk(
         start.elapsed().as_secs()
     );
 
-    let (previous_vk, finalization_hint, ctx) = setup_data_cache
-        .get_fflonk_snark_wrapper_previous_vk_finalization_hint_and_ctx()
+    let (previous_vk, finalization_hint, crs) = setup_data_cache
+        .get_fflonk_snark_wrapper_previous_vk_finalization_hint_and_crs()
         .context("Failed to get Fflonk snark wrapper previous vk, finalization hint and context")?;
     let (precomputation, vk) =
-        FflonkSnarkWrapper::precompute_snark_wrapper_circuit(previous_vk, finalization_hint, ctx)
+        FflonkSnarkWrapper::precompute_snark_wrapper_circuit(previous_vk, finalization_hint, crs)
             .context("Failed to precompute Fflonk snark wrapper setup data")?;
     setup_data_cache
         .set_fflonk_snark_wrapper_setup_data(&precomputation, &vk)
@@ -273,13 +273,13 @@ pub fn precompute_proof_chain_with_plonk(
         "Precomputation of compression chain took {}s",
         start.elapsed().as_secs()
     );
-    let (previous_vk, finalization_hint, ctx) = setup_data_cache
-        .get_plonk_snark_wrapper_previous_vk_finalization_hint_and_ctx()
+    let (previous_vk, finalization_hint, crs) = setup_data_cache
+        .get_plonk_snark_wrapper_previous_vk_finalization_hint_and_crs()
         .context("Failed to get Plonk snark wrapper previous vk, finalization hint and context")?;
     let (precomputation, vk) = PlonkSnarkWrapper::precompute_plonk_snark_wrapper_circuit(
         previous_vk,
         finalization_hint,
-        ctx,
+        crs,
     )
     .context("Failed to precompute Plonk snark wrapper setup data")?;
     setup_data_cache

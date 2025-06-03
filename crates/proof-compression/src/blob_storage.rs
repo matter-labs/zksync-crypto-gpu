@@ -94,7 +94,7 @@ pub trait CompressorBlobStorageExt: CompressorBlobStorage {
             <CompressionMode1ForWrapper as CompressionStep>::PreviousStepTreeHasher,
         >,
     >;
-    fn get_plonk_snark_wrapper_previous_vk_finalization_hint_and_ctx(
+    fn get_plonk_snark_wrapper_previous_vk_finalization_hint_and_crs(
         &self,
     ) -> anyhow::Result<(
         VerificationKey<
@@ -102,9 +102,9 @@ pub trait CompressorBlobStorageExt: CompressorBlobStorage {
             <PlonkSnarkWrapper as SnarkWrapperStep>::PreviousStepTreeHasher,
         >,
         <PlonkSnarkWrapper as ProofSystemDefinition>::FinalizationHint,
-        <PlonkSnarkWrapper as SnarkWrapperProofSystem>::Context,
+        <PlonkSnarkWrapper as SnarkWrapperProofSystem>::CRS,
     )>;
-    fn get_fflonk_snark_wrapper_previous_vk_finalization_hint_and_ctx(
+    fn get_fflonk_snark_wrapper_previous_vk_finalization_hint_and_crs(
         &self,
     ) -> anyhow::Result<(
         VerificationKey<
@@ -112,7 +112,7 @@ pub trait CompressorBlobStorageExt: CompressorBlobStorage {
             <FflonkSnarkWrapper as SnarkWrapperStep>::PreviousStepTreeHasher,
         >,
         <FflonkSnarkWrapper as ProofSystemDefinition>::FinalizationHint,
-        <FflonkSnarkWrapper as SnarkWrapperProofSystem>::Context,
+        <FflonkSnarkWrapper as SnarkWrapperProofSystem>::CRS,
     )>;
 
     fn set_compression_mode1_setup_data(
@@ -385,13 +385,12 @@ impl FileSystemBlobStorage {
         let previous_vk = SW::load_previous_vk(reader);
         previous_vk
     }
-    fn load_snark_wrapper_ctx<SW: SnarkWrapperStep>(&self) -> anyhow::Result<SW::Context> {
+    fn load_snark_wrapper_crs<SW: SnarkWrapperStep>(&self) -> anyhow::Result<SW::CRS> {
         let path = format!("{}/compact_raw_crs.key", Self::DATA_DIR_PATH,);
         println!("Reading CRS at path {}", path);
         let reader = Self::open_file(&path)?;
-        let crs = <SW as SnarkWrapperStep>::load_compact_raw_crs(reader)?;
-        let ctx = <SW as SnarkWrapperProofSystem>::init_context(crs);
-        ctx
+        let crs = <SW as SnarkWrapperStep>::load_compact_raw_crs(reader);
+        crs
     }
     fn load_snark_wrapper_setup_data<SW: SnarkWrapperStep>(
         &self,
@@ -400,13 +399,13 @@ impl FileSystemBlobStorage {
         let previous_vk = self.load_snark_wrapper_previous_vk::<SW>()?;
         let precomputation = self.load_snark_wrapper_precomputation::<SW>()?;
         let finalization_hint = self.load_snark_wrapper_finalization_hint::<SW>()?;
-        let ctx = self.load_snark_wrapper_ctx::<SW>()?;
+        let crs = self.load_snark_wrapper_crs::<SW>()?;
         Ok(SnarkWrapperSetupData {
             vk,
             previous_vk,
             precomputation,
             finalization_hint,
-            ctx,
+            crs,
         })
     }
 
@@ -602,7 +601,7 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
         self.load_compression_previous_vk::<CompressionMode1ForWrapper>()
     }
 
-    fn get_plonk_snark_wrapper_previous_vk_finalization_hint_and_ctx(
+    fn get_plonk_snark_wrapper_previous_vk_finalization_hint_and_crs(
         &self,
     ) -> anyhow::Result<(
         VerificationKey<
@@ -610,15 +609,15 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
             <PlonkSnarkWrapper as SnarkWrapperStep>::PreviousStepTreeHasher,
         >,
         <PlonkSnarkWrapper as ProofSystemDefinition>::FinalizationHint,
-        <PlonkSnarkWrapper as SnarkWrapperProofSystem>::Context,
+        <PlonkSnarkWrapper as SnarkWrapperProofSystem>::CRS,
     )> {
         let vk = self.load_snark_wrapper_previous_vk::<PlonkSnarkWrapper>()?;
         let finalization_hint = PlonkSnarkWrapper::load_finalization_hint()?;
-        let ctx = self.load_snark_wrapper_ctx::<PlonkSnarkWrapper>()?;
-        Ok((vk, finalization_hint, ctx))
+        let crs = self.load_snark_wrapper_crs::<PlonkSnarkWrapper>()?;
+        Ok((vk, finalization_hint, crs))
     }
 
-    fn get_fflonk_snark_wrapper_previous_vk_finalization_hint_and_ctx(
+    fn get_fflonk_snark_wrapper_previous_vk_finalization_hint_and_crs(
         &self,
     ) -> anyhow::Result<(
         VerificationKey<
@@ -626,12 +625,12 @@ impl CompressorBlobStorageExt for FileSystemBlobStorage {
             <FflonkSnarkWrapper as SnarkWrapperStep>::PreviousStepTreeHasher,
         >,
         <FflonkSnarkWrapper as ProofSystemDefinition>::FinalizationHint,
-        <FflonkSnarkWrapper as SnarkWrapperProofSystem>::Context,
+        <FflonkSnarkWrapper as SnarkWrapperProofSystem>::CRS,
     )> {
         let vk = self.load_snark_wrapper_previous_vk::<FflonkSnarkWrapper>()?;
         let finalization_hint = FflonkSnarkWrapper::load_finalization_hint()?;
-        let ctx = self.load_snark_wrapper_ctx::<FflonkSnarkWrapper>()?;
-        Ok((vk, finalization_hint, ctx))
+        let crs = self.load_snark_wrapper_crs::<FflonkSnarkWrapper>()?;
+        Ok((vk, finalization_hint, crs))
     }
 
     fn set_compression_mode1_setup_data(

@@ -96,7 +96,7 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
     }
 
     fn prove(
-        _ctx: &Self::Context,
+        ctx: Self::Context,
         mut proving_assembly: Self::ProvingAssembly,
         precomputation: &Self::Precomputation,
         finalization_hint: &Self::FinalizationHint,
@@ -117,11 +117,12 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
         )
         .map_err(|e| anyhow::anyhow!("Failed to create proof for FflonkSnarkWrapper: {:?}", e))?;
         println!("fflonk proving takes {} s", start.elapsed().as_secs());
+        drop(ctx);
         Ok(proof)
     }
 
     fn prove_from_witnesses(
-        _: &Self::Context,
+        _: Self::Context,
         _: Self::ExternalWitnessData,
         _: &Self::Precomputation,
         _: &Self::FinalizationHint,

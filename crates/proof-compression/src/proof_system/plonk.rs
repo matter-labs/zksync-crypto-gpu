@@ -244,7 +244,7 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
     }
 
     fn prove(
-        _: &Self::Context,
+        _: Self::Context,
         _: Self::ProvingAssembly,
         _: &Self::Precomputation,
         _: &Self::FinalizationHint,
@@ -254,7 +254,7 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
     }
 
     fn prove_from_witnesses(
-        _: &Self::Context,
+        _: Self::Context,
         _: Vec<Self::FieldElement, Self::Allocator>,
         _: &Self::Precomputation,
         _: &Self::FinalizationHint,

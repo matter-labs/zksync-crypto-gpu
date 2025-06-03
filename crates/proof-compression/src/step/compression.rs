@@ -79,7 +79,7 @@ pub trait CompressionStep: CompressionProofSystem {
         let aux_config =
             <Self as CompressionProofSystem>::aux_config_from_assembly(&proving_assembly);
         let proof = <Self as CompressionProofSystem>::prove(
-            &ctx,
+            ctx,
             proving_assembly,
             aux_config,
             precomputation,

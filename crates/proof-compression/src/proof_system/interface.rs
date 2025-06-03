@@ -50,7 +50,7 @@ pub trait CompressionProofSystem:
     ) -> Self::ProvingAssembly;
 
     fn prove(
-        _: &Self::Context,
+        _: Self::Context,
         _: Self::ProvingAssembly,
         _: Self::AuxConfig,
         _: &Self::Precomputation,
@@ -59,7 +59,7 @@ pub trait CompressionProofSystem:
     ) -> anyhow::Result<Self::Proof>;
 
     fn prove_from_witnesses(
-        _: &Self::Context,
+        _: Self::Context,
         _: Self::ExternalWitnessData,
         _: Self::AuxConfig,
         _: &Self::Precomputation,
@@ -89,14 +89,14 @@ pub trait SnarkWrapperProofSystem: ProofSystemDefinition {
     fn load_compact_raw_crs<R: std::io::Read>(src: R) -> anyhow::Result<Self::CRS>;
     fn synthesize_for_proving(circuit: Self::Circuit) -> Self::ProvingAssembly;
     fn prove(
-        _: &Self::Context,
+        _: Self::Context,
         _: Self::ProvingAssembly,
         _: &Self::Precomputation,
         _: &Self::FinalizationHint,
     ) -> anyhow::Result<Self::Proof>;
 
     fn prove_from_witnesses(
-        _: &Self::Context,
+        _: Self::Context,
         _: Self::ExternalWitnessData,
         _: &Self::Precomputation,
         _: &Self::FinalizationHint,

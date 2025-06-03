@@ -86,7 +86,7 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
         let precomputation = &setup_data_cache.precomputation;
 
         let proof = <Self as SnarkWrapperProofSystem>::prove(
-            &ctx,
+            ctx,
             proving_assembly,
             precomputation,
             finalization_hint,

@@ -124,7 +124,7 @@ where
     }
 
     fn prove(
-        ctx: &Self::Context,
+        ctx: Self::Context,
         proving_assembly: Self::ProvingAssembly,
         aux_config: Self::AuxConfig,
         precomputation: &Self::Precomputation,
@@ -142,7 +142,7 @@ where
     }
 
     fn prove_from_witnesses(
-        _ctx: &Self::Context,
+        ctx: Self::Context,
         witness: Self::ExternalWitnessData,
         aux_config: Self::AuxConfig,
         precomputation: &Self::Precomputation,
@@ -175,6 +175,7 @@ where
             cache_strategy,
         )
         .context("failed to generate gpu compression proof")?;
+        drop(ctx);
         let proof = gpu_proof.into();
 
         Ok(proof)

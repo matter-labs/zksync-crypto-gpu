@@ -14,6 +14,10 @@ use bellman::{
 use circuit_definitions::circuit_definitions::aux_layer::ZkSyncSnarkWrapperCircuit;
 use gpu_prover::{AsyncSetup, DeviceMemoryManager, ManagerConfigs};
 
+use franklin_crypto::boojum::cs::{
+    implementations::proof::Proof, implementations::verifier::VerificationKey,
+};
+
 use super::*;
 
 use bellman::plonk::better_better_cs::{
@@ -36,7 +40,7 @@ type PlonkAssembly<CSConfig, A> = Assembly<
     A,
 >;
 
-pub(crate) struct UnsafePlonkProverDeviceMemoryManagerWrapper(
+pub struct UnsafePlonkProverDeviceMemoryManagerWrapper(
     DeviceMemoryManager<Fr, PlonkProverDeviceMemoryManagerConfig>,
 );
 impl GenericWrapper for UnsafePlonkProverDeviceMemoryManagerWrapper {
@@ -45,14 +49,16 @@ impl GenericWrapper for UnsafePlonkProverDeviceMemoryManagerWrapper {
     fn into_inner(self) -> Self::Inner {
         self.0
     }
-
+    fn into_inner_ref(&self) -> &Self::Inner {
+        &self.0
+    }
     fn from_inner(inner: Self::Inner) -> Self {
         Self(inner)
     }
 }
 unsafe impl Send for UnsafePlonkProverDeviceMemoryManagerWrapper {}
 unsafe impl Sync for UnsafePlonkProverDeviceMemoryManagerWrapper {}
-pub(crate) struct PlonkProverDeviceMemoryManagerConfig;
+pub struct PlonkProverDeviceMemoryManagerConfig;
 
 impl ManagerConfigs for PlonkProverDeviceMemoryManagerConfig {
     const NUM_GPUS_LOG: usize = 0;
@@ -61,7 +67,115 @@ impl ManagerConfigs for PlonkProverDeviceMemoryManagerConfig {
     const NUM_HOST_SLOTS: usize = 2;
 }
 
-pub(crate) struct PlonkSnarkWrapper;
+pub struct PlonkSnarkWrapper;
+
+impl PlonkSnarkWrapper {
+    pub fn prove_plonk_snark_wrapper_step(
+        input_proof: Proof<
+            GoldilocksField,
+            <Self as SnarkWrapperStep>::PreviousStepTreeHasher,
+            GoldilocksExt2,
+        >,
+        setup_data_cache: SnarkWrapperSetupData<Self>,
+    ) -> anyhow::Result<<Self as ProofSystemDefinition>::Proof> {
+        anyhow::ensure!(Self::IS_FFLONK ^ Self::IS_PLONK);
+        let input_vk = setup_data_cache.previous_vk;
+        let mut ctx = Self::init_context(&setup_data_cache.crs)?.into_inner();
+        let finalization_hint = setup_data_cache.finalization_hint;
+        let circuit = Self::build_circuit(input_vk.clone(), Some(input_proof));
+        let mut proving_assembly =
+            <Self as SnarkWrapperProofSystem>::synthesize_for_proving(circuit);
+        let vk = setup_data_cache.vk;
+        let mut precomputation = setup_data_cache.precomputation.into_inner();
+
+        anyhow::ensure!(proving_assembly.is_satisfied());
+        anyhow::ensure!(finalization_hint.is_power_of_two());
+        proving_assembly.finalize_to_size_log_2(finalization_hint.trailing_zeros() as usize);
+        let domain_size = proving_assembly.n() + 1;
+        anyhow::ensure!(domain_size.is_power_of_two());
+        anyhow::ensure!(domain_size == finalization_hint.clone());
+
+        let worker = bellman::worker::Worker::new();
+        let start = std::time::Instant::now();
+        let proof =
+            gpu_prover::create_proof::<_, _, <Self as ProofSystemDefinition>::Transcript, _>(
+                &proving_assembly,
+                &mut ctx,
+                &worker,
+                &mut precomputation,
+                None,
+            )
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to create proof for PlonkSnarkWrapper: {:?}", e)
+            })?;
+        println!("plonk proving takes {} s", start.elapsed().as_secs());
+        ctx.free_all_slots();
+
+        anyhow::ensure!(<Self as ProofSystemDefinition>::verify(&proof, &vk));
+
+        Ok(proof)
+    }
+
+    pub fn precompute_plonk_snark_wrapper_circuit(
+        input_vk: VerificationKey<
+            GoldilocksField,
+            <Self as SnarkWrapperStep>::PreviousStepTreeHasher,
+        >,
+        hardcoded_finalization_hint: <Self as ProofSystemDefinition>::FinalizationHint,
+        crs: <Self as SnarkWrapperProofSystem>::CRS,
+    ) -> anyhow::Result<(
+        <Self as ProofSystemDefinition>::Precomputation,
+        <Self as ProofSystemDefinition>::VK,
+    )> {
+        let circuit = Self::build_circuit(input_vk, None);
+        let mut setup_assembly =
+            <Self as SnarkWrapperProofSystemExt>::synthesize_for_setup(circuit);
+        anyhow::ensure!(setup_assembly.is_satisfied());
+        anyhow::ensure!(hardcoded_finalization_hint.is_power_of_two());
+        setup_assembly
+            .finalize_to_size_log_2(hardcoded_finalization_hint.trailing_zeros() as usize);
+        let domain_size = setup_assembly.n() + 1;
+        anyhow::ensure!(domain_size.is_power_of_two());
+        anyhow::ensure!(domain_size == hardcoded_finalization_hint);
+        let mut ctx = Self::init_context(&crs)?.into_inner();
+
+        let worker = bellman::worker::Worker::new();
+        let mut precomputation = AsyncSetup::<<Self as ProofSystemDefinition>::Allocator>::allocate(
+            hardcoded_finalization_hint,
+        );
+        precomputation
+            .generate_from_assembly(&worker, &setup_assembly, &mut ctx)
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to generate precomputation for PlonkSnarkWrapper: {:?}",
+                    e
+                )
+            })?;
+
+        let hardcoded_g2_bases = hardcoded_canonical_g2_bases();
+        let mut dummy_crs = Crs::<bellman::bn256::Bn256, CrsForMonomialForm>::dummy_crs(1);
+        dummy_crs.g2_monomial_bases = std::sync::Arc::new(hardcoded_g2_bases.to_vec());
+        let vk = gpu_prover::compute_vk_from_assembly::<
+            _,
+            _,
+            PlonkCsWidth4WithNextStepAndCustomGatesParams,
+            SynthesisModeGenerateSetup,
+        >(&mut ctx, &setup_assembly, &dummy_crs)
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to compute verification key for PlonkSnarkWrapper: {:?}",
+                e
+            )
+        })?;
+
+        ctx.free_all_slots();
+
+        Ok((
+            PlonkSnarkVerifierCircuitDeviceSetupWrapper::from_inner(precomputation),
+            vk,
+        ))
+    }
+}
 
 impl ProofSystemDefinition for PlonkSnarkWrapper {
     type FieldElement = Fr;
@@ -106,17 +220,19 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
         // TODO: initialize static pinned memory
     }
 
-    fn load_compact_raw_crs<R: std::io::Read>(src: R) -> Self::CRS {
+    fn load_compact_raw_crs<R: std::io::Read>(src: R) -> anyhow::Result<Self::CRS> {
         let num_g1_points_for_crs = 1 << PlonkProverDeviceMemoryManagerConfig::FULL_SLOT_SIZE_LOG;
-        read_crs_from_raw_compact_form(src, num_g1_points_for_crs).unwrap()
+        Ok(read_crs_from_raw_compact_form(src, num_g1_points_for_crs)?)
     }
 
-    fn init_context(compact_raw_crs: AsyncHandler<Self::CRS>) -> Self::Context {
+    fn init_context(compact_raw_crs: &Self::CRS) -> anyhow::Result<Self::Context> {
         let device_ids: Vec<_> =
             (0..<PlonkProverDeviceMemoryManagerConfig as ManagerConfigs>::NUM_GPUS).collect();
-        let compact_raw_crs = compact_raw_crs.wait();
-        let manager = DeviceMemoryManager::init(&device_ids, &compact_raw_crs.g1_bases).unwrap();
-        UnsafePlonkProverDeviceMemoryManagerWrapper(manager)
+        let manager =
+            DeviceMemoryManager::init(&device_ids, &compact_raw_crs.g1_bases).map_err(|e| {
+                anyhow::anyhow!("Failed to initialize Plonk device memory manager: {:?}", e)
+            })?;
+        Ok(UnsafePlonkProverDeviceMemoryManagerWrapper(manager))
     }
 
     fn synthesize_for_proving(circuit: Self::Circuit) -> Self::ProvingAssembly {
@@ -128,43 +244,21 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
     }
 
     fn prove(
-        ctx: AsyncHandler<Self::Context>,
-        mut proving_assembly: Self::ProvingAssembly,
-        precomputation: AsyncHandler<Self::Precomputation>,
-        finalization_hint: Self::FinalizationHint,
-    ) -> Self::Proof {
-        assert!(proving_assembly.is_satisfied());
-        assert!(finalization_hint.is_power_of_two());
-        proving_assembly.finalize_to_size_log_2(finalization_hint.trailing_zeros() as usize);
-        let domain_size = proving_assembly.n() + 1;
-        assert!(domain_size.is_power_of_two());
-        assert_eq!(domain_size, finalization_hint);
-
-        let ctx = ctx.wait();
-        let mut ctx = ctx.into_inner();
-        let mut precomputation = precomputation.wait().into_inner();
-        let worker = bellman::worker::Worker::new();
-        let start = std::time::Instant::now();
-        let proof = gpu_prover::create_proof::<_, _, Self::Transcript, _>(
-            &proving_assembly,
-            &mut ctx,
-            &worker,
-            &mut precomputation,
-            None,
-        )
-        .unwrap();
-        println!("plonk proving takes {} s", start.elapsed().as_secs());
-        ctx.free_all_slots();
-
-        proof
+        _: Self::Context,
+        _: Self::ProvingAssembly,
+        _: &Self::Precomputation,
+        _: &Self::FinalizationHint,
+    ) -> anyhow::Result<Self::Proof> {
+        // We use a custom proving function because Plonk requires mutable ownership of the setup data
+        unimplemented!()
     }
 
     fn prove_from_witnesses(
-        _: AsyncHandler<Self::Context>,
+        _: Self::Context,
         _: Vec<Self::FieldElement, Self::Allocator>,
-        _: AsyncHandler<Self::Precomputation>,
-        _: Self::FinalizationHint,
-    ) -> Self::Proof {
+        _: &Self::Precomputation,
+        _: &Self::FinalizationHint,
+    ) -> anyhow::Result<Self::Proof> {
         unimplemented!()
     }
 }
@@ -180,43 +274,10 @@ impl SnarkWrapperProofSystemExt for PlonkSnarkWrapper {
     }
 
     fn generate_precomputation_and_vk(
-        ctx: AsyncHandler<Self::Context>,
-        mut setup_assembly: Self::SetupAssembly,
-        hardcoded_finalization_hint: Self::FinalizationHint,
-    ) -> (Self::Precomputation, Self::VK) {
-        assert!(setup_assembly.is_satisfied());
-        assert!(hardcoded_finalization_hint.is_power_of_two());
-        setup_assembly
-            .finalize_to_size_log_2(hardcoded_finalization_hint.trailing_zeros() as usize);
-        let domain_size = setup_assembly.n() + 1;
-        assert!(domain_size.is_power_of_two());
-        assert_eq!(domain_size, hardcoded_finalization_hint);
-
-        let ctx = ctx.wait();
-        let mut ctx = ctx.into_inner();
-        let worker = bellman::worker::Worker::new();
-        let mut precomputation =
-            AsyncSetup::<Self::Allocator>::allocate(hardcoded_finalization_hint);
-        precomputation
-            .generate_from_assembly(&worker, &setup_assembly, &mut ctx)
-            .unwrap();
-
-        let hardcoded_g2_bases = hardcoded_canonical_g2_bases();
-        let mut dummy_crs = Crs::<bellman::bn256::Bn256, CrsForMonomialForm>::dummy_crs(1);
-        dummy_crs.g2_monomial_bases = std::sync::Arc::new(hardcoded_g2_bases.to_vec());
-        let vk = gpu_prover::compute_vk_from_assembly::<
-            _,
-            _,
-            PlonkCsWidth4WithNextStepAndCustomGatesParams,
-            SynthesisModeGenerateSetup,
-        >(&mut ctx, &setup_assembly, &dummy_crs)
-        .unwrap();
-
-        ctx.free_all_slots();
-
-        (
-            PlonkSnarkVerifierCircuitDeviceSetupWrapper::from_inner(precomputation),
-            vk,
-        )
+        _: Self::Context,
+        _: Self::SetupAssembly,
+        _: Self::FinalizationHint,
+    ) -> anyhow::Result<(Self::Precomputation, Self::VK)> {
+        unimplemented!()
     }
 }

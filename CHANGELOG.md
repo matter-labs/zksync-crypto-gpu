@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.154.3](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.154.2...v0.154.3) (2025-06-04)
+
+
+### Features
+
+* Loading setup for proving network ([#100](https://github.com/matter-labs/zksync-crypto-gpu/issues/100)) ([31b4967](https://github.com/matter-labs/zksync-crypto-gpu/commit/31b4967beb715bd6cf3674f891a8835b5f87bc76))
+
 ## [0.154.2](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.154.1...v0.154.2) (2025-05-02)
 
 

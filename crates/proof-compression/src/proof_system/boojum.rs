@@ -86,10 +86,11 @@ where
     }
 
     fn init_context(domain_size: Self::ContextConfig) -> anyhow::Result<Self::Context> {
+        let start = std::time::Instant::now();
         let config =
             ProverContextConfig::default().with_smallest_supported_domain_size(domain_size);
         let context = Self::Context::create_with_config(config).context("gpu prover context");
-
+        println!("compression ctx initialization takes {:?}", start.elapsed());
         context
     }
     fn get_context_config_from_hint(hint: &Self::FinalizationHint) -> Self::ContextConfig {

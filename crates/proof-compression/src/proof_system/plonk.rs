@@ -274,7 +274,7 @@ impl SnarkWrapperProofSystemExt for PlonkSnarkWrapper {
     }
 
     fn generate_precomputation_and_vk(
-        _: &Self::Context,
+        _: Self::Context,
         _: Self::SetupAssembly,
         _: Self::FinalizationHint,
     ) -> anyhow::Result<(Self::Precomputation, Self::VK)> {

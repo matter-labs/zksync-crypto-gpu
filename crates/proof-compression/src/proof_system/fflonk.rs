@@ -78,12 +78,14 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
     }
 
     fn init_context(compact_raw_crs: &Self::CRS) -> anyhow::Result<Self::Context> {
+        let start = std::time::Instant::now();
         let domain_size = 1 << ::fflonk::fflonk_cpu::L1_VERIFIER_DOMAIN_SIZE_LOG;
         let context = DeviceContextWithSingleDevice::init_from_preloaded_crs::<Self::Allocator>(
             domain_size,
             compact_raw_crs,
         )
         .unwrap();
+        println!("fflonk ctx initialization takes {:?}", start.elapsed());
         Ok(context)
     }
 
@@ -143,7 +145,7 @@ impl SnarkWrapperProofSystemExt for FflonkSnarkWrapper {
     }
 
     fn generate_precomputation_and_vk(
-        _ctx: &Self::Context,
+        ctx: Self::Context,
         setup_assembly: Self::SetupAssembly,
         _hardcoded_finalization_hint: Self::FinalizationHint,
     ) -> anyhow::Result<(Self::Precomputation, Self::VK)> {
@@ -158,6 +160,7 @@ impl SnarkWrapperProofSystemExt for FflonkSnarkWrapper {
                 )
             })?;
         let vk = device_setup.get_verification_key();
+        drop(ctx);
         Ok((
             FflonkSnarkVerifierCircuitDeviceSetupWrapper(device_setup),
             vk,

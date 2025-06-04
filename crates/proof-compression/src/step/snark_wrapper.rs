@@ -134,7 +134,7 @@ pub trait SnarkWrapperStepExt: SnarkWrapperProofSystemExt + SnarkWrapperStep {
         let ctx = <Self as SnarkWrapperProofSystem>::init_context(&crs)?;
         let (precomputation, vk) =
             <Self as SnarkWrapperProofSystemExt>::generate_precomputation_and_vk(
-                &ctx,
+                ctx,
                 setup_assembly,
                 finalization_hint,
             )?;

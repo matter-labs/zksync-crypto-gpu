@@ -107,7 +107,7 @@ pub trait SnarkWrapperProofSystemExt: SnarkWrapperProofSystem {
     type SetupAssembly;
     fn synthesize_for_setup(circuit: Self::Circuit) -> Self::SetupAssembly;
     fn generate_precomputation_and_vk(
-        _: &Self::Context,
+        _: Self::Context,
         _: Self::SetupAssembly,
         _: Self::FinalizationHint,
     ) -> anyhow::Result<(Self::Precomputation, Self::VK)>;

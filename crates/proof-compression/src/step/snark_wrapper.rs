@@ -32,7 +32,7 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
     >;
     fn load_finalization_hint() -> anyhow::Result<<Self as ProofSystemDefinition>::FinalizationHint>
     {
-        assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
+        anyhow::ensure!(Self::IS_FFLONK ^ Self::IS_PLONK);
         let hint = if Self::IS_PLONK {
             (1 << <PlonkProverDeviceMemoryManagerConfig as gpu_prover::ManagerConfigs>::FULL_SLOT_SIZE_LOG).to_string()
         } else {
@@ -75,7 +75,7 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
         input_proof: Proof<GoldilocksField, Self::PreviousStepTreeHasher, GoldilocksExt2>,
         setup_data_cache: &SnarkWrapperSetupData<Self>,
     ) -> anyhow::Result<<Self as ProofSystemDefinition>::Proof> {
-        assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
+        anyhow::ensure!(Self::IS_FFLONK ^ Self::IS_PLONK);
         let input_vk = &setup_data_cache.previous_vk;
         let crs = &setup_data_cache.crs;
         let ctx = Self::init_context(&crs)?;
@@ -92,7 +92,7 @@ pub trait SnarkWrapperStep: SnarkWrapperProofSystem {
             finalization_hint,
         )?;
 
-        assert!(<Self as ProofSystemDefinition>::verify(&proof, &vk));
+        anyhow::ensure!(<Self as ProofSystemDefinition>::verify(&proof, &vk));
 
         Ok(proof)
     }

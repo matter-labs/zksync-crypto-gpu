@@ -151,7 +151,7 @@ where
         vk: &Self::VK,
     ) -> anyhow::Result<Self::Proof> {
         let domain_size = vk.fixed_parameters.domain_size as usize;
-        assert_eq!(finalization_hint.final_trace_len, domain_size);
+        anyhow::ensure!(finalization_hint.final_trace_len == domain_size);
         let cache_strategy = CacheStrategy {
             setup_polynomials: PolynomialsCacheStrategy::CacheMonomialsAndFirstCoset,
             trace_polynomials: PolynomialsCacheStrategy::CacheMonomialsAndFirstCoset,
@@ -210,7 +210,7 @@ where
             proof_config.merkle_tree_cap_size,
         );
         let domain_size = vk_params.domain_size as usize;
-        assert_eq!(finalization_hint.final_trace_len, domain_size);
+        anyhow::ensure!(finalization_hint.final_trace_len == domain_size);
         let (precomputation, vk) =
             shivini::cs::gpu_setup_and_vk_from_base_setup_vk_params_and_hints::<
                 CF::ThisLayerHasher,

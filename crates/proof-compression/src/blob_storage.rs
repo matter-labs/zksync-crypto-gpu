@@ -305,7 +305,7 @@ impl FileSystemBlobStorage {
     ) -> anyhow::Result<
         VerificationKey<GoldilocksField, <CS as CompressionStep>::PreviousStepTreeHasher>,
     > {
-        assert!(CS::MODE >= 1);
+        anyhow::ensure!(CS::MODE >= 1);
         let path = if CS::MODE == 1 {
             format!("{}/{}_vk.json", Self::DATA_DIR_PATH, Self::SCHEDULER_PREFIX,)
         } else {

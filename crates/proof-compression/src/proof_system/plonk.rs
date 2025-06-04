@@ -78,7 +78,7 @@ impl PlonkSnarkWrapper {
         >,
         setup_data_cache: SnarkWrapperSetupData<Self>,
     ) -> anyhow::Result<<Self as ProofSystemDefinition>::Proof> {
-        assert!(Self::IS_FFLONK ^ Self::IS_PLONK);
+        anyhow::ensure!(Self::IS_FFLONK ^ Self::IS_PLONK);
         let input_vk = setup_data_cache.previous_vk;
         let mut ctx = Self::init_context(&setup_data_cache.crs)?.into_inner();
         let finalization_hint = setup_data_cache.finalization_hint;
@@ -88,12 +88,12 @@ impl PlonkSnarkWrapper {
         let vk = setup_data_cache.vk;
         let mut precomputation = setup_data_cache.precomputation.into_inner();
 
-        assert!(proving_assembly.is_satisfied());
-        assert!(finalization_hint.is_power_of_two());
+        anyhow::ensure!(proving_assembly.is_satisfied());
+        anyhow::ensure!(finalization_hint.is_power_of_two());
         proving_assembly.finalize_to_size_log_2(finalization_hint.trailing_zeros() as usize);
         let domain_size = proving_assembly.n() + 1;
-        assert!(domain_size.is_power_of_two());
-        assert_eq!(domain_size, finalization_hint.clone());
+        anyhow::ensure!(domain_size.is_power_of_two());
+        anyhow::ensure!(domain_size == finalization_hint.clone());
 
         let worker = bellman::worker::Worker::new();
         let start = std::time::Instant::now();
@@ -111,7 +111,7 @@ impl PlonkSnarkWrapper {
         println!("plonk proving takes {} s", start.elapsed().as_secs());
         ctx.free_all_slots();
 
-        assert!(<Self as ProofSystemDefinition>::verify(&proof, &vk));
+        anyhow::ensure!(<Self as ProofSystemDefinition>::verify(&proof, &vk));
 
         Ok(proof)
     }
@@ -130,13 +130,13 @@ impl PlonkSnarkWrapper {
         let circuit = Self::build_circuit(input_vk, None);
         let mut setup_assembly =
             <Self as SnarkWrapperProofSystemExt>::synthesize_for_setup(circuit);
-        assert!(setup_assembly.is_satisfied());
-        assert!(hardcoded_finalization_hint.is_power_of_two());
+        anyhow::ensure!(setup_assembly.is_satisfied());
+        anyhow::ensure!(hardcoded_finalization_hint.is_power_of_two());
         setup_assembly
             .finalize_to_size_log_2(hardcoded_finalization_hint.trailing_zeros() as usize);
         let domain_size = setup_assembly.n() + 1;
-        assert!(domain_size.is_power_of_two());
-        assert_eq!(domain_size, hardcoded_finalization_hint);
+        anyhow::ensure!(domain_size.is_power_of_two());
+        anyhow::ensure!(domain_size == hardcoded_finalization_hint);
         let mut ctx = Self::init_context(&crs)?.into_inner();
 
         let worker = bellman::worker::Worker::new();

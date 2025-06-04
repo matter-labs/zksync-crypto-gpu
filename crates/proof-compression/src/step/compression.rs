@@ -86,7 +86,7 @@ pub trait CompressionStep: CompressionProofSystem {
             &finalization_hint,
             &vk,
         )?;
-        assert!(<Self as ProofSystemDefinition>::verify(&proof, &vk));
+        anyhow::ensure!(<Self as ProofSystemDefinition>::verify(&proof, &vk));
 
         Ok(proof)
     }

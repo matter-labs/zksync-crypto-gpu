@@ -103,13 +103,13 @@ impl SnarkWrapperProofSystem for FflonkSnarkWrapper {
         precomputation: &Self::Precomputation,
         finalization_hint: &Self::FinalizationHint,
     ) -> anyhow::Result<Self::Proof> {
-        assert!(proving_assembly.is_satisfied());
+        anyhow::ensure!(proving_assembly.is_satisfied());
         let raw_trace_len = proving_assembly.n();
-        assert!(finalization_hint.is_power_of_two());
+        anyhow::ensure!(finalization_hint.is_power_of_two());
         proving_assembly.finalize_to_size_log_2(finalization_hint.trailing_zeros() as usize);
         let domain_size = proving_assembly.n() + 1;
-        assert!(domain_size.is_power_of_two());
-        assert_eq!(domain_size, finalization_hint.clone());
+        anyhow::ensure!(domain_size.is_power_of_two());
+        anyhow::ensure!(domain_size == finalization_hint.clone());
         let precomputation = precomputation.into_inner_ref();
         let start = std::time::Instant::now();
         let proof = ::fflonk::create_proof::<_, _, _, RollingKeccakTranscript<_>, _>(

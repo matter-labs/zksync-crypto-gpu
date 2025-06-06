@@ -278,6 +278,8 @@ fn sort_indexes<MC: ManagerConfigs>(
     stream.wait(buffers.2.write_event())?;
     stream.wait(buffers.2.read_event())?;
 
+    assert!(buffers.1.data_is_set, "DeviceBuf should be filled with some data");
+
     unsafe {
         let stream = manager.ctx[ctx_id].exec_stream.inner;
         let mem_pool = manager.ctx[ctx_id]
@@ -303,6 +305,7 @@ fn sort_indexes<MC: ManagerConfigs>(
     let mut stream = &mut manager.ctx[ctx_id].exec_stream;
     buffers.1.read_event.record(stream)?;
     buffers.2.write_event.record(stream)?;
+    buffers.2.data_is_set = true;
 
     Ok(())
 }
@@ -314,6 +317,9 @@ fn assign_columns<MC: ManagerConfigs>(
     offset_in_result: usize,
     ctx_id: usize,
 ) -> GpuResult<()> {
+    assert!(buffers.0.data_is_set, "DeviceBuf should be filled with some data");
+    assert!(buffers.2.data_is_set, "DeviceBuf should be filled with some data");
+
     let slot_idx = manager.get_slot_idx(PolyId::S, PolyForm::Values).unwrap();
     let device_id = manager.ctx[ctx_id].device_id();
     let stream = &mut manager.ctx[ctx_id].exec_stream;
@@ -352,6 +358,7 @@ fn assign_columns<MC: ManagerConfigs>(
                 res_buff.write_event.record(stream)?;
                 buffers.2.read_event.record(stream)?;
                 buffers.0.read_event.record(stream)?;
+                res_buff.data_is_set = true;
             }
 
             offset += range.len();

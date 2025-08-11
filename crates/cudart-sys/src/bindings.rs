@@ -100,6 +100,7 @@ pub enum CudaError {
     ErrorJitCompilationDisabled = 223,
     ErrorUnsupportedExecAffinity = 224,
     ErrorUnsupportedDevSideSync = 225,
+    ErrorContained = 226,
     ErrorInvalidSource = 300,
     ErrorFileNotFound = 301,
     ErrorSharedObjectSymbolNotFound = 302,
@@ -129,6 +130,7 @@ pub enum CudaError {
     ErrorInvalidPc = 718,
     ErrorLaunchFailure = 719,
     ErrorCooperativeLaunchTooLarge = 720,
+    ErrorTensorMemoryLeak = 721,
     ErrorNotPermitted = 800,
     ErrorNotSupported = 801,
     ErrorSystemNotReady = 802,
@@ -218,6 +220,7 @@ pub struct CudaPointerAttributes {
     pub device: ::std::os::raw::c_int,
     pub devicePointer: *mut ::std::os::raw::c_void,
     pub hostPointer: *mut ::std::os::raw::c_void,
+    pub reserved: [::std::os::raw::c_long; 8usize],
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -278,10 +281,6 @@ pub enum CudaLimit {
     DevRuntimePendingLaunchCount = 4,
     MaxL2FetchGranularity = 5,
     PersistingL2CacheSize = 6,
-}
-impl CudaDeviceAttr {
-    pub const MaxTimelineSemaphoreInteropSupported: CudaDeviceAttr =
-        CudaDeviceAttr::TimelineSemaphoreInteropSupported;
 }
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -380,7 +379,7 @@ pub enum CudaDeviceAttr {
     Reserved93 = 93,
     Reserved94 = 94,
     CooperativeLaunch = 95,
-    CooperativeMultiDeviceLaunch = 96,
+    Reserved96 = 96,
     MaxSharedMemoryPerBlockOptin = 97,
     CanFlushRemoteWrites = 98,
     HostRegisterSupported = 99,
@@ -414,7 +413,16 @@ pub enum CudaDeviceAttr {
     MpsEnabled = 133,
     HostNumaId = 134,
     D3D12CigSupported = 135,
-    Max = 136,
+    VulkanCigSupported = 138,
+    GpuPciDeviceId = 139,
+    GpuPciSubsystemId = 140,
+    Reserved141 = 141,
+    HostNumaMemoryPoolsSupported = 142,
+    HostNumaMultinodeIpcSupported = 143,
+    HostMemoryPoolsSupported = 144,
+    Reserved145 = 145,
+    OnlyPartialHostNativeAtomicSupported = 147,
+    Max = 148,
 }
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -427,6 +435,9 @@ pub enum CudaMemPoolAttribute {
     AttrReservedMemHigh = 6,
     AttrUsedMemCurrent = 7,
     AttrUsedMemHigh = 8,
+}
+impl CudaMemLocationType {
+    pub const None: CudaMemLocationType = CudaMemLocationType::Invalid;
 }
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -461,6 +472,7 @@ pub struct CudaMemAccessDesc {
 pub enum CudaMemAllocationType {
     Invalid = 0,
     Pinned = 1,
+    Managed = 2,
     Max = 2147483647,
 }
 #[repr(u32)]
@@ -504,21 +516,16 @@ pub struct CudaDeviceProperties {
     pub maxThreadsPerBlock: ::std::os::raw::c_int,
     pub maxThreadsDim: [::std::os::raw::c_int; 3usize],
     pub maxGridSize: [::std::os::raw::c_int; 3usize],
-    pub clockRate: ::std::os::raw::c_int,
     pub totalConstMem: usize,
     pub major: ::std::os::raw::c_int,
     pub minor: ::std::os::raw::c_int,
     pub textureAlignment: usize,
     pub texturePitchAlignment: usize,
-    pub deviceOverlap: ::std::os::raw::c_int,
     pub multiProcessorCount: ::std::os::raw::c_int,
-    pub kernelExecTimeoutEnabled: ::std::os::raw::c_int,
     pub integrated: ::std::os::raw::c_int,
     pub canMapHostMemory: ::std::os::raw::c_int,
-    pub computeMode: ::std::os::raw::c_int,
     pub maxTexture1D: ::std::os::raw::c_int,
     pub maxTexture1DMipmap: ::std::os::raw::c_int,
-    pub maxTexture1DLinear: ::std::os::raw::c_int,
     pub maxTexture2D: [::std::os::raw::c_int; 2usize],
     pub maxTexture2DMipmap: [::std::os::raw::c_int; 2usize],
     pub maxTexture2DLinear: [::std::os::raw::c_int; 3usize],
@@ -545,7 +552,6 @@ pub struct CudaDeviceProperties {
     pub tccDriver: ::std::os::raw::c_int,
     pub asyncEngineCount: ::std::os::raw::c_int,
     pub unifiedAddressing: ::std::os::raw::c_int,
-    pub memoryClockRate: ::std::os::raw::c_int,
     pub memoryBusWidth: ::std::os::raw::c_int,
     pub l2CacheSize: ::std::os::raw::c_int,
     pub persistingL2CacheMaxSize: ::std::os::raw::c_int,
@@ -559,13 +565,11 @@ pub struct CudaDeviceProperties {
     pub isMultiGpuBoard: ::std::os::raw::c_int,
     pub multiGpuBoardGroupID: ::std::os::raw::c_int,
     pub hostNativeAtomicSupported: ::std::os::raw::c_int,
-    pub singleToDoublePrecisionPerfRatio: ::std::os::raw::c_int,
     pub pageableMemoryAccess: ::std::os::raw::c_int,
     pub concurrentManagedAccess: ::std::os::raw::c_int,
     pub computePreemptionSupported: ::std::os::raw::c_int,
     pub canUseHostPointerForRegisteredMem: ::std::os::raw::c_int,
     pub cooperativeLaunch: ::std::os::raw::c_int,
-    pub cooperativeMultiDeviceLaunch: ::std::os::raw::c_int,
     pub sharedMemPerBlockOptin: usize,
     pub pageableMemoryAccessUsesHostPageTables: ::std::os::raw::c_int,
     pub directManagedMemAccessFromHost: ::std::os::raw::c_int,
@@ -585,9 +589,14 @@ pub struct CudaDeviceProperties {
     pub ipcEventSupported: ::std::os::raw::c_int,
     pub clusterLaunch: ::std::os::raw::c_int,
     pub unifiedFunctionPointers: ::std::os::raw::c_int,
-    pub reserved2: [::std::os::raw::c_int; 2usize],
-    pub reserved1: [::std::os::raw::c_int; 1usize],
-    pub reserved: [::std::os::raw::c_int; 60usize],
+    pub deviceNumaConfig: ::std::os::raw::c_int,
+    pub deviceNumaId: ::std::os::raw::c_int,
+    pub mpsEnabled: ::std::os::raw::c_int,
+    pub hostNumaId: ::std::os::raw::c_int,
+    pub gpuPciDeviceID: ::std::os::raw::c_uint,
+    pub gpuPciSubsystemID: ::std::os::raw::c_uint,
+    pub hostNumaMultinodeIpcSupported: ::std::os::raw::c_int,
+    pub reserved: [::std::os::raw::c_int; 56usize],
 }
 pub use self::CudaError as cudaError_t;
 #[repr(C)]
@@ -641,9 +650,11 @@ pub enum CudaLaunchAttributeID {
     Priority = 8,
     MemSyncDomainMap = 9,
     MemSyncDomain = 10,
+    PreferredClusterDimension = 11,
     LaunchCompletionEvent = 12,
     DeviceUpdatableKernelNode = 13,
     PreferredSharedMemoryCarveout = 14,
+    NvlinkUtilCentricScheduling = 16,
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -659,9 +670,11 @@ pub union CudaLaunchAttributeValue {
     pub priority: ::std::os::raw::c_int,
     pub memSyncDomainMap: cudaLaunchMemSyncDomainMap,
     pub memSyncDomain: CudaLaunchMemSyncDomain,
-    pub launchCompletionEvent: cudaLaunchAttributeValue__bindgen_ty_3,
-    pub deviceUpdatableKernelNode: cudaLaunchAttributeValue__bindgen_ty_4,
+    pub preferredClusterDim: cudaLaunchAttributeValue__bindgen_ty_3,
+    pub launchCompletionEvent: cudaLaunchAttributeValue__bindgen_ty_4,
+    pub deviceUpdatableKernelNode: cudaLaunchAttributeValue__bindgen_ty_5,
     pub sharedMemCarveout: ::std::os::raw::c_uint,
+    pub nvlinkUtilCentricScheduling: ::std::os::raw::c_uint,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -680,12 +693,19 @@ pub struct cudaLaunchAttributeValue__bindgen_ty_2 {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct cudaLaunchAttributeValue__bindgen_ty_3 {
+    pub x: ::std::os::raw::c_uint,
+    pub y: ::std::os::raw::c_uint,
+    pub z: ::std::os::raw::c_uint,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct cudaLaunchAttributeValue__bindgen_ty_4 {
     pub event: cudaEvent_t,
     pub flags: ::std::os::raw::c_int,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
-pub struct cudaLaunchAttributeValue__bindgen_ty_4 {
+pub struct cudaLaunchAttributeValue__bindgen_ty_5 {
     pub deviceUpdatable: ::std::os::raw::c_int,
     pub devNode: cudaGraphDeviceNode_t,
 }
@@ -733,7 +753,7 @@ cuda_fn_and_stub! {
     pub fn cudaGetDeviceCount(count: *mut ::std::os::raw::c_int) -> cudaError_t;
 }
 cuda_fn_and_stub! {
-    pub fn cudaGetDeviceProperties_v2(
+    pub fn cudaGetDeviceProperties(
         prop: *mut CudaDeviceProperties,
         device: ::std::os::raw::c_int,
     ) -> cudaError_t;

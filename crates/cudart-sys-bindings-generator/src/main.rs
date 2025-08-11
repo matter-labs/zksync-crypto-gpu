@@ -1,4 +1,4 @@
-use bindgen::callbacks::{EnumVariantValue, ParseCallbacks};
+use bindgen::callbacks::{EnumVariantValue, ItemInfo, ParseCallbacks};
 use bindgen::{BindgenError, Bindings};
 use era_cudart_sys::get_cuda_include_path;
 
@@ -47,9 +47,9 @@ impl ParseCallbacks for CudaParseCallbacks {
         }
     }
 
-    fn item_name(&self, _original_item_name: &str) -> Option<String> {
+    fn item_name(&self, item_info: ItemInfo) -> Option<String> {
         let from = |s: &str| Some(String::from(s));
-        match _original_item_name {
+        match item_info.name {
             "cudaDeviceAttr" => from("CudaDeviceAttr"),
             "cudaLimit" => from("CudaLimit"),
             "cudaError" => from("CudaError"),
@@ -106,7 +106,7 @@ fn generate_bindings<T: Into<String>>(header: T) -> Result<Bindings, BindgenErro
         .allowlist_function("cudaDeviceSynchronize")
         .allowlist_function("cudaGetDevice")
         .allowlist_function("cudaGetDeviceCount")
-        .allowlist_function("cudaGetDeviceProperties_v2")
+        .allowlist_function("cudaGetDeviceProperties")
         .allowlist_function("cudaSetDevice")
         // error handling
         // https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__ERROR.html

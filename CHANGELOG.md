@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.154.6](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.154.5...v0.154.6) (2025-08-11)
+
+
+### Bug Fixes
+
+* **cudart:** recreate CUDA runtime bindings based on CUDA 13.0 ([#106](https://github.com/matter-labs/zksync-crypto-gpu/issues/106)) ([aec514d](https://github.com/matter-labs/zksync-crypto-gpu/commit/aec514d75c3b7596c7990292a653a90742dec4a5))
+
 ## [0.154.5](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.154.4...v0.154.5) (2025-07-30)
 
 

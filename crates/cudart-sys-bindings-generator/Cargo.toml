@@ -12,5 +12,5 @@ description = "CUDA Bindings generator for ZKsync"
 publish = false
 
 [dependencies]
-bindgen = "0.69"
+bindgen = "0.72"
 era_cudart_sys.workspace = true

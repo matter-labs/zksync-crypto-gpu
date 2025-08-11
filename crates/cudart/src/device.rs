@@ -33,7 +33,7 @@ pub fn get_device() -> CudaResult<i32> {
 
 pub fn get_device_properties(device_id: i32) -> CudaResult<CudaDeviceProperties> {
     let mut props = MaybeUninit::<CudaDeviceProperties>::uninit();
-    unsafe { cudaGetDeviceProperties_v2(props.as_mut_ptr(), device_id).wrap_maybe_uninit(props) }
+    unsafe { cudaGetDeviceProperties(props.as_mut_ptr(), device_id).wrap_maybe_uninit(props) }
 }
 
 pub fn set_device(device_id: i32) -> CudaResult<()> {

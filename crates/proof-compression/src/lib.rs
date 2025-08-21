@@ -7,7 +7,7 @@ pub use chain::*;
 pub mod proof_system;
 pub use proof_system::*;
 
-mod serialization;
+pub mod serialization;
 use serialization::*;
 
 pub mod step;

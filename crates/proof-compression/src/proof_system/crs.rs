@@ -271,6 +271,6 @@ fn create_crs_from_ignition_transcript<S: AsRef<std::ffi::OsStr> + ?Sized>(
     Ok(new)
 }
 
-pub(crate) fn hardcoded_canonical_g2_bases() -> [bellman::bn256::G2Affine; 2] {
+pub fn hardcoded_canonical_g2_bases() -> [bellman::bn256::G2Affine; 2] {
     ::fflonk::hardcoded_g2_bases::<bellman::bn256::Bn256>()
 }

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.154.7](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.154.6...v0.154.7) (2025-08-21)
+
+
+### Features
+
+* updating to most recent booju,m, and making more public ([#109](https://github.com/matter-labs/zksync-crypto-gpu/issues/109)) ([c4d579b](https://github.com/matter-labs/zksync-crypto-gpu/commit/c4d579b682c6306b4bebf86c909d639c38cde9ea))
+
 ## [0.154.6](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.154.5...v0.154.6) (2025-08-11)
 
 

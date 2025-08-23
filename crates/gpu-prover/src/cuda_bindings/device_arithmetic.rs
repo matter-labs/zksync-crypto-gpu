@@ -230,6 +230,8 @@ impl DeviceBuf<Fr> {
                     );
                     let constant = constant.expect("constant should be Some in SetValue operation");
 
+                    self.data_is_set = true;
+
                     ff_set_value(
                         self.as_mut_ptr(range) as *mut c_void,
                         &constant as *const Fr as *const c_void,
@@ -245,8 +247,10 @@ impl DeviceBuf<Fr> {
             return Err(GpuError::ArithmeticErr(result));
         }
 
+        assert!(self.data_is_set, "DeviceBuf should be filled with some data");
         self.write_event.record(&ctx.exec_stream)?;
         if let Some(other) = other {
+            assert!(other.data_is_set, "DeviceBuf should be filled with some data");
             other.read_event.record(&ctx.exec_stream)?;
         }
 
@@ -263,6 +267,8 @@ impl DeviceBuf<Fr> {
         shift: usize,
         inverse: bool,
     ) -> GpuResult<()> {
+        assert!(self.data_is_set, "DeviceBuf should be filled with some data");
+        
         assert!(
             ctx.ff,
             "ff is not set up on GpuContext with id {}",

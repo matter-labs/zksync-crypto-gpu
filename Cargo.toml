@@ -36,8 +36,8 @@ rescue_poseidon = "=0.32.3"
 snark_wrapper = "=0.32.3"
 
 # zksync-protocol repository
-circuit_definitions = { version = "=0.152.6" }
-zkevm_test_harness = { version = "=0.152.6" }
+circuit_definitions = { version = "=0.152.7" }
+zkevm_test_harness = { version = "=0.152.7" }
 
 [profile.release]
 debug = "line-tables-only"

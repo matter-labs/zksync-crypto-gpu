@@ -11,7 +11,7 @@ keywords = ["blockchain", "zksync"]
 categories = ["cryptography"]
 repository = "https://github.com/matter-labs/zksync-crypto-gpu"
 # All the packages in the workspace should have the same version
-version = "0.154.8" # x-release-please-version
+version = "0.154.9" # x-release-please-version
 
 [workspace.dependencies]
 # Local dependencies

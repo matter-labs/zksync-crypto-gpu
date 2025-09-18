@@ -28,6 +28,7 @@ use cfg_if::*;
 
 cfg_if! {
     if #[cfg(feature = "allocator")]{
+        #[derive(Clone)]
         pub struct AsyncSetup<A: Allocator = CudaAllocator> {
             pub gate_setup_monomials: [AsyncVec<Fr, A>; NUM_GATE_SETUP_POLYS],
             pub gate_selectors_bitvecs: [BitVec; NUM_SELECTOR_POLYS],
@@ -40,6 +41,7 @@ cfg_if! {
         unsafe impl<A: Allocator + Default> Send for AsyncSetup<A> {}
         unsafe impl<A: Allocator + Default> Sync for AsyncSetup<A> {}
     }else{
+        #[derive(Clone)]
         pub struct AsyncSetup{
             pub gate_setup_monomials: [AsyncVec<Fr>; NUM_GATE_SETUP_POLYS],
             pub gate_selectors_bitvecs: [BitVec; NUM_SELECTOR_POLYS],

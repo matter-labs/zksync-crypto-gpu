@@ -7,7 +7,7 @@ pub fn round2<S: SynthesisMode, C: Circuit<Bn256>, T: Transcript<Fr>, MC: Manage
     proof: &mut Proof<Bn256, C>,
     constants: &mut ProverConstants<Fr>,
     transcript: &mut T,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
     input_values: &Vec<Fr>,
 ) -> Result<(), ProvingError> {
     get_round_2_permutation_challenges(constants, transcript);
@@ -268,7 +268,7 @@ pub fn schedule_ops_for_round_3<S: SynthesisMode, MC: ManagerConfigs>(
     manager: &mut DeviceMemoryManager<Fr, MC>,
     assembly: &DefaultAssembly<S>,
     worker: &Worker,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
     input_values: &Vec<Fr>,
 ) -> Result<(), ProvingError> {
     let len = input_values.len();
@@ -289,7 +289,7 @@ pub fn schedule_copying_gate_coeffs<S: SynthesisMode, MC: ManagerConfigs>(
     manager: &mut DeviceMemoryManager<Fr, MC>,
     assembly: &DefaultAssembly<S>,
     worker: &Worker,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
 ) -> Result<(), ProvingError> {
     if !S::PRODUCE_SETUP {
         copying_and_computing_q_const_plus_pi_with_setup(manager, setup)?;
@@ -304,10 +304,10 @@ pub fn schedule_copying_gate_coeffs<S: SynthesisMode, MC: ManagerConfigs>(
 
 pub fn copying_and_computing_q_const_plus_pi_with_setup<MC: ManagerConfigs>(
     manager: &mut DeviceMemoryManager<Fr, MC>,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
 ) -> Result<(), ProvingError> {
     manager.async_copy_to_device(
-        &mut setup.gate_setup_monomials[6],
+        &setup.gate_setup_monomials[6],
         PolyId::QConst,
         PolyForm::Monomial,
         0..MC::FULL_SLOT_SIZE,
@@ -325,7 +325,7 @@ pub fn copying_and_computing_q_const_plus_pi_with_setup<MC: ManagerConfigs>(
 pub fn copying_and_computing_ifft_of_gate_coeffs<S: SynthesisMode, MC: ManagerConfigs>(
     manager: &mut DeviceMemoryManager<Fr, MC>,
     assembly: &DefaultAssembly<S>,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
 ) -> Result<(), ProvingError> {
     manager.free_host_slot(PolyId::PI, PolyForm::Values);
 
@@ -341,7 +341,7 @@ pub fn copying_and_computing_q_const_plus_pi<S: SynthesisMode, MC: ManagerConfig
     manager: &mut DeviceMemoryManager<Fr, MC>,
     assembly: &DefaultAssembly<S>,
     worker: &Worker,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
 ) -> Result<(), ProvingError> {
     copying_setup_poly(manager, &assembly, 6);
 
@@ -356,7 +356,7 @@ pub fn copying_and_computing_q_const_plus_pi<S: SynthesisMode, MC: ManagerConfig
 pub fn copying_and_computing_ifft_of_q_d_next<S: SynthesisMode, MC: ManagerConfigs>(
     manager: &mut DeviceMemoryManager<Fr, MC>,
     assembly: &DefaultAssembly<S>,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
 ) -> Result<(), ProvingError> {
     copying_setup_poly(manager, assembly, 7);
     manager.multigpu_ifft(GATE_SETUP_LIST[7], false)?;

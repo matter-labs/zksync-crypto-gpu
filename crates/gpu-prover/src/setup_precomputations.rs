@@ -29,7 +29,7 @@ use cfg_if::*;
 cfg_if! {
     if #[cfg(feature = "allocator")]{
         #[derive(Clone)]
-        pub struct AsyncSetup<A: Allocator = CudaAllocator> {
+        pub struct AsyncSetup<A: Allocator + Default = CudaAllocator> {
             pub gate_setup_monomials: [AsyncVec<Fr, A>; NUM_GATE_SETUP_POLYS],
             pub gate_selectors_bitvecs: [BitVec; NUM_SELECTOR_POLYS],
 

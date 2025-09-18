@@ -6,7 +6,7 @@ pub fn round1<S: SynthesisMode, C: Circuit<Bn256>, T: Transcript<Fr>, MC: Manage
     worker: &Worker,
     proof: &mut Proof<Bn256, C>,
     transcript: &mut T,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
     msm_handles_round1: &mut Vec<MSMHandle>,
 ) -> Result<(), ProvingError> {
     schedule_state_commitments::<S, _>(manager, worker, setup, msm_handles_round1)?;
@@ -24,7 +24,7 @@ pub fn round1<S: SynthesisMode, C: Circuit<Bn256>, T: Transcript<Fr>, MC: Manage
 fn schedule_state_commitments<S: SynthesisMode, MC: ManagerConfigs>(
     manager: &mut DeviceMemoryManager<Fr, MC>,
     worker: &Worker,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
     msm_handles_round1: &mut Vec<MSMHandle>,
 ) -> Result<(), ProvingError> {
     let state_polys_ids = [PolyId::A, PolyId::B, PolyId::C, PolyId::D];
@@ -42,7 +42,7 @@ fn upload_t_poly_parts<S: SynthesisMode, MC: ManagerConfigs>(
     manager: &mut DeviceMemoryManager<Fr, MC>,
     assembly: &DefaultAssembly<S>,
     worker: &Worker,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
 ) -> Result<(), ProvingError> {
     if !S::PRODUCE_SETUP {
         let copy_start = MC::FULL_SLOT_SIZE - setup.lookup_tables_values[0].len() - 1;
@@ -150,7 +150,7 @@ fn upload_lookup_selector_and_table_type<S: SynthesisMode, MC: ManagerConfigs>(
     manager: &mut DeviceMemoryManager<Fr, MC>,
     assembly: &DefaultAssembly<S>,
     worker: &Worker,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
 ) -> Result<(), ProvingError> {
     if !S::PRODUCE_SETUP {
         // manager.async_copy_to_device(
@@ -166,7 +166,7 @@ fn upload_lookup_selector_and_table_type<S: SynthesisMode, MC: ManagerConfigs>(
         );
 
         manager.async_copy_to_device(
-            &mut setup.lookup_table_type_monomial,
+            &setup.lookup_table_type_monomial,
             PolyId::QTableType,
             PolyForm::Monomial,
             0..MC::FULL_SLOT_SIZE,
@@ -183,7 +183,7 @@ fn upload_lookup_selector_and_table_type<S: SynthesisMode, MC: ManagerConfigs>(
 
 fn schedule_auxiliary_operations<S: SynthesisMode, MC: ManagerConfigs>(
     manager: &mut DeviceMemoryManager<Fr, MC>,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
 ) -> Result<(), ProvingError> {
     if !S::PRODUCE_SETUP {
         // manager.multigpu_fft(PolyId::QLookupSelector, false)?;

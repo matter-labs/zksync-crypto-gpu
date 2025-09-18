@@ -3,7 +3,6 @@ use bellman::PrimeField;
 use core::ops::Range;
 use std::io::{Read, Write};
 
-#[derive(Clone)]
 pub struct AsyncVec<T, #[cfg(feature = "allocator")] A: Allocator = CudaAllocator> {
     #[cfg(feature = "allocator")]
     pub values: Option<Vec<T, A>>,
@@ -55,7 +54,7 @@ impl_async_vec! {
         }
 
         pub fn async_copy_to_device(
-            &mut self,
+            &self,
             ctx: &mut GpuContext,
             other: &mut DeviceBuf<T>,
             this_range: Range<usize>,
@@ -180,6 +179,30 @@ impl<T: fmt::Debug> fmt::Debug for AsyncVec<T> {
         f.debug_struct("AsyncVec")
             .field("Values", &self.get_values().unwrap())
             .finish()
+    }
+}
+
+#[cfg(feature = "allocator")]
+impl<T: Clone, A: Allocator + Default> Clone for AsyncVec<T, A> {
+    fn clone(&self) -> Self {
+        let length = self.len();
+        let mut result = Self::allocate_new(length);
+
+        result.get_values_mut().unwrap().clone_from_slice(self.get_values().unwrap());
+
+        result
+    }
+}
+
+#[cfg(not(feature = "allocator"))]
+impl<T> Clone for AsyncVec<T> {
+    fn clone(&self) -> Self {
+        let length = self.len();
+        let mut result = Self::allocate_new(length);
+
+        result.get_values_mut().unwrap().copy_from_slice(self.get_values().unwrap());
+
+        result
     }
 }
 

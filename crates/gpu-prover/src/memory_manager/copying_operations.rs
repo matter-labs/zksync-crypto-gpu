@@ -6,7 +6,7 @@ use std::convert::TryInto;
 impl<MC: ManagerConfigs> DeviceMemoryManager<Fr, MC> {
     pub fn async_copy_to_device(
         &mut self,
-        poly: &mut AsyncVec<Fr>,
+        poly: &AsyncVec<Fr>,
         id: PolyId,
         form: PolyForm,
         range: Range<usize>,

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.154.10](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.154.9...v0.154.10) (2025-09-18)
+
+
+### Features
+
+* Make setup_data cloneable ([#115](https://github.com/matter-labs/zksync-crypto-gpu/issues/115)) ([60e56cc](https://github.com/matter-labs/zksync-crypto-gpu/commit/60e56cc12c14a302c96ed7d6120cb582f71684ca))
+
 ## [0.154.9](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.154.8...v0.154.9) (2025-09-09)
 
 

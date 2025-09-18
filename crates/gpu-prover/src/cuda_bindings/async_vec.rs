@@ -183,30 +183,6 @@ impl<T: fmt::Debug> fmt::Debug for AsyncVec<T> {
 }
 
 #[cfg(feature = "allocator")]
-impl<T: Clone, A: Allocator + Default> Clone for AsyncVec<T, A> {
-    fn clone(&self) -> Self {
-        let length = self.len();
-        let mut result = Self::allocate_new(length);
-
-        result.get_values_mut().unwrap().clone_from_slice(self.get_values().unwrap());
-
-        result
-    }
-}
-
-#[cfg(not(feature = "allocator"))]
-impl<T> Clone for AsyncVec<T> {
-    fn clone(&self) -> Self {
-        let length = self.len();
-        let mut result = Self::allocate_new(length);
-
-        result.get_values_mut().unwrap().copy_from_slice(self.get_values().unwrap());
-
-        result
-    }
-}
-
-#[cfg(feature = "allocator")]
 impl<T, A: Allocator> From<Vec<T, A>> for AsyncVec<T, A> {
     fn from(values: Vec<T, A>) -> Self {
         Self {

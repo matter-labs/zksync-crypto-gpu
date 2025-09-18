@@ -3,6 +3,7 @@ use bellman::PrimeField;
 use core::ops::Range;
 use std::io::{Read, Write};
 
+#[derive(Clone)]
 pub struct AsyncVec<T, #[cfg(feature = "allocator")] A: Allocator = CudaAllocator> {
     #[cfg(feature = "allocator")]
     pub values: Option<Vec<T, A>>,

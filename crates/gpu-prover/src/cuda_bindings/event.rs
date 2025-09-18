@@ -1,6 +1,6 @@
 use super::*;
 
-// #[derive(Clone)]
+#[derive(Debug)]
 pub struct Event {
     pub(crate) sub_events: Mutex<Vec<Vec<(usize, Arc<bc_event>)>>>,
 }

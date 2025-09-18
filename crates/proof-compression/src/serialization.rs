@@ -48,7 +48,7 @@ impl<H: GpuTreeHasher> shivini::boojum::cs::implementations::fast_serialization:
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct PlonkSnarkVerifierCircuitDeviceSetupWrapper(pub PlonkSnarkVerifierCircuitDeviceSetup);
 
 impl MemcopySerializable for PlonkSnarkVerifierCircuitDeviceSetupWrapper {

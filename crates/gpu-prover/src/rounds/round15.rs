@@ -7,7 +7,7 @@ pub fn round15<S: SynthesisMode, C: Circuit<Bn256>, T: Transcript<Fr>, MC: Manag
     proof: &mut Proof<Bn256, C>,
     constants: &mut ProverConstants<Fr>,
     transcript: &mut T,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
     msm_handles_round1: Vec<MSMHandle>,
 ) -> Result<(), ProvingError> {
     for (i, commitment) in msm_handles_round1.into_iter().enumerate() {

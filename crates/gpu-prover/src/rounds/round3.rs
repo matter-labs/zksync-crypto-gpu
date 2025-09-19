@@ -7,7 +7,7 @@ pub fn round3<S: SynthesisMode, C: Circuit<Bn256>, T: Transcript<Fr>, MC: Manage
     proof: &mut Proof<Bn256, C>,
     constants: &mut ProverConstants<Fr>,
     transcript: &mut T,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
 ) -> Result<(), ProvingError> {
     get_round_3_challenges(constants, transcript);
 
@@ -54,7 +54,7 @@ pub fn compute_main_custom_and_permutation_gates<S: SynthesisMode, MC: ManagerCo
     assembly: &DefaultAssembly<S>,
     worker: &Worker,
     constants: &mut ProverConstants<Fr>,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
 ) -> Result<(), ProvingError> {
     if S::PRODUCE_SETUP {
         compute_gate_selector_monomials(manager, assembly, worker)?;
@@ -159,7 +159,7 @@ pub fn copy_polynomials_for_main_custom_and_permutation_gates<
     MC: ManagerConfigs,
 >(
     manager: &mut DeviceMemoryManager<Fr, MC>,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
     coset_idx: usize,
 ) -> Result<(), ProvingError> {
     let poly_ids = [
@@ -187,13 +187,13 @@ pub fn copy_polynomials_for_main_custom_and_permutation_gates<
 
 pub fn copy_monomials_from_setup_for_main_custom_and_permutation_gates<MC: ManagerConfigs>(
     manager: &mut DeviceMemoryManager<Fr, MC>,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
     poly_ids: [PolyId; 7],
     coset_idx: usize,
 ) -> Result<(), ProvingError> {
     for (i, id) in poly_ids[..6].iter().enumerate() {
         manager.async_copy_to_device(
-            &mut setup.gate_setup_monomials[i],
+            &setup.gate_setup_monomials[i],
             *id,
             PolyForm::Monomial,
             0..MC::FULL_SLOT_SIZE,
@@ -202,7 +202,7 @@ pub fn copy_monomials_from_setup_for_main_custom_and_permutation_gates<MC: Manag
     }
 
     manager.async_copy_to_device(
-        &mut setup.gate_setup_monomials[7],
+        &setup.gate_setup_monomials[7],
         PolyId::QDNext,
         PolyForm::Monomial,
         0..MC::FULL_SLOT_SIZE,
@@ -579,7 +579,7 @@ pub fn compute_lookup_gate<S: SynthesisMode, MC: ManagerConfigs>(
     assembly: &DefaultAssembly<S>,
     worker: &Worker,
     constants: &mut ProverConstants<Fr>,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
 ) -> Result<(), ProvingError> {
     compute_shifted_lookup_polynomials(manager)?;
 
@@ -640,7 +640,7 @@ pub fn compute_lookup_gate<S: SynthesisMode, MC: ManagerConfigs>(
             manager.multigpu_ifft(PolyId::QLookupSelector, false)?;
             manager.multigpu_coset_fft(PolyId::QLookupSelector, coset_idx)?;
             manager.async_copy_to_device(
-                &mut setup.lookup_table_type_monomial,
+                &setup.lookup_table_type_monomial,
                 PolyId::QTableType,
                 PolyForm::Monomial,
                 0..MC::FULL_SLOT_SIZE,
@@ -958,7 +958,7 @@ pub fn compute_quotient_monomial_and_schedule_commitments<MC: ManagerConfigs>(
 pub fn schedule_monomial_copyings_for_last_rounds<S: SynthesisMode, MC: ManagerConfigs>(
     manager: &mut DeviceMemoryManager<Fr, MC>,
     assembly: &DefaultAssembly<S>,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
     worker: &Worker,
 ) -> Result<(), ProvingError> {
     if S::PRODUCE_SETUP {
@@ -991,7 +991,7 @@ pub fn schedule_monomial_copyings_for_last_rounds<S: SynthesisMode, MC: ManagerC
         manager.multigpu_ifft(PolyId::QLookupSelector, false)?;
 
         manager.async_copy_to_device(
-            &mut setup.lookup_table_type_monomial,
+            &setup.lookup_table_type_monomial,
             PolyId::QTableType,
             PolyForm::Monomial,
             0..MC::FULL_SLOT_SIZE,
@@ -999,7 +999,7 @@ pub fn schedule_monomial_copyings_for_last_rounds<S: SynthesisMode, MC: ManagerC
 
         for (i, poly_id) in GATE_SETUP_LIST.iter().enumerate() {
             manager.async_copy_to_device(
-                &mut setup.gate_setup_monomials[i],
+                &setup.gate_setup_monomials[i],
                 *poly_id,
                 PolyForm::Monomial,
                 0..MC::FULL_SLOT_SIZE,

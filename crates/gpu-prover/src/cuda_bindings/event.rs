@@ -21,7 +21,7 @@ impl Event {
         }
     }
 
-    pub fn record(&mut self, stream: &Stream) -> GpuResult<()> {
+    pub fn record(&self, stream: &Stream) -> GpuResult<()> {
         let device_id = stream.device_id();
         let stream_id = stream.inner.handle as usize;
         set_device(device_id)?;

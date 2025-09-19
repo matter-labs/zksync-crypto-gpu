@@ -3,7 +3,6 @@ use bellman::PrimeField;
 use core::ops::Range;
 use std::io::{Read, Write};
 
-#[derive(Clone)]
 pub struct AsyncVec<T, #[cfg(feature = "allocator")] A: Allocator = CudaAllocator> {
     #[cfg(feature = "allocator")]
     pub values: Option<Vec<T, A>>,
@@ -55,7 +54,7 @@ impl_async_vec! {
         }
 
         pub fn async_copy_to_device(
-            &mut self,
+            &self,
             ctx: &mut GpuContext,
             other: &mut DeviceBuf<T>,
             this_range: Range<usize>,

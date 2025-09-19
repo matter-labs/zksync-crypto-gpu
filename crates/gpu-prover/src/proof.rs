@@ -11,7 +11,7 @@ pub fn create_proof<
     assembly: &DefaultAssembly<S>,
     manager: &mut DeviceMemoryManager<Fr, MC>,
     worker: &Worker,
-    setup: &mut AsyncSetup,
+    setup: &AsyncSetup,
     transcript_params: Option<T::InitializationParameters>,
 ) -> Result<Proof<Bn256, C>, ProvingError> {
     // if S::PRODUCE_SETUP {

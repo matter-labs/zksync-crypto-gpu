@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.154.11](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.154.10...v0.154.11) (2025-09-19)
+
+
+### Bug Fixes
+
+* avoid mut reference in proof and fixed Clone impl ([#117](https://github.com/matter-labs/zksync-crypto-gpu/issues/117)) ([27e12c0](https://github.com/matter-labs/zksync-crypto-gpu/commit/27e12c0a7acd9c1b901d2265f498c9edda2be600))
+
 ## [0.154.10](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.154.9...v0.154.10) (2025-09-18)
 
 

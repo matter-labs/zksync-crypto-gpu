@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.155.0](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.154.10...v0.155.0) (2025-09-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* Bump zksync-protocol dependencies ([#119](https://github.com/matter-labs/zksync-crypto-gpu/issues/119))
+
+### Features
+
+* Bump zksync-protocol dependencies ([#119](https://github.com/matter-labs/zksync-crypto-gpu/issues/119)) ([83ecaa2](https://github.com/matter-labs/zksync-crypto-gpu/commit/83ecaa26f47b723d9bad90162c6df93514f977ea))
+
+
+### Bug Fixes
+
+* avoid mut reference in proof and fixed Clone impl ([#117](https://github.com/matter-labs/zksync-crypto-gpu/issues/117)) ([27e12c0](https://github.com/matter-labs/zksync-crypto-gpu/commit/27e12c0a7acd9c1b901d2265f498c9edda2be600))
+
 ## [0.154.10](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.154.9...v0.154.10) (2025-09-18)
 
 

@@ -29,15 +29,23 @@ wrapper-prover = { version = "=0.155.1", path = "crates/wrapper-prover", package
 
 # These dependencies should be shared by all the crates.
 # zksync-crypto repository
-boojum = "=0.32.3"
-fflonk-cpu = {package = "fflonk", version = "=0.32.3"}
-franklin-crypto = "=0.32.3"
-rescue_poseidon = "=0.32.3"
-snark_wrapper = "=0.32.3"
+# boojum = "=0.32.3"
+# fflonk-cpu = {package = "fflonk", version = "=0.32.3"}
+# franklin-crypto = "=0.32.3"
+# rescue_poseidon = "=0.32.3"
+# snark_wrapper = "=0.32.3"
+boojum = { package = "boojum", git = "https://github.com/matter-labs/zksync-crypto.git", branch = "av_zk_in_padding" }
+fflonk-cpu = { package = "fflonk", git = "https://github.com/matter-labs/zksync-crypto.git", branch = "av_zk_in_padding" }
+franklin-crypto = { package = "franklin-crypto", git = "https://github.com/matter-labs/zksync-crypto.git", branch = "av_zk_in_padding" }
+rescue_poseidon = { package = "rescue_poseidon", git = "https://github.com/matter-labs/zksync-crypto.git", branch = "av_zk_in_padding" }
+snark_wrapper = { package = "snark_wrapper", git = "https://github.com/matter-labs/zksync-crypto.git", branch = "av_zk_in_padding" }
+
 
 # zksync-protocol repository
-circuit_definitions = { version = "=0.153.1" }
-zkevm_test_harness = { version = "=0.153.1" }
+# circuit_definitions = { version = "=0.152.7" }
+# zkevm_test_harness = { version = "=0.152.7" }
+circuit_definitions = { package = "circuit_definitions", git = "https://github.com/matter-labs/zksync-protocol.git", branch = "evl-fix-av-zk-in-padding" }
+zkevm_test_harness = { package = "zkevm_test_harness", git = "https://github.com/matter-labs/zksync-protocol.git", branch = "evl-fix-av-zk-in-padding" }
 
 [profile.release]
 debug = "line-tables-only"

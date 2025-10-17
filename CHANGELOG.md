@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.155.2](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.1...v0.155.2) (2025-10-17)
+
+
+### Features
+
+* Allow zk for SNARKs ([#123](https://github.com/matter-labs/zksync-crypto-gpu/issues/123)) ([cf7629a](https://github.com/matter-labs/zksync-crypto-gpu/commit/cf7629ada7c5661416bb594f0bb76e4482cc4354))
+
 ## [0.155.1](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.0...v0.155.1) (2025-09-22)
 
 

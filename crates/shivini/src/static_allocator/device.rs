@@ -8,7 +8,7 @@ use std::ops::Deref;
 use std::ptr::NonNull;
 use std::sync::{Arc, Mutex};
 
-pub const FREE_MEMORY_SLACK: usize = 1 << 23; // 8 MB
+pub const FREE_MEMORY_SLACK: usize = 1 << 26; // 64 MB
 pub const DEFAULT_MIN_NUM_BLOCKS: usize = 512;
 pub const SMALL_ALLOCATOR_BLOCK_SIZE: usize = 8;
 pub const SMALL_ALLOCATOR_BLOCKS_COUNT: usize = 1 << 14; // 1 MB

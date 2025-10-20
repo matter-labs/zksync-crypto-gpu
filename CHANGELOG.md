@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.155.3](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.2...v0.155.3) (2025-10-20)
+
+
+### Bug Fixes
+
+* **shivini:** bump device allocator free memory slack ([#125](https://github.com/matter-labs/zksync-crypto-gpu/issues/125)) ([35a8c1a](https://github.com/matter-labs/zksync-crypto-gpu/commit/35a8c1a4068c0b04adf9c1398d41b76352c34ea9))
+
 ## [0.155.2](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.1...v0.155.2) (2025-10-17)
 
 

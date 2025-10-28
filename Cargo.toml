@@ -15,29 +15,29 @@ version = "0.155.3" # x-release-please-version
 
 [workspace.dependencies]
 # Local dependencies
-boojum-cuda = { version = "=0.155.3", path = "crates/boojum-cuda" }
-era_criterion_cuda = { version = "=0.155.3", path = "crates/criterion-cuda" }
-era_cudart = { version = "=0.155.3", path = "crates/cudart" }
-era_cudart_sys = { version = "=0.155.3", path = "crates/cudart-sys" }
-era_cudart_sys_bindings_generator = { version = "=0.155.3", path = "crates/cudart-sys-bindings-generator" }
-fflonk = { version = "=0.155.3", path = "crates/fflonk", package = "fflonk-cuda" }
-gpu-ffi = { version = "=0.155.3", path = "crates/gpu-ffi", package = "zksync-gpu-ffi" }
-gpu-ffi-bindings-generator = { version = "=0.155.3", path = "crates/gpu-ffi", package = "zksync-gpu-ffi-bindings-generator" }
-gpu-prover = { version = "=0.155.3", path = "crates/gpu-prover", package = "zksync-gpu-prover" }
-shivini = { version = "=0.155.3", path = "crates/shivini" }
-wrapper-prover = { version = "=0.155.3", path = "crates/wrapper-prover", package = "zksync-wrapper-prover" }
+boojum-cuda = { version = "=0.155.4", path = "crates/boojum-cuda" }
+era_criterion_cuda = { version = "=0.155.4", path    = "crates/criterion-cuda" }
+era_cudart = { version = "=0.155.4", path = "crates/cudart" }
+era_cudart_sys = { version = "=0.155.4", path = "crates/cudart-sys" }
+era_cudart_sys_bindings_generator = { version = "=0.155.4", path = "crates/cudart-sys-bindings-generator" }
+fflonk = { version = "=0.155.4", path = "crates/fflonk", package = "fflonk-cuda" }
+gpu-ffi = { version = "=0.155.4", path = "crates/gpu-ffi", package = "zksync-gpu-ffi" }
+gpu-ffi-bindings-generator = { version = "=0.155.4", path = "crates/gpu-ffi", package = "zksync-gpu-ffi-bindings-generator" }
+gpu-prover = { version = "=0.155.4", path = "crates/gpu-prover", package = "zksync-gpu-prover" }
+shivini = { version = "=0.155.4", path = "crates/shivini" }
+wrapper-prover = { version = "=0.155.4", path = "crates/wrapper-prover", package = "zksync-wrapper-prover" }
 
 # These dependencies should be shared by all the crates.
 # zksync-crypto repository
-boojum = "=0.32.5"
-fflonk-cpu = {package = "fflonk", version = "=0.32.5"}
-franklin-crypto = "=0.32.5"
-rescue_poseidon = "=0.32.5"
-snark_wrapper = "=0.32.5"
+boojum = "=0.32.6"
+fflonk-cpu = {package = "fflonk", version = "=0.32.6"}
+franklin-crypto = "=0.32.6"
+rescue_poseidon = "=0.32.6"
+snark_wrapper = "=0.32.6"
 
 # zksync-protocol repository
-circuit_definitions = { version = "=0.153.3" }
-zkevm_test_harness = { version = "=0.153.3" }
+circuit_definitions = { version = "=0.153.4" }
+zkevm_test_harness = { version = "=0.153.4" }
 
 [profile.release]
 debug = "line-tables-only"

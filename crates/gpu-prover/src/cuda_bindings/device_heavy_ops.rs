@@ -17,6 +17,8 @@ impl DeviceBuf<Fr> {
         let mut result = DeviceBuf::<G1>::async_alloc_in_exec(ctx, 254)?;
         ctx.exec_stream.wait(self.write_event())?;
 
+        assert!(self.data_is_set, "DeviceBuf should be filled with some data");
+
         let null_ptr = std::ptr::null_mut() as *mut c_void;
         let null_event = bc_event { handle: null_ptr };
 
@@ -44,6 +46,7 @@ impl DeviceBuf<Fr> {
 
         self.read_event.record(ctx.exec_stream())?;
         result.write_event.record(ctx.exec_stream())?;
+        result.data_is_set = true;
 
         Ok(result)
     }
@@ -59,6 +62,8 @@ impl DeviceBuf<Fr> {
         let length = self.len();
         let mut result = DeviceBuf::<Fr>::async_alloc_in_exec(ctx, 1)?;
         ctx.exec_stream.wait(self.write_event())?;
+
+        assert!(self.data_is_set, "DeviceBuf should be filled with some data");
 
         let cfg = ff_poly_evaluate_configuration {
             mem_pool: ctx.mem_pool.unwrap(),
@@ -78,6 +83,7 @@ impl DeviceBuf<Fr> {
 
         self.read_event.record(ctx.exec_stream())?;
         result.write_event.record(ctx.exec_stream())?;
+        result.data_is_set = true;
 
         Ok(result)
     }
@@ -97,6 +103,8 @@ impl DeviceBuf<Fr> {
         for buffer in buffers.iter() {
             ctx.exec_stream.wait(buffer.write_event())?;
             ctx.exec_stream.wait(buffer.read_event())?;
+
+            assert!(buffer.data_is_set, "DeviceBuf should be filled with some data");
         }
 
         for i in 0..(buffers.len() - 1) {
@@ -221,6 +229,8 @@ impl DeviceBuf<Fr> {
             ctx[buffer_idx].exec_stream.wait(buffer.write_event())?;
             ctx[buffer_idx].exec_stream.wait(buffer.read_event())?;
 
+            assert!(buffer.data_is_set, "DeviceBuf should be filled with some data");
+
             let d_scalars = buffer.as_ptr(0..buffer.len());
 
             let cfg = ntt_configuration {
@@ -317,6 +327,8 @@ impl DeviceBuf<Fr> {
             ctx[ctx_id].exec_stream.wait(buffer.write_event())?;
             ctx[ctx_id].exec_stream.wait(buffer.read_event())?;
 
+            assert!(buffer.data_is_set, "DeviceBuf should be filled with some data");
+
             let d_scalars = buffer.as_ptr(0..buffer.len());
 
             let cfg = ntt_configuration {
@@ -380,6 +392,7 @@ impl DeviceBuf<Fr> {
         for buffer in buffers.iter() {
             ctx.exec_stream.wait(buffer.write_event())?;
             ctx.exec_stream.wait(buffer.read_event())?;
+            assert!(buffer.data_is_set, "DeviceBuf should be filled with some data");
         }
 
         for i in 0..(buffers.len() - 1) {
@@ -445,6 +458,7 @@ impl DeviceBuf<Fr> {
             set_device(device_id)?;
             ctx[buffer_idx].exec_stream.wait(buffer.write_event())?;
             ctx[buffer_idx].exec_stream.wait(buffer.read_event())?;
+            assert!(buffer.data_is_set, "DeviceBuf should be filled with some data");
 
             let d_scalars = buffer.as_ptr(0..buffer.len());
 

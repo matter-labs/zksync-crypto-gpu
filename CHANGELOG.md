@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.155.6](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.5...v0.155.6) (2026-01-20)
+
+
+### Features
+
+* Bump dependencies & update cargo deny ([#132](https://github.com/matter-labs/zksync-crypto-gpu/issues/132)) ([113e76a](https://github.com/matter-labs/zksync-crypto-gpu/commit/113e76ad895b1e61b23e0d1b5825e92f367c6dee))
+
 ## [0.155.5](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.4...v0.155.5) (2025-12-16)
 
 

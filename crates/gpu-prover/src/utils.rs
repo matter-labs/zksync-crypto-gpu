@@ -1,7 +1,7 @@
 use super::*;
 use bellman::pairing::{CurveAffine, GenericCurveProjective};
 use core::ops::Range;
-use franklin_crypto::rand::{thread_rng, Rng};
+use rand::{thread_rng, Rng};
 
 pub(crate) fn generate_scalars_to_buf<F: PrimeField>(worker: &Worker, buf: &mut [F]) {
     assert!(buf.len().is_power_of_two());

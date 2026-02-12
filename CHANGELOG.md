@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.155.8](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.7...v0.155.8) (2026-02-12)
+
+
+### Performance Improvements
+
+* Update crypto deps ([#136](https://github.com/matter-labs/zksync-crypto-gpu/issues/136)) ([25cc316](https://github.com/matter-labs/zksync-crypto-gpu/commit/25cc3165ec916aed892d049551cb5832437fe2db))
+
 ## [0.155.7](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.6...v0.155.7) (2026-02-10)
 
 

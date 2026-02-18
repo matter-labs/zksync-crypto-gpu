@@ -29,11 +29,11 @@ wrapper-prover = { version = "=0.155.8", path = "crates/wrapper-prover", package
 
 # These dependencies should be shared by all the crates.
 # zksync-crypto repository
-boojum = { git = "https://github.com/matter-labs/zksync-crypto", branch = "oh_unpin_compiler_version" }
-fflonk-cpu = { package = "fflonk", git = "https://github.com/matter-labs/zksync-crypto", branch = "oh_unpin_compiler_version" }
-franklin-crypto = { git = "https://github.com/matter-labs/zksync-crypto", branch = "oh_unpin_compiler_version" }
-rescue_poseidon = { git = "https://github.com/matter-labs/zksync-crypto", branch = "oh_unpin_compiler_version" }
-snark_wrapper = { git = "https://github.com/matter-labs/zksync-crypto", branch = "oh_unpin_compiler_version" }
+boojum = { git = "https://github.com/matter-labs/zksync-crypto", branch = "di/bump-rustc-test" }
+fflonk-cpu = { package = "fflonk", git = "https://github.com/matter-labs/zksync-crypto", branch = "di/bump-rustc-test" }
+franklin-crypto = { git = "https://github.com/matter-labs/zksync-crypto", branch = "di/bump-rustc-test" }
+rescue_poseidon = { git = "https://github.com/matter-labs/zksync-crypto", branch = "di/bump-rustc-test" }
+snark_wrapper = { git = "https://github.com/matter-labs/zksync-crypto", branch = "di/bump-rustc-test" }
 
 # zksync-protocol repository
 circuit_definitions = { git = "https://github.com/matter-labs/zksync-protocol", branch = "di/bump-rustc-test" }

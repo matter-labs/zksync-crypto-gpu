@@ -39,5 +39,18 @@ snark_wrapper = "=0.32.9"
 circuit_definitions = { version = "=0.153.8" }
 zkevm_test_harness = { version = "=0.153.8" }
 
+[patch.crates-io]
+#bellman = { package = "zksync_bellman", path = "../zksync-crypto/crates/bellman" }
+#boojum = { path = "../zksync-crypto/crates/boojum" }
+#fflonk-cpu = { package = "fflonk", path = "../zksync-crypto/crates/fflonk" }
+#franklin-crypto = { path = "../zksync-crypto/crates/franklin-crypto" }
+#rescue_poseidon = { path = "../zksync-crypto/crates/rescue-poseidon" }
+#snark_wrapper = { path = "../zksync-crypto/crates/snark-wrapper" }
+#cs_derive = { package = "zksync_cs_derive", path = "../zksync-crypto/crates/cs_derive" }
+#zksync_pairing = { path = "../zksync-crypto/crates/pairing" }
+#
+#circuit_definitions = { path = "../zksync-protocol/crates/circuit_definitions" }
+#zkevm_test_harness = { path = "../zksync-protocol/crates/zkevm_test_harness" }
+
 [profile.release]
 debug = "line-tables-only"

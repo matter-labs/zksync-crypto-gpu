@@ -1,6 +1,5 @@
 #![allow(incomplete_features)]
 #![feature(allocator_api)]
-#![feature(array_chunks)]
 #![feature(associated_type_defaults)]
 #![feature(iter_array_chunks)]
 #![feature(get_mut_unchecked)]

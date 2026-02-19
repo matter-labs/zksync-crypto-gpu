@@ -1,7 +1,7 @@
 use super::*;
 use bellman::{pairing::CurveAffine, plonk::fft::cooley_tukey_ntt::bitreverse};
 use franklin_crypto::bellman::CurveProjective;
-use rand::thread_rng;
+use franklin_crypto::rand::thread_rng;
 type TestConfigs = A100_40GB_2GPU_Test_Configs; // G5_5GB_Testing_Configs;
 
 fn init_manager() -> DeviceMemoryManager<Fr, TestConfigs> {
@@ -263,7 +263,7 @@ fn test_manager_add_constant() {
     let mut a = AsyncVec::<Fr>::allocate_new(degree);
     generate_scalars_to_buf(&worker, a.get_values_mut().unwrap());
 
-    use rand::Rng;
+    use franklin_crypto::rand::Rng;
     let constant: Fr = thread_rng().gen();
 
     manager
@@ -296,7 +296,7 @@ fn test_manager_sub_constant() {
     let mut a = AsyncVec::<Fr>::allocate_new(degree);
     generate_scalars_to_buf(&worker, a.get_values_mut().unwrap());
 
-    use rand::Rng;
+    use franklin_crypto::rand::Rng;
     let constant: Fr = thread_rng().gen();
 
     manager
@@ -329,7 +329,7 @@ fn test_manager_mul_constant() {
     let mut a = AsyncVec::<Fr>::allocate_new(degree);
     generate_scalars_to_buf(&worker, a.get_values_mut().unwrap());
 
-    use rand::Rng;
+    use franklin_crypto::rand::Rng;
     let constant: Fr = thread_rng().gen();
 
     manager
@@ -493,7 +493,7 @@ fn test_manager_add_assign_scaled() {
     let mut b = AsyncVec::<Fr>::allocate_new(degree);
     generate_scalars_to_buf(&worker, b.get_values_mut().unwrap());
 
-    use rand::Rng;
+    use franklin_crypto::rand::Rng;
     let constant: Fr = thread_rng().gen();
 
     manager
@@ -540,7 +540,7 @@ fn test_manager_sub_assign_scaled() {
     let mut b = AsyncVec::<Fr>::allocate_new(degree);
     generate_scalars_to_buf(&worker, b.get_values_mut().unwrap());
 
-    use rand::Rng;
+    use franklin_crypto::rand::Rng;
     let constant: Fr = thread_rng().gen();
 
     manager

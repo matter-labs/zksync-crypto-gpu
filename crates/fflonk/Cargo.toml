@@ -15,7 +15,6 @@ exclude = ["/data"]
 fflonk-cpu = {workspace = true, optional = true}
 circuit_definitions.workspace = true
 gpu-ffi.workspace = true
-rand = "0.4"
 derivative = "2.2"
 byteorder = "1"
 bincode = "1.3"

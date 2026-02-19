@@ -11,29 +11,29 @@ keywords = ["blockchain", "zksync"]
 categories = ["cryptography"]
 repository = "https://github.com/matter-labs/zksync-crypto-gpu"
 # All the packages in the workspace should have the same version
-version = "0.155.7" # x-release-please-version
+version = "0.155.8" # x-release-please-version
 
 [workspace.dependencies]
 # Local dependencies
-boojum-cuda = { version = "=0.155.7", path = "crates/boojum-cuda" }
-era_criterion_cuda = { version = "=0.155.7", path = "crates/criterion-cuda" }
-era_cudart = { version = "=0.155.7", path = "crates/cudart" }
-era_cudart_sys = { version = "=0.155.7", path = "crates/cudart-sys" }
-era_cudart_sys_bindings_generator = { version = "=0.155.7", path = "crates/cudart-sys-bindings-generator" }
-fflonk = { version = "=0.155.7", path = "crates/fflonk", package = "fflonk-cuda" }
-gpu-ffi = { version = "=0.155.7", path = "crates/gpu-ffi", package = "zksync-gpu-ffi" }
-gpu-ffi-bindings-generator = { version = "=0.155.7", path = "crates/gpu-ffi", package = "zksync-gpu-ffi-bindings-generator" }
-gpu-prover = { version = "=0.155.7", path = "crates/gpu-prover", package = "zksync-gpu-prover" }
-shivini = { version = "=0.155.7", path = "crates/shivini" }
-wrapper-prover = { version = "=0.155.7", path = "crates/wrapper-prover", package = "zksync-wrapper-prover" }
+boojum-cuda = { version = "=0.155.8", path = "crates/boojum-cuda" }
+era_criterion_cuda = { version = "=0.155.8", path = "crates/criterion-cuda" }
+era_cudart = { version = "=0.155.8", path = "crates/cudart" }
+era_cudart_sys = { version = "=0.155.8", path = "crates/cudart-sys" }
+era_cudart_sys_bindings_generator = { version = "=0.155.8", path = "crates/cudart-sys-bindings-generator" }
+fflonk = { version = "=0.155.8", path = "crates/fflonk", package = "fflonk-cuda" }
+gpu-ffi = { version = "=0.155.8", path = "crates/gpu-ffi", package = "zksync-gpu-ffi" }
+gpu-ffi-bindings-generator = { version = "=0.155.8", path = "crates/gpu-ffi", package = "zksync-gpu-ffi-bindings-generator" }
+gpu-prover = { version = "=0.155.8", path = "crates/gpu-prover", package = "zksync-gpu-prover" }
+shivini = { version = "=0.155.8", path = "crates/shivini" }
+wrapper-prover = { version = "=0.155.8", path = "crates/wrapper-prover", package = "zksync-wrapper-prover" }
 
 # These dependencies should be shared by all the crates.
 # zksync-crypto repository
-# boojum = { path = "../zksync-crypto/crates/boojum" } # "=0.32.8"
-# franklin-crypto = { path = "../zksync-crypto/crates/franklin-crypto" } # "=0.32.8"
-# rescue_poseidon = { path = "../zksync-crypto/crates/rescue-poseidon" } # "=0.32.8"
-# snark_wrapper = { path = "../zksync-crypto/crates/snark-wrapper" } # "=0.32.8"
-# fflonk-cpu = { package = "fflonk", path = "../zksync-crypto/crates/fflonk" } # version = "=0.32.8" }
+# boojum = { path = "../zksync-crypto/crates/boojum" } # "=0.32.9"
+# franklin-crypto = { path = "../zksync-crypto/crates/franklin-crypto" } # "=0.32.9"
+# rescue_poseidon = { path = "../zksync-crypto/crates/rescue-poseidon" } # "=0.32.9"
+# snark_wrapper = { path = "../zksync-crypto/crates/snark-wrapper" } # "=0.32.9"
+# fflonk-cpu = { package = "fflonk", path = "../zksync-crypto/crates/fflonk" } # version = "=0.32.9"
 
 boojum = { git = "https://github.com/matter-labs/zksync-crypto", branch = "popzxc-update-rand" }
 franklin-crypto = { git = "https://github.com/matter-labs/zksync-crypto", branch = "popzxc-update-rand" }

@@ -538,10 +538,10 @@ mod tests {
     use crate::ops_simple::set_to_zero;
     use crate::tests_helpers::RandomIterator;
     use boojum::cs::implementations::pow::PoWRunner;
+    use boojum::pairing::rand::Rand;
     use era_cudart::memory::{memory_copy_async, DeviceAllocation};
     use itertools::Itertools;
     use rand::{thread_rng, Rng};
-    use rand_04::Rand;
     use std::cmp;
     use std::fmt::Debug;
 
@@ -843,7 +843,7 @@ mod tests {
         }
 
         fn random_digest_element() -> Self::DigestElementType {
-            BN::rand(&mut rand_04::thread_rng())
+            BN::rand(&mut boojum::pairing::rand::thread_rng())
         }
     }
 

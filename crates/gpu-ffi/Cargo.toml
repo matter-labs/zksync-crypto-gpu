@@ -22,9 +22,6 @@ crossbeam = "0.8"
 era_cudart_sys.workspace = true
 cmake = "0.1"
 
-[dev-dependencies]
-rand = "0.4"
-
 [lib]
 doctest = false
 

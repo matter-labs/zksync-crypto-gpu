@@ -29,22 +29,16 @@ wrapper-prover = { version = "=0.155.8", path = "crates/wrapper-prover", package
 
 # These dependencies should be shared by all the crates.
 # zksync-crypto repository
-# boojum = { path = "../zksync-crypto/crates/boojum" } # "=0.32.9"
-# franklin-crypto = { path = "../zksync-crypto/crates/franklin-crypto" } # "=0.32.9"
-# rescue_poseidon = { path = "../zksync-crypto/crates/rescue-poseidon" } # "=0.32.9"
-# snark_wrapper = { path = "../zksync-crypto/crates/snark-wrapper" } # "=0.32.9"
-# fflonk-cpu = { package = "fflonk", path = "../zksync-crypto/crates/fflonk" } # version = "=0.32.9"
-
-boojum = { git = "https://github.com/matter-labs/zksync-crypto", branch = "popzxc-update-rand" }
-franklin-crypto = { git = "https://github.com/matter-labs/zksync-crypto", branch = "popzxc-update-rand" }
-rescue_poseidon = { git = "https://github.com/matter-labs/zksync-crypto", branch = "popzxc-update-rand" }
-snark_wrapper = { git = "https://github.com/matter-labs/zksync-crypto", branch = "popzxc-update-rand" }
-fflonk-cpu = { package = "fflonk", git = "https://github.com/matter-labs/zksync-crypto", branch = "popzxc-update-rand" }
+boojum = "=0.32.10"
+franklin-crypto = "=0.32.10"
+rescue_poseidon = "=0.32.10"
+snark_wrapper =  "=0.32.10"
+fflonk-cpu = { package = "fflonk", version = "=0.32.10" }
 
 
 # zksync-protocol repository
-circuit_definitions = { git = "https://github.com/matter-labs/zksync-protocol", branch = "popzxc-update-rand" }
-zkevm_test_harness = { git = "https://github.com/matter-labs/zksync-protocol", branch = "popzxc-update-rand" }
+circuit_definitions = "=0.153.9"
+zkevm_test_harness = "=0.153.9"
 
 [profile.release]
 debug = "line-tables-only"

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.155.9](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.8...v0.155.9) (2026-02-20)
+
+
+### Features
+
+* Update to rand 0.8 ([#138](https://github.com/matter-labs/zksync-crypto-gpu/issues/138)) ([fa67ae5](https://github.com/matter-labs/zksync-crypto-gpu/commit/fa67ae58e8e1f076aab04a1f8a94ef1717505ba5))
+
 ## [0.155.8](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.7...v0.155.8) (2026-02-12)
 
 

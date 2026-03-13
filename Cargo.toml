@@ -37,8 +37,8 @@ fflonk-cpu = { package = "fflonk", version = "=0.32.10" }
 
 
 # zksync-protocol repository
-circuit_definitions = "=0.153.9"
-zkevm_test_harness = "=0.153.9"
+circuit_definitions = "=0.153.10"
+zkevm_test_harness = "=0.153.10"
 
 [profile.release]
 debug = "line-tables-only"

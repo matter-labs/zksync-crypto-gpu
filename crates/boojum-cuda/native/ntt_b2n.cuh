@@ -316,8 +316,14 @@ DEVICE_FORCEINLINE void b2n_initial_stages_block(const base_field *gmem_inputs_m
 // With launch bounds it uses 64 registers per thread AND spills registers.
 // Without launch bounds it still uses 64 registers per thread but DOES NOT spill registers.
 // #justnvccthings
-// extern "C" __launch_bounds__(512, 2) __global__
-extern "C" __global__ void b2n_initial_9_to_12_stages_block(const base_field *gmem_inputs_matrix, base_field *gmem_outputs_matrix,
+// On cuda 13.0+, without launch_bounds the compiler uses 162 regs, exceeding the per-SM limit
+// for 512-thread blocks (512*162=82944 > 65536).
+#if __CUDACC_VER_MAJOR__ >= 13
+extern "C" __launch_bounds__(512, 2) __global__
+#else
+extern "C" __global__
+#endif
+void b2n_initial_9_to_12_stages_block(const base_field *gmem_inputs_matrix, base_field *gmem_outputs_matrix,
                                                             const unsigned stride_between_input_arrays, const unsigned stride_between_output_arrays,
                                                             const unsigned start_stage, const unsigned stages_this_launch, const unsigned log_n,
                                                             const bool inverse, const unsigned num_ntts, const unsigned log_extension_degree,

@@ -11,10 +11,14 @@ struct offset_iterator {
   using reference = int &;
 #endif
 
-  const int offset;
+  int offset;
   const int stride;
 
   DEVICE_FORCEINLINE int operator[](const int idx) const { return offset + idx * stride; }
+  DEVICE_FORCEINLINE offset_iterator &operator+=(const int idx) {
+    offset += idx * stride;
+    return *this;
+  }
 };
 
 using namespace goldilocks;

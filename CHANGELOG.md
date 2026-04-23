@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.155.11](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.10...v0.155.11) (2026-04-23)
+
+
+### Bug Fixes
+
+* add operator+= to offset_iterator for CUDA 13.2 / CCCL 3.x ([#143](https://github.com/matter-labs/zksync-crypto-gpu/issues/143)) ([651ddf9](https://github.com/matter-labs/zksync-crypto-gpu/commit/651ddf987fe53fc67f58e701023f881db85dd2ee))
+
 ## [0.155.10](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.9...v0.155.10) (2026-03-13)
 
 

@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Formatter};
 use std::mem::size_of;
 use std::ptr;
-use std::ptr::{null, null_mut};
+use std::ptr::NonNull;
 
 use crate::slice::iter::{Chunks, ChunksMut};
 use crate::slice::AllocationData;
@@ -44,11 +44,21 @@ impl<T> DeviceSlice<T> {
     }
 
     pub fn empty<'a>() -> &'a Self {
-        unsafe { Self::from_raw_parts(null(), 0) }
+        // Zero-length slices must be backed by a non-null, properly aligned
+        // pointer — a null pointer would make the resulting `&DeviceSlice<T>`
+        // UB even without dereferencing, and LLVM exploits that to miscompile
+        // callers that branch on `len == 0`. `NonNull::dangling()` is the
+        // Rust-idiomatic choice for an empty slice and is never dereferenced.
+        // Callers that previously relied on this pointer being null (e.g. to
+        // trigger CUB's size-query convention) must now pass `null_mut()`
+        // explicitly at the FFI boundary.
+        let ptr = NonNull::<T>::dangling().as_ptr() as *const T;
+        unsafe { Self::from_raw_parts(ptr, 0) }
     }
 
     pub fn empty_mut<'a>() -> &'a mut Self {
-        unsafe { Self::from_raw_parts_mut(null_mut(), 0) }
+        let ptr = NonNull::<T>::dangling().as_ptr();
+        unsafe { Self::from_raw_parts_mut(ptr, 0) }
     }
 
     pub fn as_ptr(&self) -> *const T {

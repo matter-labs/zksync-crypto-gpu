@@ -1,4 +1,4 @@
-use std::ptr::null_mut;
+use std::ptr::{null, null_mut};
 
 use boojum::field::goldilocks::GoldilocksField;
 
@@ -255,17 +255,17 @@ pub trait Scan: Sized {
         reverse: bool,
         num_items: i32,
     ) -> CudaResult<usize> {
-        let d_temp_storage = DeviceSlice::empty_mut();
+        // CUB convention: `d_temp_storage == nullptr` puts the call in
+        // size-query mode — CUB writes the required scratch size into
+        // `temp_storage_bytes` and returns without touching any data pointer.
         let mut temp_storage_bytes = 0;
-        let d_in = DeviceSlice::empty();
-        let d_out = DeviceSlice::empty_mut();
         let function = Self::get_function(operation, inclusive, reverse);
         unsafe {
             function(
-                d_temp_storage.as_mut_ptr(),
+                null_mut(),
                 &mut temp_storage_bytes,
-                d_in.as_ptr(),
-                d_out.as_mut_ptr(),
+                null(),
+                null_mut(),
                 num_items,
                 null_mut(),
             )

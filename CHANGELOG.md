@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.156.0](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.11...v0.156.0) (2026-04-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove UB in DeviceSlice::empty() that miscompiled shivini prover ([#145](https://github.com/matter-labs/zksync-crypto-gpu/issues/145))
+
+### Bug Fixes
+
+* remove UB in DeviceSlice::empty() that miscompiled shivini prover ([#145](https://github.com/matter-labs/zksync-crypto-gpu/issues/145)) ([303aba3](https://github.com/matter-labs/zksync-crypto-gpu/commit/303aba347ccea13bf726ba2634306272308f4a17))
+
 ## [0.155.11](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.10...v0.155.11) (2026-04-23)
 
 

@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.156.0](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.11...v0.156.0) (2026-04-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove UB in DeviceSlice::empty() that miscompiled shivini prover ([#145](https://github.com/matter-labs/zksync-crypto-gpu/issues/145))
+
+### Bug Fixes
+
+* remove UB in DeviceSlice::empty() that miscompiled shivini prover ([#145](https://github.com/matter-labs/zksync-crypto-gpu/issues/145)) ([303aba3](https://github.com/matter-labs/zksync-crypto-gpu/commit/303aba347ccea13bf726ba2634306272308f4a17))
+
+## [0.155.11](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.10...v0.155.11) (2026-04-23)
+
+
+### Bug Fixes
+
+* add operator+= to offset_iterator for CUDA 13.2 / CCCL 3.x ([#143](https://github.com/matter-labs/zksync-crypto-gpu/issues/143)) ([651ddf9](https://github.com/matter-labs/zksync-crypto-gpu/commit/651ddf987fe53fc67f58e701023f881db85dd2ee))
+
+## [0.155.10](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.9...v0.155.10) (2026-03-13)
+
+
+### Bug Fixes
+
+* automated protocol upgrade for zksync-era-next ([#140](https://github.com/matter-labs/zksync-crypto-gpu/issues/140)) ([8d91a95](https://github.com/matter-labs/zksync-crypto-gpu/commit/8d91a95e68b6dffc9986bb162383b17fea27c959))
+
 ## [0.155.9](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.8...v0.155.9) (2026-02-20)
 
 

@@ -29,11 +29,11 @@ wrapper-prover = { version = "=0.156.0", path = "crates/wrapper-prover", package
 
 # These dependencies should be shared by all the crates.
 # zksync-crypto repository
-boojum = { git = "https://github.com/matter-labs/zksync-crypto", branch = "main" }
-fflonk-cpu = { package = "fflonk", git = "https://github.com/matter-labs/zksync-crypto", branch = "main" }
-franklin-crypto = { git = "https://github.com/matter-labs/zksync-crypto", branch = "main" }
-rescue_poseidon = { git = "https://github.com/matter-labs/zksync-crypto", branch = "main" }
-snark_wrapper = { git = "https://github.com/matter-labs/zksync-crypto", branch = "main" }
+boojum = { git = "https://github.com/matter-labs/zksync-crypto", branch = "oh_for_wrapper" }
+fflonk-cpu = { package = "fflonk", git = "https://github.com/matter-labs/zksync-crypto", branch = "oh_for_wrapper" }
+franklin-crypto = { git = "https://github.com/matter-labs/zksync-crypto", branch = "oh_for_wrapper" }
+rescue_poseidon = { git = "https://github.com/matter-labs/zksync-crypto", branch = "oh_for_wrapper" }
+snark_wrapper = { git = "https://github.com/matter-labs/zksync-crypto", branch = "oh_for_wrapper" }
 
 # zksync-protocol repository
 circuit_definitions = { git = "https://github.com/matter-labs/zksync-protocol", branch = "oh_for_wrapper" }

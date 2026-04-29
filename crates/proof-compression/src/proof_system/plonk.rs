@@ -26,6 +26,11 @@ use bellman::plonk::better_better_cs::{
 
 use bellman::bn256::{Bn256, Fr};
 
+const DEFAULT_WRAPPER_DOMAIN_SIZE_LOG: usize = 24;
+pub type PlonkSnarkWrapper = PlonkSnarkWrapperLogN<DEFAULT_WRAPPER_DOMAIN_SIZE_LOG>;
+pub type PlonkProverDeviceMemoryManagerConfig = PlonkProverDeviceMemoryManagerConfigLogN<DEFAULT_WRAPPER_DOMAIN_SIZE_LOG>;
+pub type UnsafePlonkProverDeviceMemoryManagerWrapper = UnsafePlonkProverDeviceMemoryManagerWrapperLogN<DEFAULT_WRAPPER_DOMAIN_SIZE_LOG>;
+
 pub(crate) type PlonkSnarkVerifierCircuit = ZkSyncSnarkWrapperCircuit;
 pub(crate) type PlonkSnarkVerifierCircuitVK =
     PlonkVerificationKey<Bn256, PlonkSnarkVerifierCircuit>;
@@ -40,11 +45,11 @@ type PlonkAssembly<CSConfig, A> = Assembly<
     A,
 >;
 
-pub struct UnsafePlonkProverDeviceMemoryManagerWrapper(
-    DeviceMemoryManager<Fr, PlonkProverDeviceMemoryManagerConfig>,
+pub struct UnsafePlonkProverDeviceMemoryManagerWrapperLogN<const N: usize>(
+    DeviceMemoryManager<Fr, PlonkProverDeviceMemoryManagerConfigLogN<N>>,
 );
-impl GenericWrapper for UnsafePlonkProverDeviceMemoryManagerWrapper {
-    type Inner = DeviceMemoryManager<Fr, PlonkProverDeviceMemoryManagerConfig>;
+impl<const N: usize> GenericWrapper for UnsafePlonkProverDeviceMemoryManagerWrapperLogN<N> {
+    type Inner = DeviceMemoryManager<Fr, PlonkProverDeviceMemoryManagerConfigLogN<N>>;
 
     fn into_inner(self) -> Self::Inner {
         self.0
@@ -56,20 +61,20 @@ impl GenericWrapper for UnsafePlonkProverDeviceMemoryManagerWrapper {
         Self(inner)
     }
 }
-unsafe impl Send for UnsafePlonkProverDeviceMemoryManagerWrapper {}
-unsafe impl Sync for UnsafePlonkProverDeviceMemoryManagerWrapper {}
-pub struct PlonkProverDeviceMemoryManagerConfig;
+unsafe impl<const N: usize> Send for UnsafePlonkProverDeviceMemoryManagerWrapperLogN<N> {}
+unsafe impl<const N: usize> Sync for UnsafePlonkProverDeviceMemoryManagerWrapperLogN<N> {}
+pub struct PlonkProverDeviceMemoryManagerConfigLogN<const N: usize>;
 
-impl ManagerConfigs for PlonkProverDeviceMemoryManagerConfig {
+impl<const N: usize> ManagerConfigs for PlonkProverDeviceMemoryManagerConfigLogN<N> {
     const NUM_GPUS_LOG: usize = 0;
-    const FULL_SLOT_SIZE_LOG: usize = 24;
+    const FULL_SLOT_SIZE_LOG: usize = N;
     const NUM_SLOTS: usize = 29;
     const NUM_HOST_SLOTS: usize = 2;
 }
 
-pub struct PlonkSnarkWrapper;
+pub struct PlonkSnarkWrapperLogN<const N: usize>;
 
-impl PlonkSnarkWrapper {
+impl<const N: usize> PlonkSnarkWrapperLogN<N> {
     pub fn prove_plonk_snark_wrapper_step(
         input_proof: Proof<
             GoldilocksField,
@@ -177,7 +182,7 @@ impl PlonkSnarkWrapper {
     }
 }
 
-impl ProofSystemDefinition for PlonkSnarkWrapper {
+impl<const N: usize> ProofSystemDefinition for PlonkSnarkWrapperLogN<N> {
     type FieldElement = Fr;
     type Precomputation = PlonkSnarkVerifierCircuitDeviceSetupWrapper;
     type ExternalWitnessData = Vec<Self::FieldElement, Self::Allocator>;
@@ -207,9 +212,9 @@ impl ProofSystemDefinition for PlonkSnarkWrapper {
     }
 }
 
-impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
+impl<const N: usize> SnarkWrapperProofSystem for PlonkSnarkWrapperLogN<N> {
     type Circuit = PlonkSnarkVerifierCircuit;
-    type Context = UnsafePlonkProverDeviceMemoryManagerWrapper;
+    type Context = UnsafePlonkProverDeviceMemoryManagerWrapperLogN<N>;
 
     type CRS = bellman::kate_commitment::Crs<
         bellman::compact_bn256::Bn256,
@@ -221,18 +226,18 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
     }
 
     fn load_compact_raw_crs<R: std::io::Read>(src: R) -> anyhow::Result<Self::CRS> {
-        let num_g1_points_for_crs = 1 << PlonkProverDeviceMemoryManagerConfig::FULL_SLOT_SIZE_LOG;
+        let num_g1_points_for_crs = 1 << PlonkProverDeviceMemoryManagerConfigLogN::<N>::FULL_SLOT_SIZE_LOG;
         Ok(read_crs_from_raw_compact_form(src, num_g1_points_for_crs)?)
     }
 
     fn init_context(compact_raw_crs: &Self::CRS) -> anyhow::Result<Self::Context> {
         let device_ids: Vec<_> =
-            (0..<PlonkProverDeviceMemoryManagerConfig as ManagerConfigs>::NUM_GPUS).collect();
+            (0..<PlonkProverDeviceMemoryManagerConfigLogN::<N> as ManagerConfigs>::NUM_GPUS).collect();
         let manager =
             DeviceMemoryManager::init(&device_ids, &compact_raw_crs.g1_bases).map_err(|e| {
                 anyhow::anyhow!("Failed to initialize Plonk device memory manager: {:?}", e)
             })?;
-        Ok(UnsafePlonkProverDeviceMemoryManagerWrapper(manager))
+        Ok(UnsafePlonkProverDeviceMemoryManagerWrapperLogN::<N>(manager))
     }
 
     fn synthesize_for_proving(circuit: Self::Circuit) -> Self::ProvingAssembly {
@@ -263,7 +268,7 @@ impl SnarkWrapperProofSystem for PlonkSnarkWrapper {
     }
 }
 
-impl SnarkWrapperProofSystemExt for PlonkSnarkWrapper {
+impl<const N: usize> SnarkWrapperProofSystemExt for PlonkSnarkWrapperLogN<N> {
     type SetupAssembly = PlonkAssembly<SynthesisModeGenerateSetup, Self::Allocator>;
 
     fn synthesize_for_setup(circuit: Self::Circuit) -> Self::SetupAssembly {

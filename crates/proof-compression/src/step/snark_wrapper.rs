@@ -167,7 +167,7 @@ impl SnarkWrapperStep for FflonkSnarkWrapper {
 }
 impl SnarkWrapperStepExt for FflonkSnarkWrapper {}
 
-impl SnarkWrapperStep for PlonkSnarkWrapper {
+impl<const N: usize> SnarkWrapperStep for PlonkSnarkWrapperLogN<N> {
     const IS_PLONK: bool = true;
     const IS_FFLONK: bool = false;
 
@@ -190,4 +190,4 @@ impl SnarkWrapperStep for PlonkSnarkWrapper {
         }
     }
 }
-impl SnarkWrapperStepExt for PlonkSnarkWrapper {}
+impl<const N: usize> SnarkWrapperStepExt for PlonkSnarkWrapperLogN<N> {}

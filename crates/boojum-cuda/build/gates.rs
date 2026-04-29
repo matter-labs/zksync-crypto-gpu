@@ -372,6 +372,7 @@ fn get_descriptions() -> Vec<Description> {
         poseidon2_flattened_gate_description(56, 74),
         poseidon2_flattened_gate_description(68, 62),
         poseidon2_flattened_gate_description(100, 30),
+        poseidon2_flattened_gate_description(125, 5),
         poseidon2_flattened_gate_description(130, 0),
         Description::new::<QuadraticCombinationGate<4>>((), Generic),
         Description::new::<ReductionByPowersGate<F, 4>>((), Generic),

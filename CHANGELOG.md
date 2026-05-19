@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.156.1](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.156.0...v0.156.1) (2026-05-19)
+
+
+### Bug Fixes
+
+* automated protocol upgrade for upgrade-circuit-divergency-before-v31 ([#147](https://github.com/matter-labs/zksync-crypto-gpu/issues/147)) ([533ae0a](https://github.com/matter-labs/zksync-crypto-gpu/commit/533ae0a24e0d2da7ec970c4e10d36bad607bbe19))
+
 ## [0.156.0](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.155.11...v0.156.0) (2026-04-23)
 
 

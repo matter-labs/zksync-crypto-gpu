@@ -31,6 +31,10 @@ jobs:
       publish-to-crates-io: false                      # Custom publishing logic is implemented in the next job
 
   # Publish packages to crates.io
+  # DISABLED: this repo now pins zksync-protocol via a git tag (protocol has a git-only
+  # airbender-crypto dependency and is not published to crates.io), which makes these
+  # crates unpublishable to crates.io. release-please still cuts release tags; consumers
+  # pin the git tag. Re-enable this job only if the crates return to crates.io.
   process-release:
     runs-on: [ubuntu-24.04-github-hosted-32core]
     container:
@@ -39,7 +43,7 @@ jobs:
       BELLMAN_CUDA_DIR: ${{ github.workspace }}/bellman-cuda
       CUDAARCHS: 89
     needs: [release-please]
-    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    if: false # Disabled: crates.io publishing not possible with git-only protocol dep
     steps:
 
       - name: Prepare environment

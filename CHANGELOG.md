@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.156.3](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.156.2...v0.156.3) (2026-07-21)
+
+
+### Features
+
+* Support airbender ([#153](https://github.com/matter-labs/zksync-crypto-gpu/issues/153)) ([36c2971](https://github.com/matter-labs/zksync-crypto-gpu/commit/36c29716c108fe3896aac75758f9a38a53d150e5))
+
 ## [0.156.2](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.156.1...v0.156.2) (2026-07-02)
 
 

@@ -37,8 +37,10 @@ fflonk-cpu = { package = "fflonk", version = "=0.32.10" }
 
 
 # zksync-protocol repository
-circuit_definitions = "=0.153.12"
-zkevm_test_harness = "=0.153.12"
+# Pinned to a git tag: zksync-protocol is no longer published to crates.io
+# (it has a git-only `airbender-crypto` dependency).
+circuit_definitions = { git = "https://github.com/matter-labs/zksync-protocol", tag = "v0.153.13" }
+zkevm_test_harness = { git = "https://github.com/matter-labs/zksync-protocol", tag = "v0.153.13" }
 
 [profile.release]
 debug = "line-tables-only"

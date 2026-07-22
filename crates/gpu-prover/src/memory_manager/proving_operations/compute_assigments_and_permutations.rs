@@ -89,6 +89,7 @@ fn create_buffers_for_computing_assigments_and_permutations<MC: ManagerConfigs>(
             len: MC::FULL_SLOT_SIZE,
             device_id: device_id_0,
 
+            data_is_set: false,
             is_static_mem: true,
             is_freed: true,
 
@@ -107,6 +108,7 @@ fn create_buffers_for_computing_assigments_and_permutations<MC: ManagerConfigs>(
         len: 4 * MC::FULL_SLOT_SIZE,
         device_id: device_id_1,
 
+        data_is_set: false,
         is_static_mem: true,
         is_freed: true,
 
@@ -121,6 +123,7 @@ fn create_buffers_for_computing_assigments_and_permutations<MC: ManagerConfigs>(
         len: 4 * MC::FULL_SLOT_SIZE,
         device_id: device_id_1,
 
+        data_is_set: false,
         is_static_mem: true,
         is_freed: true,
 
@@ -134,6 +137,7 @@ fn create_buffers_for_computing_assigments_and_permutations<MC: ManagerConfigs>(
         len: 4,
         device_id: device_id_1,
 
+        data_is_set: false,
         is_static_mem: true,
         is_freed: true,
 
@@ -153,6 +157,7 @@ fn create_buffers_for_computing_assigments_and_permutations<MC: ManagerConfigs>(
         len: assignments_len + 1,
         device_id: device_id_0,
 
+        data_is_set: false,
         is_static_mem: true,
         is_freed: true,
 
@@ -191,9 +196,10 @@ fn set_initial_values<MC: ManagerConfigs>(
     let num_non_residues = 4;
     let mut host_non_residues = AsyncVec::allocate_new(num_non_residues);
 
-    let mut host_buff = host_non_residues.get_values_mut()?;
-    host_buff[0] = Fr::one();
-    host_buff[1..].copy_from_slice(&make_non_residues::<Fr>(num_non_residues - 1));
+    let mut non_residues_buff = vec![Fr::one(); num_non_residues];
+    non_residues_buff[1..].copy_from_slice(&make_non_residues::<Fr>(num_non_residues - 1));
+
+    host_non_residues.copy_from_slice(&non_residues_buff)?;
 
     non_residues.async_copy_from_host(
         &mut manager.ctx[ctx_id_1],

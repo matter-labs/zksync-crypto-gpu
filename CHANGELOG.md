@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.156.4](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.156.3...v0.156.4) (2026-08-04)
+
+
+### Bug Fixes
+
+* automated protocol upgrade for 0.29.5 ([#155](https://github.com/matter-labs/zksync-crypto-gpu/issues/155)) ([c08bae6](https://github.com/matter-labs/zksync-crypto-gpu/commit/c08bae67fbffdd1a6c29527ec179e0af84297951))
+
 ## [0.156.3](https://github.com/matter-labs/zksync-crypto-gpu/compare/v0.156.2...v0.156.3) (2026-07-21)
 
 

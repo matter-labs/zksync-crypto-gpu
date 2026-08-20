@@ -2,7 +2,7 @@ use std::{alloc::Layout, ptr::NonNull};
 
 use gpu_ffi::{bc_mem_pool, bc_stream};
 
-use super::{_static_alloc, DeviceAllocator, GlobalDeviceStatic};
+use super::{DeviceAllocator, GlobalDeviceStatic, _static_alloc};
 
 enum AllocInit {
     /// The contents of the new memory are uninitialized.

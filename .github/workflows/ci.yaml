@@ -53,8 +53,8 @@ jobs:
       - name: Setup rust
         run: |
           rustup set profile minimal
-          rustup toolchain install nightly-2026-08-09
-          rustup default nightly-2026-08-09
+          rustup toolchain install nightly-2025-10-20
+          rustup default nightly-2025-10-20
 
       - name: Prepare bellman-cuda directory
         shell: bash

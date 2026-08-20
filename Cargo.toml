@@ -39,8 +39,23 @@ fflonk-cpu = { package = "fflonk", version = "=0.32.10" }
 # zksync-protocol repository
 # Pinned to a git tag: zksync-protocol is no longer published to crates.io
 # (it has a git-only `airbender-crypto` dependency).
-circuit_definitions = { git = "https://github.com/matter-labs/zksync-protocol", tag = "v0.153.14" }
-zkevm_test_harness = { git = "https://github.com/matter-labs/zksync-protocol", tag = "v0.153.14" }
+# TEMPORARY: tag v0.153.14 predates the nightly fixes; retarget to the tag cut after
+# matter-labs/zksync-protocol#235 merges.
+circuit_definitions = { git = "https://github.com/matter-labs/zksync-protocol", branch = "chore/bump-nightly-2026-08-09" }
+zkevm_test_harness = { git = "https://github.com/matter-labs/zksync-protocol", branch = "chore/bump-nightly-2026-08-09" }
 
 [profile.release]
 debug = "line-tables-only"
+
+# TEMPORARY: boojum 0.32.10 as published on crates.io still carries
+# `#![feature(array_chunks)]`, which nightly removed. The fix is on
+# zksync-crypto main (cb466ac) but unreleased. Remove this section once
+# boojum > 0.32.10 is published and the versions above are bumped to it.
+[patch.crates-io]
+boojum = { git = "https://github.com/matter-labs/zksync-crypto", rev = "c0a717cfef79b6edb92a3644dd92d6ac03e3b4a2" }
+franklin-crypto = { git = "https://github.com/matter-labs/zksync-crypto", rev = "c0a717cfef79b6edb92a3644dd92d6ac03e3b4a2" }
+rescue_poseidon = { git = "https://github.com/matter-labs/zksync-crypto", rev = "c0a717cfef79b6edb92a3644dd92d6ac03e3b4a2" }
+snark_wrapper = { git = "https://github.com/matter-labs/zksync-crypto", rev = "c0a717cfef79b6edb92a3644dd92d6ac03e3b4a2" }
+fflonk = { git = "https://github.com/matter-labs/zksync-crypto", rev = "c0a717cfef79b6edb92a3644dd92d6ac03e3b4a2" }
+zksync_bellman = { git = "https://github.com/matter-labs/zksync-crypto", rev = "c0a717cfef79b6edb92a3644dd92d6ac03e3b4a2" }
+zksync_pairing = { git = "https://github.com/matter-labs/zksync-crypto", rev = "c0a717cfef79b6edb92a3644dd92d6ac03e3b4a2" }

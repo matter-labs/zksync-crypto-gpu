@@ -29,11 +29,11 @@ wrapper-prover = { version = "=0.156.4", path = "crates/wrapper-prover", package
 
 # These dependencies should be shared by all the crates.
 # zksync-crypto repository
-boojum = "=0.32.10"
-franklin-crypto = "=0.32.10"
-rescue_poseidon = "=0.32.10"
-snark_wrapper =  "=0.32.10"
-fflonk-cpu = { package = "fflonk", version = "=0.32.10" }
+boojum = "=0.32.11"
+franklin-crypto = "=0.32.11"
+rescue_poseidon = "=0.32.11"
+snark_wrapper =  "=0.32.11"
+fflonk-cpu = { package = "fflonk", version = "=0.32.11" }
 
 
 # zksync-protocol repository
@@ -46,16 +46,3 @@ zkevm_test_harness = { git = "https://github.com/matter-labs/zksync-protocol", b
 
 [profile.release]
 debug = "line-tables-only"
-
-# TEMPORARY: boojum 0.32.10 as published on crates.io still carries
-# `#![feature(array_chunks)]`, which nightly removed. The fix is on
-# zksync-crypto main (cb466ac) but unreleased. Remove this section once
-# boojum > 0.32.10 is published and the versions above are bumped to it.
-[patch.crates-io]
-boojum = { git = "https://github.com/matter-labs/zksync-crypto", rev = "c0a717cfef79b6edb92a3644dd92d6ac03e3b4a2" }
-franklin-crypto = { git = "https://github.com/matter-labs/zksync-crypto", rev = "c0a717cfef79b6edb92a3644dd92d6ac03e3b4a2" }
-rescue_poseidon = { git = "https://github.com/matter-labs/zksync-crypto", rev = "c0a717cfef79b6edb92a3644dd92d6ac03e3b4a2" }
-snark_wrapper = { git = "https://github.com/matter-labs/zksync-crypto", rev = "c0a717cfef79b6edb92a3644dd92d6ac03e3b4a2" }
-fflonk = { git = "https://github.com/matter-labs/zksync-crypto", rev = "c0a717cfef79b6edb92a3644dd92d6ac03e3b4a2" }
-zksync_bellman = { git = "https://github.com/matter-labs/zksync-crypto", rev = "c0a717cfef79b6edb92a3644dd92d6ac03e3b4a2" }
-zksync_pairing = { git = "https://github.com/matter-labs/zksync-crypto", rev = "c0a717cfef79b6edb92a3644dd92d6ac03e3b4a2" }

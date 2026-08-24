@@ -29,18 +29,18 @@ wrapper-prover = { version = "=0.156.4", path = "crates/wrapper-prover", package
 
 # These dependencies should be shared by all the crates.
 # zksync-crypto repository
-boojum = "=0.32.10"
-franklin-crypto = "=0.32.10"
-rescue_poseidon = "=0.32.10"
-snark_wrapper =  "=0.32.10"
-fflonk-cpu = { package = "fflonk", version = "=0.32.10" }
+boojum = "=0.32.11"
+franklin-crypto = "=0.32.11"
+rescue_poseidon = "=0.32.11"
+snark_wrapper =  "=0.32.11"
+fflonk-cpu = { package = "fflonk", version = "=0.32.11" }
 
 
 # zksync-protocol repository
 # Pinned to a git tag: zksync-protocol is no longer published to crates.io
 # (it has a git-only `airbender-crypto` dependency).
-circuit_definitions = { git = "https://github.com/matter-labs/zksync-protocol", tag = "v0.153.14" }
-zkevm_test_harness = { git = "https://github.com/matter-labs/zksync-protocol", tag = "v0.153.14" }
+circuit_definitions = { git = "https://github.com/matter-labs/zksync-protocol", tag = "v0.153.15" }
+zkevm_test_harness = { git = "https://github.com/matter-labs/zksync-protocol", tag = "v0.153.15" }
 
 [profile.release]
 debug = "line-tables-only"

@@ -82,5 +82,5 @@ jobs:
         uses: matter-labs/zksync-ci-common/.github/actions/publish-crates@c3b31c6f11bada204069c8b4621044e4c1cbc1df
         with:
           skip_checkout: true
-          gh_token: ${{ secrets.RELEASE_TOKEN }}
+          gh_token: ${{ secrets.GITHUB_TOKEN }}
           slack_webhook: ${{ secrets.SLACK_WEBHOOK_RELEASES }}

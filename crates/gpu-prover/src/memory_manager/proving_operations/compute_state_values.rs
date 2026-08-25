@@ -71,6 +71,7 @@ fn create_buffers_for_computing_assigments<MC: ManagerConfigs>(
             len: MC::FULL_SLOT_SIZE,
             device_id,
 
+            data_is_set: false,
             is_static_mem: true,
             is_freed: true,
 
@@ -85,6 +86,7 @@ fn create_buffers_for_computing_assigments<MC: ManagerConfigs>(
         len: 4 * MC::FULL_SLOT_SIZE,
         device_id,
 
+        data_is_set: false,
         is_static_mem: true,
         is_freed: true,
 
@@ -99,6 +101,7 @@ fn create_buffers_for_computing_assigments<MC: ManagerConfigs>(
         len: assignments_len + 1,
         device_id,
 
+        data_is_set: false,
         is_static_mem: true,
         is_freed: true,
 
@@ -255,6 +258,8 @@ pub fn assign_variables<MC: ManagerConfigs>(
     stream.wait(state_polys.write_event())?;
     stream.wait(variables.write_event())?;
     stream.wait(assigments.write_event())?;
+    assert!(variables.data_is_set, "DeviceBuf should be filled with some data");
+    assert!(assigments.data_is_set, "DeviceBuf should be filled with some data");
 
     let length = variables.len();
     let result = state_polys.as_mut_ptr(num_input_gates..length) as *mut c_void;
@@ -269,6 +274,7 @@ pub fn assign_variables<MC: ManagerConfigs>(
         };
     }
     state_polys.write_event.record(stream)?;
+    state_polys.data_is_set = true;
 
     Ok(())
 }

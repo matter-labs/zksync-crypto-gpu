@@ -56,10 +56,10 @@ cfg_if! {
 
 macro_rules! impl_async_setup {
     (impl AsyncSetup $inherent:tt) => {
-        #[cfg(feature = "allocator")]
-        impl<A: Allocator + Default> AsyncSetup<A> $inherent
+        // #[cfg(feature = "allocator")]
+        // impl<A: Allocator + Default> AsyncSetup<A> $inherent
 
-        #[cfg(not(feature = "allocator"))]
+        // #[cfg(not(feature = "allocator"))]
         impl AsyncSetup $inherent
     };
 }
@@ -94,7 +94,7 @@ impl_async_setup! {
 
         pub fn zeroize(&mut self){
             for poly in self.gate_setup_monomials.iter_mut() {
-                poly.zeroize();
+                poly.fill(Fr::zero());
             }
 
             for poly in self.gate_selectors_bitvecs.iter_mut() {
@@ -103,13 +103,13 @@ impl_async_setup! {
             }
 
             for poly in self.lookup_tables_values.iter_mut() {
-                poly.zeroize()
+                poly.fill(Fr::zero());
             }
 
             self.lookup_selector_bitvec.set_all();
             self.lookup_selector_bitvec.negate();
 
-            self.lookup_table_type_monomial.zeroize();
+            self.lookup_table_type_monomial.fill(Fr::zero());
         }
 
         pub fn write<W: Write>(
@@ -267,7 +267,9 @@ impl_async_setup! {
 
                     manager.copy_to_device_with_host_slot(worker, values.as_ref(), PolyId::Enumerated(i), PolyForm::Values);
                     manager.multigpu_ifft(PolyId::Enumerated(i), false);
-                    manager.copy_from_device_with_host_slot(worker, self.gate_setup_monomials[i].get_values_mut()?, PolyId::Enumerated(i), PolyForm::Monomial);
+
+                    manager.copy_from_device_to_host_pinned(PolyId::Enumerated(i), PolyForm::Monomial)?;
+                    self.gate_setup_monomials[i].async_copy_from_slice(worker, manager.get_host_slot_values(PolyId::Enumerated(i), PolyForm::Monomial)?)?;
 
                     manager.free_host_slot(PolyId::Enumerated(i), PolyForm::Values);
                     manager.free_host_slot(PolyId::Enumerated(i), PolyForm::Monomial);
@@ -311,8 +313,9 @@ impl_async_setup! {
             let copy_end = copy_start + tails_len;
 
             for (i, tail) in table_tails.into_iter().enumerate() {
+                self.lookup_tables_values[i].fill(Fr::zero());
                 let  values = self.lookup_tables_values[i].get_values_mut()?;
-                fill_with_zeros(worker, &mut values[..]);
+                // fill_with_zeros(worker, &mut values[..]);
                 async_copy(worker, &mut values[copy_start..copy_end], &tail[..]);
             }
 
@@ -339,7 +342,9 @@ impl_async_setup! {
             let poly = Polynomial::from_values(table_type_values).unwrap();
             manager.copy_to_device_with_host_slot(worker, poly.as_ref(), PolyId::Enumerated(0), PolyForm::Values);
             manager.multigpu_ifft(PolyId::Enumerated(0), false);
-            manager.copy_from_device_with_host_slot(worker, self.lookup_table_type_monomial.get_values_mut()?, PolyId::Enumerated(0), PolyForm::Monomial);
+
+            manager.copy_from_device_to_host_pinned(PolyId::Enumerated(0), PolyForm::Monomial)?;
+            self.lookup_table_type_monomial.async_copy_from_slice(worker, manager.get_host_slot_values(PolyId::Enumerated(0), PolyForm::Monomial)?)?;
 
             manager.free_host_slot(PolyId::Enumerated(0), PolyForm::Values);
             manager.free_host_slot(PolyId::Enumerated(0), PolyForm::Monomial);

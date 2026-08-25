@@ -1,11 +1,12 @@
 use super::*;
 use core::ops::Range;
 
-pub struct DeviceBuf<T> {
+pub struct DeviceBuf<T: Copy> {
     pub(crate) ptr: *mut T,
     pub(crate) len: usize,
     pub(crate) device_id: usize,
 
+    pub(crate) data_is_set: bool,
     pub(crate) is_static_mem: bool,
     pub(crate) is_freed: bool,
 
@@ -13,7 +14,7 @@ pub struct DeviceBuf<T> {
     pub(crate) write_event: Event,
 }
 
-impl<T> DeviceBuf<T> {
+impl<T: Copy> DeviceBuf<T> {
     pub fn alloc_static(ctx: &GpuContext, len: usize) -> GpuResult<Self> {
         set_device(ctx.device_id())?;
         assert!(ctx.mem_pool.is_none(), "mem pool is allocated");
@@ -32,6 +33,7 @@ impl<T> DeviceBuf<T> {
             len: len,
             device_id: ctx.device_id(),
 
+            data_is_set: false,
             is_static_mem: true,
             is_freed: false,
 
@@ -64,6 +66,7 @@ impl<T> DeviceBuf<T> {
             len: len,
             device_id: ctx.device_id(),
 
+            data_is_set: false,
             is_static_mem: false,
             is_freed: false,
 
@@ -96,6 +99,7 @@ impl<T> DeviceBuf<T> {
             len: len,
             device_id: ctx.device_id(),
 
+            data_is_set: false,
             is_static_mem: false,
             is_freed: false,
 
@@ -127,6 +131,7 @@ impl<T> DeviceBuf<T> {
                 len: chunk_len,
                 device_id: self.device_id,
 
+                data_is_set: self.data_is_set,
                 is_static_mem: self.is_static_mem,
                 is_freed: true,
 
@@ -174,6 +179,7 @@ impl<T> DeviceBuf<T> {
         ctx.exec_stream.wait(other.read_event())?;
         ctx.exec_stream.wait(other.write_event())?;
 
+        assert!(self.data_is_set, "DeviceBuf should be filled with some data");
         let result = unsafe {
             bc_memcpy_async(
                 other.as_mut_ptr(other_range) as *mut c_void,
@@ -182,6 +188,7 @@ impl<T> DeviceBuf<T> {
                 ctx.exec_stream().inner,
             )
         };
+        other.data_is_set = true;
 
         if result != 0 {
             return Err(GpuError::AsyncH2DErr(result));
@@ -214,6 +221,7 @@ impl<T> DeviceBuf<T> {
             length as u64,
             ctx.h2d_stream().inner,
         );
+        self.data_is_set = true;
 
         if result != 0 {
             return Err(GpuError::AsyncMemcopyErr(result));
@@ -287,7 +295,7 @@ impl<T> DeviceBuf<T> {
     }
 }
 
-impl<T> Drop for DeviceBuf<T> {
+impl<T: Copy> Drop for DeviceBuf<T> {
     fn drop(&mut self) {
         if !self.is_freed {
             self.read_event.sync().unwrap();

@@ -329,6 +329,7 @@ pub fn create_selectors_inner(
     result_range: Range<usize>,
 ) -> GpuResult<()> {
     assert!(result_range.len() <= bitvec.len() * 256);
+    assert!(bitvec.data_is_set, "DeviceBuf should be filled with some data");
 
     ctx.exec_stream.wait(result.read_event())?;
     ctx.exec_stream.wait(result.write_event())?;
@@ -352,6 +353,7 @@ pub fn create_selectors_inner(
 
     result.write_event.record(ctx.exec_stream())?;
     bitvec.read_event.record(ctx.exec_stream())?;
+    result.data_is_set = true;
 
     Ok(())
 }
